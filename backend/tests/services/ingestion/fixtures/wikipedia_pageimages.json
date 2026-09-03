@@ -1,0 +1,20 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "normalized": [
+      {
+        "fromencoded": false,
+        "from": "Suzuki_GSR600",
+        "to": "Suzuki GSR600"
+      }
+    ],
+    "pages": [
+      {
+        "pageid": 4093281,
+        "ns": 0,
+        "title": "Suzuki GSR600",
+        "pageimage": "Suzuki_GSR600.jpg"
+      }
+    ]
+  }
+}

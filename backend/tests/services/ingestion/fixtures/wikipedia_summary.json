@@ -1,0 +1,30 @@
+{
+  "type": "standard",
+  "title": "Suzuki GSR600",
+  "displaytitle": "<span class=\"mw-page-title-main\">Suzuki GSR600</span>",
+  "titles": {
+    "canonical": "Suzuki_GSR600",
+    "normalized": "Suzuki GSR600",
+    "display": "<span class=\"mw-page-title-main\">Suzuki GSR600</span>"
+  },
+  "pageid": 4093281,
+  "thumbnail": {
+    "source": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Suzuki_GSR600.jpg/320px-Suzuki_GSR600.jpg",
+    "width": 320,
+    "height": 213
+  },
+  "originalimage": {
+    "source": "https://upload.wikimedia.org/wikipedia/commons/1/12/Suzuki_GSR600.jpg",
+    "width": 2048,
+    "height": 1365
+  },
+  "lang": "en",
+  "dir": "ltr",
+  "revision": "1234567890",
+  "extract": "The Suzuki GSR600 is a naked motorcycle produced by Suzuki between 2006 and 2011.",
+  "content_urls": {
+    "desktop": {
+      "page": "https://en.wikipedia.org/wiki/Suzuki_GSR600"
+    }
+  }
+}

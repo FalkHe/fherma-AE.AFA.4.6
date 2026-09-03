@@ -1,0 +1,488 @@
+{
+  "app": {
+    "name": "Motorcycle Buying Advisor",
+    "tagline": "Advice from a curated catalogue, not from marketing copy."
+  },
+  "nav": {
+    "consultations": "Consultations",
+    "catalogue": "Catalogue",
+    "admin": "Admin"
+  },
+  "common": {
+    "loading": "Loading",
+    "retry": "Try again",
+    "cancel": "Cancel",
+    "yes": "Yes",
+    "no": "No",
+    "unknown": "Unknown",
+    "live": {
+      "disconnected": "Live updates interrupted — reconnecting…"
+    },
+    "specEnums": {
+      "priceBand": {
+        "budget": "Budget (under €5,000)",
+        "mid": "Mid (€5,000–10,000)",
+        "upper": "Upper (€10,000–15,000)",
+        "premium": "Premium (over €15,000)"
+      },
+      "category": {
+        "naked": "Naked",
+        "sport": "Sport",
+        "sport_touring": "Sport touring",
+        "touring": "Touring",
+        "adventure": "Adventure",
+        "cruiser": "Cruiser",
+        "classic": "Classic",
+        "scrambler": "Scrambler",
+        "enduro": "Enduro",
+        "supermoto": "Supermoto",
+        "scooter": "Scooter"
+      }
+    },
+    "errors": {
+      "serverError": "Something went wrong. Please try again.",
+      "crashTitle": "Something went wrong",
+      "crashBody": "An unexpected error broke this page. Reloading usually fixes it.",
+      "crashReload": "Reload page"
+    },
+    "modelName": {
+      "yearRange": "{{from}}–{{to}}",
+      "yearFrom": "from {{from}}",
+      "yearUntil": "until {{to}}",
+      "yearSingle": "{{year}}"
+    },
+    "usedPrice": {
+      "heading": "Used market price",
+      "snapshotChip": "Market snapshot",
+      "range": "{{min}} – {{max}}",
+      "median": "Median {{median}}",
+      "sampleCount": "{{count}} listings observed",
+      "sampleUnknown": "Sample size unknown",
+      "asOf": "as of {{date}}",
+      "disclaimer": "Asking prices observed on the linked marketplaces — a dated snapshot, not a valuation.",
+      "sources": "Sources",
+      "stale": "This snapshot is older than the market-data window and may no longer reflect current prices."
+    }
+  },
+  "auth": {
+    "fields": {
+      "username": "Username",
+      "password": "Password",
+      "confirmPassword": "Confirm password"
+    },
+    "login": {
+      "title": "Sign in",
+      "rememberMe": "Remember me",
+      "submit": "Sign in",
+      "noAccount": "No account yet?",
+      "registerLink": "Create one"
+    },
+    "register": {
+      "title": "Create account",
+      "usernameHint": "3–32 characters: letters, digits, . _ -",
+      "passwordHint": "At least 8 characters",
+      "submit": "Create account",
+      "haveAccount": "Already have an account?",
+      "loginLink": "Sign in"
+    },
+    "errors": {
+      "invalidCredentials": "Invalid username or password.",
+      "usernameTaken": "This username is already taken.",
+      "usernameInvalid": "Use 3–32 characters: letters, digits, . _ -",
+      "passwordTooShort": "Password must be at least 8 characters.",
+      "passwordMismatch": "Passwords do not match.",
+      "serverError": "Something went wrong. Please try again."
+    }
+  },
+  "account": {
+    "menuLabel": "Account",
+    "signedInAs": "Signed in as {{username}}",
+    "signOut": "Sign out"
+  },
+  "admin": {
+    "title": "Admin",
+    "tabs": {
+      "backlog": "Backlog"
+    },
+    "status": {
+      "backlog": "Backlog",
+      "ingesting": "Ingesting",
+      "in_review": "In review",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "backlog": {
+      "filterLabel": "Status",
+      "filterAll": "All statuses",
+      "addModel": "Add model",
+      "review": "Review",
+      "retryIngestion": "Retry ingestion",
+      "startIngestion": "Start ingestion",
+      "operationQueued": "Queued…",
+      "percentComplete": "{{value}}%",
+      "ingestionFailed": "Ingestion failed",
+      "progressLabel": "Ingestion progress for {{name}}",
+      "loadError": "Could not load the backlog",
+      "emptyTitle": "No models yet",
+      "emptyBody": "Add a motorcycle model to start ingestion. It will appear here with live progress and move to review when its documents, specs and image are ready.",
+      "emptyFilteredTitle": "No models with this status",
+      "emptyFilteredBody": "Nothing in the catalogue currently has this status.",
+      "clearFilter": "Show all statuses",
+      "table": {
+        "ariaLabel": "Motorbike backlog",
+        "model": "Model",
+        "status": "Status",
+        "progress": "Ingestion",
+        "updated": "Updated",
+        "actions": "Actions"
+      },
+      "addDialog": {
+        "title": "Add model to backlog",
+        "nameLabel": "Model name",
+        "nameHint": "Manufacturer and model, e.g. “Suzuki GSR 600”",
+        "nameRequired": "Enter a model name.",
+        "duplicate": "This model is already in the catalogue.",
+        "submit": "Add & start ingestion"
+      },
+      "transitionError": "Could not start the ingestion. Please try again.",
+      "operationsLoadError": "Ingestion progress could not be loaded — statuses are still current."
+    },
+    "review": {
+      "back": "Backlog",
+      "notFoundTitle": "Model not found",
+      "notFoundBody": "This model does not exist or was removed.",
+      "loadError": "Could not load this model",
+      "ingestingTitle": "Ingestion in progress",
+      "ingestingBody": "Documents, specs and an image are being collected. Review opens automatically when ingestion finishes.",
+      "backlogNotice": "This model has not been ingested yet.",
+      "approvedNotice": "This model is published. Specs shown are the verified values.",
+      "tabs": {
+        "documents": "Documents",
+        "specs": "Specs",
+        "image": "Image",
+        "identity": "Identity"
+      },
+      "documents": {
+        "listLabel": "Source documents",
+        "fetchedAt": "Fetched {{date}}",
+        "emptyTitle": "No documents",
+        "emptyBody": "Ingestion did not store any source documents for this model.",
+        "sourceType": {
+          "wikipedia": "Wikipedia",
+          "product": "Product page",
+          "technical": "Technical documentation",
+          "magazine": "Magazine",
+          "upload": "Upload",
+          "listing": "Used listing"
+        },
+        "loadError": "Could not load the documents"
+      },
+      "specs": {
+        "draftHeading": "Draft specification",
+        "draftHint": "You are editing the draft. Approving the model promotes these values to the verified specification.",
+        "verifiedHeading": "Verified specification",
+        "extraHeading": "Additional extracted data",
+        "save": "Save draft",
+        "resetBtn": "Discard changes",
+        "saved": "Draft saved.",
+        "fields": {
+          "engineCc": "Engine displacement",
+          "powerKw": "Power",
+          "torqueNm": "Torque",
+          "wetWeightKg": "Wet weight",
+          "seatHeightMm": "Seat height",
+          "a2Eligible": "A2 eligible",
+          "priceBand": "Price band",
+          "category": "Category"
+        },
+        "units": {
+          "cc": "cc",
+          "kw": "kW",
+          "nm": "Nm",
+          "kg": "kg",
+          "mm": "mm"
+        },
+        "errors": {
+          "numberInvalid": "Enter a positive number."
+        }
+      },
+      "image": {
+        "imageStatus": {
+          "pending": "Pending",
+          "approved": "Approved",
+          "rejected": "Rejected"
+        },
+        "variant": {
+          "thumb": "Thumbnail",
+          "card": "Card"
+        },
+        "attributionHeading": "Attribution / licence",
+        "attributionUnknown": "No licence information could be retrieved for this image — verify before approving.",
+        "sourceLink": "Image source",
+        "reject": "Reject image",
+        "rejectConfirmTitle": "Reject this image?",
+        "rejectConfirmBody": "The image will not be published with the model. Uploading a replacement is not available yet.",
+        "rejectedNotice": "Image rejected. The model can still be approved without an image.",
+        "emptyTitle": "No image",
+        "emptyBody": "Ingestion did not fetch an image for this model.",
+        "loadError": "Could not load the image"
+      },
+      "actions": {
+        "approve": "Approve & publish",
+        "reject": "Reject",
+        "approveConfirmTitle": "Publish this model?",
+        "approveConfirmBody": "The draft specification becomes the verified specification, a pending image is approved, and the model goes live in the catalogue.",
+        "confirmApprove": "Publish",
+        "rejectConfirmTitle": "Reject this model?",
+        "rejectConfirmBody": "The model is marked rejected. Its documents and draft specification are kept — you can restart ingestion from the backlog list.",
+        "confirmReject": "Reject",
+        "unsavedWarning": "You have unsaved spec edits — approval publishes the last saved draft, not your current changes.",
+        "actionError": "The action failed. Please try again."
+      },
+      "approveBlockedIdentity": "This model cannot be published yet: manufacturer, model name and start year must be filled in the Identity tab first."
+    },
+    "identity": {
+      "manufacturer": "Manufacturer",
+      "buildingline": "Buildingline",
+      "buildinglineHint": "Model family used for grouping — pick an existing spelling when one exists.",
+      "buildinglineNeedsManufacturer": "Select a manufacturer first.",
+      "modelName": "Model name",
+      "modelNameHint": "The marketing name without manufacturer, trim or year — e.g. R 1300 GS.",
+      "yearFrom": "Year from",
+      "yearTo": "Year to",
+      "yearToHint": "Leave empty if the model is still in production.",
+      "typeCodes": "Type codes",
+      "typeCodeA11y": "Type code {{code}}",
+      "typeCodesMore": "and {{count}} more: {{codes}}",
+      "typeCodesHint": "Used to find and look up this model. Never shown to customers.",
+      "slug": "Slug",
+      "slugHint": "Derived from manufacturer, model and year range — recomputed when you save.",
+      "queryName": "Originally entered as",
+      "save": "Save identity",
+      "discard": "Discard",
+      "saved": "Identity saved.",
+      "optionsLoadError": "Manufacturer or buildingline suggestions could not be loaded.",
+      "researchWarnings": "Research finished with warnings",
+      "errors": {
+        "modelNameTooLong": "At most 128 characters.",
+        "buildinglineTooLong": "At most 64 characters.",
+        "yearInvalid": "Enter a four-digit year.",
+        "yearOrder": "\"Year to\" must not be before \"Year from\".",
+        "typeCodeInvalid": "Codes are 2–32 characters: letters, digits, hyphen, slash or space.",
+        "typeCodesMax": "At most 8 codes.",
+        "duplicateIdentity": "Another catalogue entry already has this manufacturer, model name and start year."
+      },
+      "claim": {
+        "heading": "Unverified claim",
+        "hint": "Imported from a suggestion list — research must confirm it before it becomes catalogue data.",
+        "listedAs": "Listed as",
+        "source": "Source",
+        "links": "Suggested links",
+        "value": "Claim: {{value}}",
+        "use": "Use claim",
+        "useA11y": "Use the claimed {{field}}",
+        "noManufacturerMatch": "No matching manufacturer in the catalogue."
+      },
+      "variants": {
+        "heading": "Trims",
+        "baseHint": "This catalogue entry is the base trim; list only what a trim changes or adds.",
+        "empty": "No trims recorded — this entry is the base model.",
+        "add": "Add trim",
+        "remove": "Remove trim",
+        "moveUp": "Move up",
+        "moveDown": "Move down",
+        "name": "Trim name",
+        "description": "Description",
+        "descriptionCount": "{{count}}/400",
+        "addSpec": "Add difference",
+        "removeSpec": "Remove difference",
+        "specField": "Specification",
+        "specValue": "Value",
+        "errors": {
+          "nameRequired": "Every trim needs a name.",
+          "nameDuplicate": "Trim names must be unique.",
+          "descriptionTooLong": "At most 400 characters.",
+          "max": "At most 20 trims."
+        }
+      },
+      "preview": {
+        "heading": "Preview",
+        "level": "Level {{n}}"
+      }
+    }
+  },
+  "catalogue": {
+    "list": {
+      "title": "Catalogue",
+      "gridLabel": "Catalogue models",
+      "loadingLabel": "Updating results",
+      "resultCount_one": "{{count}} model",
+      "resultCount_other": "{{count}} models",
+      "loadError": "Could not load the catalogue",
+      "emptyTitle": "The catalogue is empty",
+      "emptyBody": "No motorcycles have been published yet. Ask the advisor about a model — it gets researched, verified and added here.",
+      "emptyAction": "Ask the advisor",
+      "noMatchTitle": "No models match these filters",
+      "noMatchBody": "Try widening a range or clearing the filters.",
+      "clearFilters": "Clear filters"
+    },
+    "sort": {
+      "label": "Sort by",
+      "nameAsc": "Name (A–Z)",
+      "nameDesc": "Name (Z–A)",
+      "priceAsc": "Price (low to high)",
+      "priceDesc": "Price (high to low)"
+    },
+    "filters": {
+      "title": "Filters",
+      "open": "Filters",
+      "close": "Close filters",
+      "showResults_one": "Show {{count}} model",
+      "showResults_other": "Show {{count}} models",
+      "category": "Category",
+      "priceBand": "Price band",
+      "manufacturer": "Manufacturer",
+      "manufacturerAll": "All manufacturers",
+      "engineCc": "Engine displacement (cc)",
+      "powerKw": "Power (kW)",
+      "min": "Min",
+      "max": "Max",
+      "seatHeightMax": "Max seat height (mm)",
+      "weightMax": "Max weight (kg)",
+      "a2Only": "A2-eligible only"
+    },
+    "detail": {
+      "back": "Catalogue",
+      "notFoundTitle": "Model not found",
+      "notFoundBody": "This model does not exist or is not published.",
+      "loadError": "Could not load this model",
+      "aboutHeading": "About this bike",
+      "specsHeading": "Verified specifications",
+      "specsTableLabel": "Verified specifications",
+      "noSpecs": "No verified specifications are available for this model yet.",
+      "groups": {
+        "engine": "Engine & performance",
+        "chassis": "Dimensions & ergonomics",
+        "safety": "Licence & safety",
+        "market": "Classification & price"
+      },
+      "galleryLabel": "Photos of {{name}}",
+      "imageThumbLabel": "Show photo {{index}}",
+      "sourcesHeading": "Sources",
+      "sourcesLabel": "Sources",
+      "sourcesHint": "Specifications and prose on this page are derived from these retrieved documents.",
+      "sourcesEmpty": "No source documents are recorded for this model.",
+      "sourceNoUrl": "Uploaded document",
+      "trims": {
+        "heading": "Trims"
+      }
+    }
+  },
+  "consultations": {
+    "list": {
+      "title": "Consultations",
+      "listLabel": "Your consultations",
+      "newConsultation": "Ask the advisor",
+      "untitled": "New consultation",
+      "replying": "Advisor is replying…",
+      "loadError": "Could not load your consultations",
+      "emptyTitle": "Ask the advisor",
+      "emptyBody": "The advisor interviews you about your experience, licence, budget and how you ride — then recommends motorcycles from our verified catalogue.",
+      "createError": "Could not start a consultation. Please try again.",
+      "delete": "Delete consultation",
+      "deleteConfirmTitle": "Delete this consultation?",
+      "deleteConfirmBody": "“{{title}}” and its conversation will be removed from your list.",
+      "deleteConfirm": "Delete"
+    },
+    "chat": {
+      "back": "Consultations",
+      "timelineLabel": "Conversation",
+      "notFoundTitle": "Consultation not found",
+      "notFoundBody": "This consultation does not exist or was removed.",
+      "loadError": "Could not load this consultation",
+      "introTitle": "Tell the advisor about yourself",
+      "introBody": "Start with anything — your riding experience, what you want a bike for, or a model you're curious about. The advisor will guide the conversation from there.",
+      "composerLabel": "Message",
+      "composerPlaceholder": "Tell the advisor…",
+      "send": "Send",
+      "messageTooLong": "This message is too long.",
+      "sending": "Sending…",
+      "seen": "Seen",
+      "sendFailed": "Not sent.",
+      "sendRetry": "Send again",
+      "sendDiscard": "Discard",
+      "typing": "The advisor is typing…",
+      "turnFailed": "The advisor could not finish this reply — please send your message again.",
+      "sourcesToggle": "Sources ({{count}})",
+      "sourcesLabel": "Sources"
+    },
+    "tools": {
+      "catalogueSearch": {
+        "title": "Catalogue search",
+        "noResults": "No matching models.",
+        "more": "+ {{count}} more"
+      },
+      "specComparison": {
+        "title": "Spec comparison",
+        "tableLabel": "Spec comparison",
+        "attribute": "Spec"
+      },
+      "licenceFitCheck": {
+        "title": "Licence & fit check",
+        "verdict": {
+          "pass": "Pass",
+          "fail": "Fail",
+          "unknown": "Unknown"
+        }
+      },
+      "costEstimator": {
+        "title": "Cost estimate",
+        "estimate": "Estimate",
+        "total": "Total",
+        "assumptions": "Assumptions ({{count}})"
+      },
+      "preferenceNoted": "Preference noted — {{attribute}}: {{value}} ({{firmness}})",
+      "firmness": {
+        "hard": "must-have",
+        "soft": "nice-to-have",
+        "exploring": "exploring"
+      },
+      "unknownBikeFlagged": "“{{name}}” isn't in our catalogue yet — noted for research."
+    },
+    "recommendations": {
+      "heading": "Recommended for you"
+    },
+    "specFields": {
+      "category": "Category",
+      "engineCc": "Engine displacement",
+      "cylinders": "Cylinders",
+      "powerKw": "Power",
+      "torqueNm": "Torque",
+      "wetWeightKg": "Wet weight",
+      "seatHeightMm": "Seat height",
+      "tankCapacityL": "Tank capacity",
+      "topSpeedKmh": "Top speed",
+      "abs": "ABS",
+      "a2Eligible": "A2 eligible",
+      "priceBand": "Price band",
+      "msrpEur": "List price"
+    },
+    "specUnits": {
+      "cc": "cc",
+      "kw": "kW",
+      "nm": "Nm",
+      "kg": "kg",
+      "mm": "mm",
+      "l": "l",
+      "kmh": "km/h",
+      "eur": "€"
+    }
+  },
+  "themeMode": {
+    "menuLabel": "Colour theme",
+    "buttonLabel": "Change colour theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  }
+}

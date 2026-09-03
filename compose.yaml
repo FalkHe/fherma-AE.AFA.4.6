@@ -1,0 +1,128 @@
+services:
+  app-web:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    # Copy .env.dist to .env before starting; .env is never committed.
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Source bind mount so uvicorn --reload picks up local edits.
+      - ./backend:/app
+    command: ["--reload", "--reload-dir", "/app/app"]
+    depends_on:
+      postgres:
+        # The entrypoint runs `alembic upgrade head`, so the database must
+        # accept connections before the container starts.
+        condition: service_healthy
+
+  app-worker:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    env_file:
+      - .env
+    volumes:
+      # Same source bind mount as app-web: one image, two roles.
+      - ./backend:/app
+    # The image entrypoint migrates and starts uvicorn; the worker must do
+    # neither. Schema migration belongs to app-web alone.
+    entrypoint: []
+    # The module list grows as job families are added.
+    command:
+      [
+        "taskiq",
+        "worker",
+        "app.jobs.broker:broker",
+        "app.jobs.demo",
+        "app.jobs.ingestion",
+        "app.jobs.embeddings",
+        "app.jobs.chat",
+      ]
+    depends_on:
+      postgres:
+        # Jobs write operation state, so the database must accept connections.
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      target: dev
+    environment:
+      # The SPA calls the backend from the browser, so this is the host-side
+      # URL, not the Compose service name. Deliberately set here and not in
+      # .env: it is a fixed development value, not a secret.
+      VITE_API_URL: http://localhost:8000
+      # Bind mounts do not reliably propagate inotify events into containers;
+      # see vite.config.ts.
+      VITE_SERVER_USE_POLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      # Source bind mount so Vite HMR picks up local edits.
+      - ./frontend:/app
+      # Anonymous volume keeping the image's node_modules from being shadowed
+      # by the bind mount (the host tree has none inside the container's view).
+      # Recreate it after changing dependencies: `docker compose up --build
+      # --force-recreate --renew-anon-volumes frontend`.
+      - /app/node_modules
+
+  # One-off CLI containers (profile `cli`: not started by `docker compose up`,
+  # invoked via `docker compose run --rm <service> <cmd>` — see the Makefile).
+  # They reuse the app build definitions, so `make build` keeps them fresh.
+  app-cli:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+    # The image's entrypoint runs migrations + uvicorn; the CLI runs whatever
+    # command is passed to `docker compose run` instead.
+    entrypoint: []
+    profiles:
+      - cli
+
+  node-cli:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      target: dev
+    volumes:
+      - ./frontend:/app
+      # Fresh anonymous node_modules from the image for each run.
+      - /app/node_modules
+    profiles:
+      - cli
+
+  postgres:
+    # pgvector ships the extension the RAG store needs; plain postgres:16 does not.
+    image: pgvector/pgvector:pg16
+    # Development credentials. They must match DATABASE_URL in .env
+    # (see .env.dist): postgresql+psycopg://app:app@postgres:5432/application
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: application
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d application"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    # Taskiq broker only (see app-worker); the app never stores state here,
+    # so no volume and no readiness coupling.
+    image: redis:7-alpine
+
+volumes:
+  postgres-data:

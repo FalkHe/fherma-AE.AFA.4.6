@@ -1,0 +1,39 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "pageid": 9876543,
+        "ns": 6,
+        "title": "File:Suzuki_GSR600.jpg",
+        "imagerepository": "local",
+        "imageinfo": [
+          {
+            "extmetadata": {
+              "LicenseShortName": {
+                "value": "CC BY-SA 3.0",
+                "source": "commons-desc-page"
+              },
+              "Artist": {
+                "value": "<a href=\"https://commons.wikimedia.org/wiki/User:Rider\" title=\"User:Rider\">Rider&nbsp;Dave</a>",
+                "source": "commons-desc-page"
+              },
+              "Credit": {
+                "value": "<span class=\"int-own-work\">Own work</span>",
+                "source": "commons-desc-page"
+              },
+              "UsageTerms": {
+                "value": "Creative Commons Attribution-Share Alike 3.0",
+                "source": "commons-desc-page"
+              },
+              "LicenseUrl": {
+                "value": "https://creativecommons.org/licenses/by-sa/3.0",
+                "source": "commons-desc-page"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

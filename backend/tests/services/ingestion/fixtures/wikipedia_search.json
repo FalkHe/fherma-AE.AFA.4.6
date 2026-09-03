@@ -1,0 +1,37 @@
+{
+  "pages": [
+    {
+      "id": 4093281,
+      "key": "Suzuki_GSR600",
+      "title": "Suzuki GSR600",
+      "excerpt": "The <span class=\"searchmatch\">Suzuki</span> <span class=\"searchmatch\">GSR600</span> is a naked motorcycle produced by Suzuki between 2006 and 2011.",
+      "matched_title": null,
+      "description": "Type of motorcycle",
+      "thumbnail": {
+        "mimetype": "image/jpeg",
+        "width": 60,
+        "height": 40,
+        "duration": null,
+        "url": "//upload.wikimedia.org/wikipedia/commons/thumb/1/12/Suzuki_GSR600.jpg/60px-Suzuki_GSR600.jpg"
+      }
+    },
+    {
+      "id": 1041312,
+      "key": "Suzuki_GSX-R600",
+      "title": "Suzuki GSX-R600",
+      "excerpt": "The <span class=\"searchmatch\">Suzuki</span> GSX-R600 is a sport bike.",
+      "matched_title": null,
+      "description": "Type of motorcycle",
+      "thumbnail": null
+    },
+    {
+      "id": 2154467,
+      "key": "Suzuki_Bandit_600",
+      "title": "Suzuki Bandit 600",
+      "excerpt": "The <span class=\"searchmatch\">Suzuki</span> Bandit 600 is a standard motorcycle.",
+      "matched_title": null,
+      "description": "Type of motorcycle",
+      "thumbnail": null
+    }
+  ]
+}

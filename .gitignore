@@ -1,0 +1,22 @@
+# Local environment — never commit; use .env.dist as the template.
+.env
+
+# Local-only overrides (e.g. compose.local.yaml) — never commit.
+*.local.yaml
+
+# Retained ingestion payloads and generated media (DATA_DIR / MEDIA_DIR).
+backend/var/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Playwright
+.playwright-cli
+
+# VS Code
+.vscode
+
+# AC Report
+/ac-report.*

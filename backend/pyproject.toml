@@ -1,0 +1,83 @@
+[project]
+name = "app"
+description = "Motorcycle Buying Advisor backend (FastAPI + Typer)"
+requires-python = ">=3.12,<3.13"
+dynamic = ["version"]
+dependencies = [
+    # HTTP / API
+    "fastapi~=0.141.0",
+    "uvicorn[standard]~=0.52.0",
+    "sse-starlette~=3.4.0",
+    # Outbound HTTP (ingestion fetch, search providers). HTTPX 2.x ships under
+    # the `httpx2` distribution; it was already installed as a test-only
+    # dependency of fastapi.testclient and is now runtime.
+    "httpx2~=2.0.0",
+    # Main-text extraction from fetched article HTML.
+    "trafilatura~=2.2.0",
+    # Models / validation / configuration
+    "pydantic~=2.13.0",
+    "pydantic-settings~=2.15.0",
+    # Database
+    "sqlalchemy[asyncio]~=2.0.52",
+    "psycopg[binary]~=3.3.0",
+    "alembic~=1.19.0",
+    # Identity
+    "python-ulid~=4.0.0",
+    # Authentication
+    "pwdlib[argon2]~=0.2.1",
+    # LLM access: LangChain is the abstraction, OpenRouter the only gateway.
+    "langchain~=1.0",
+    "langchain-openrouter>=0.2.8,<0.3",
+    # Embeddings only: langchain-openrouter ships no embeddings class, so the
+    # OpenAI-compatible wrapper is pointed at OpenRouter's own /embeddings
+    # route. Chat never goes through this package.
+    "langchain-openai~=1.0",
+    # AI observability: LangChain callback handler for Langfuse, gated behind
+    # the optional LANGFUSE_* configuration (empty by default, traces nothing).
+    "langfuse~=4.0",
+    # Prompt templates (Markdown + Jinja files under app/llm/prompts/).
+    "jinja2~=3.1",
+    # Structural chunking of source documents (headings, then characters).
+    "langchain-text-splitters~=1.0",
+    # pgvector SQLAlchemy column type for the chunk embeddings.
+    "pgvector~=0.4.1",
+    # Image variants generated at ingest time and served as static files.
+    "pillow~=12.3.0",
+    # CLI
+    "typer~=0.27.0",
+    # Background jobs
+    "taskiq~=0.12.5",
+    "taskiq-redis~=1.2.3",
+]
+
+[project.scripts]
+app = "app.cli.main:app"
+
+[dependency-groups]
+dev = [
+    "ruff~=0.15.0",
+    # Tests
+    "pytest~=9.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "app/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+filterwarnings = ["error"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
