@@ -27,7 +27,7 @@ open:
 
 Reuses the dev's `RecordingSession`/`StubEmbeddings`/fixtures rather than
 re-implementing them, per the Landed-decisions note in
-`docs/roadmap/phase-3/shared-knowledge.md` (Step 3.7): the point of that stub
+`docs/roadmap/stage-01/phase-3/shared-knowledge.md` (Step 3.7): the point of that stub
 is exactly to avoid re-deriving RRF arithmetic in a fake session.
 """
 

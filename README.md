@@ -4,8 +4,9 @@ A conversational AI advisor that interviews a customer about their needs and
 recommends motorcycle models, grounded in an internal curated database of
 verified specifications and retrieved prose about how those bikes are
 actually regarded — rather than an LLM's outdated training data or
-marketing-biased public sources. This is the AE.AFA.3.5 Turing College
-Sprint 3 project: a domain-specialised RAG chatbot built with LangChain,
+marketing-biased public sources. This is the AE.AFA.4.6 Turing College
+Sprint 4 project ("Stage 02"), continuing the AE.AFA.3.5 Sprint 3 project
+("Stage 01"): a domain-specialised RAG chatbot built with LangChain,
 advanced RAG techniques, tool calling, and a vector database.
 
 ## Current State
@@ -35,7 +36,7 @@ render what the advisor actually did.
 
 **3. Domain specialisation**
 `backend/app/llm/prompts/` (`advisor_system.md`, `query_translation.md`),
-`backend/app/llm/fencing.py`, `docs/project-vision.md`
+`backend/app/llm/fencing.py`, `docs/general/project-vision.md`
 Motorcycle buying advice: versioned domain prompts drive the interview and
 turn an utterance into search queries plus hard spec filters. Retrieved
 third-party text is sentinel-fenced before the model sees it, the domain's
@@ -75,8 +76,9 @@ plus optional Langfuse tracing via `compose.langfuse.yaml` — see
 `backend/app/llm/models.py`; no per-turn grouping, no metrics), multi-model
 support (`CHAT_MODEL` / `ADVISOR_MODEL` / `EMBEDDING_MODEL` are independent
 settings, but no in-UI picker), automated KB updates (fully automated once
-triggered, but the trigger is an admin action). `docs/core-requirements-checklist.md` lists the
-scope of each partial honestly, and what was not attempted.
+triggered, but the trigger is an admin action). `docs/general/decisions.md`
+records what was deliberately not built, and `docs/general/security.md` the
+known gaps.
 
 ## Quick start (for reviewers)
 
@@ -86,8 +88,8 @@ Use `make` or review `Makefile` for exact `docker`  commands.
 ### Startup
 
 ```bash
-git clone git@github.com:TuringCollegeSubmissions/fherma-AE.AFA.3.5.git
-cd fherma-AE.AFA.3.5
+git clone git@github.com:TuringCollegeSubmissions/fherma-AE.AFA.4.6.git
+cd fherma-AE.AFA.4.6
 cp .env.dist .env   
 ```       
 Add your `OPENROUTER_API_KEY` to .env.
@@ -96,6 +98,13 @@ Add your `OPENROUTER_API_KEY` to .env.
 make up                    # starts API, worker, frontend, Postgres, Redis; migrates the DB
 make snapshot-load         # restores a curated catalogue: rows, sources, images, embeddings
 ```
+
+> **`make snapshot-load` cannot work in this checkout.** The snapshot lives in
+> `backend/resources/catalogue-snapshot/`, which is absent from this repository
+> and untracked in git — it was not carried over from the Stage-01 copy. Until
+> it is restored, populate the catalogue with `app seed demo` instead (real
+> ingestion: needs `OPENROUTER_API_KEY`, costs API calls, takes minutes per
+> model). See `docs/modules/demo-data.md`.
 
 Visit http://localhost:5173 for customer frontend
 
@@ -152,18 +161,18 @@ make down
      <http://localhost:5173/admin>
    - Interactive API docs: <http://localhost:8000/docs>
 
-`make down` stops everything. `docs/demo-walkthrough.md` is a replayable,
-chapter-by-chapter tour of every graded requirement — start there for a
-review; the sections below cover each step in full detail.
+`make down` stops everything. `docs/README.md` indexes the documentation —
+start there for architecture and subsystem detail; the sections below cover
+each step of the setup in full.
 
 ## Stack
 
 - Backend: Python, FastAPI, Typer, SQLAlchemy 2 (async), Alembic, PostgreSQL
   (pgvector), Redis, Taskiq (background jobs), LangChain + OpenRouter (LLM and
-  embeddings) — see `docs/backend-stack.md`.
+  embeddings) — see `docs/general/backend-stack.md`.
 - Frontend: TypeScript, React, Vite, Material UI, TanStack Query, React
-  Router, react-i18next — see `docs/frontend-stack.md`.
-- Architecture and conventions: `docs/architecture.md`.
+  Router, react-i18next — see `docs/general/frontend-stack.md`.
+- Architecture and conventions: `docs/general/architecture.md`.
 
 ## Prerequisites
 
@@ -203,7 +212,7 @@ running the apps or their checks directly on the host.
      calling an LLM.
 
    Set both to use ingestion and the LLM features fully — see
-   `docs/ingestion.md`.
+   `docs/modules/ingestion.md`.
 
 2. Start the stack:
 
@@ -261,14 +270,14 @@ argument.
 
 Once signed in as admin, open <http://localhost:5173/admin> to add a model by
 name, watch ingestion progress live, and review/approve the result. See
-`docs/ingestion.md` for the full flow, the ingestion CLI commands, and the
+`docs/modules/ingestion.md` for the full flow, the ingestion CLI commands, and the
 re-chunk/re-embed commands.
 
 ## CLI reference
 
 Every sub-app below is invoked as `docker compose exec app-web app <name> <command> ...`
 (swap for `docker compose exec app-worker ...` or, outside Docker, `uv run app ...`
-from `backend/` — see "Running the backend locally with uv"). `docs/ingestion.md`
+from `backend/` — see "Running the backend locally with uv"). `docs/modules/ingestion.md`
 covers `ingest`, `chunks`, `embeddings`, `llm` and `jobs` in full detail with
 worked examples; `seed`, `snapshot` and `suggestions` are spelled out below.
 
@@ -368,7 +377,7 @@ is 1 only if every attempted (non-skipped) model failed.
 `approved` through the same review-transition service an admin's approval
 click uses (`in_review → approved`) — it is a bulk convenience for
 bootstrapping a demo catalogue, **not** a replacement for the admin review
-workflow itself. `docs/demo-walkthrough.md` still walks through reviewing and
+workflow itself. `docs/modules/catalogue.md` describes reviewing and
 approving one model live, by hand, to demonstrate that flow.
 
 ## Suggesting models in bulk
@@ -402,7 +411,7 @@ slug already exists is never re-created or re-ingested; it only picks up the
 suggestion document if it has none yet.
 
 Promoting a claim into `model_name` / `year_from` / `year_to` is Phase-6 work
-(`docs/roadmap.md`) — today ingestion researches the manufacturer but leaves the
+(`docs/roadmap/roadmap.md`) — today ingestion researches the manufacturer but leaves the
 year columns NULL.
 
 ## Optional observability (Langfuse)
@@ -534,7 +543,7 @@ pnpm typecheck  # TypeScript type check across all tsconfig projects
 Both test suites run entirely on the host with no infrastructure: backend
 tests stub the database session via FastAPI dependency overrides (never a
 real engine — see the `lru_cache`'d async-engine pitfall in
-`docs/qa-checklist.md`), and frontend tests run in jsdom against a stubbed
+`.claude/skills/qa-checklist/SKILL.md`), and frontend tests run in jsdom against a stubbed
 `fetch`, so neither needs Docker Compose, Postgres, or the backend running.
 Frontend test setup lives in `frontend/vitest.config.ts` and
 `frontend/src/test/`.
@@ -554,7 +563,7 @@ This exports the schema from the running `app-web` container (so the stack
 must be up) and feeds it into `openapi-typescript` inside a one-off
 `node-cli` container — no host Node needed. (`cd frontend && pnpm
 generate:api` still works as a host-side alternative if you have pnpm.)
-Commit the regenerated `schema.d.ts`. See `docs/qa-checklist.md` for the
+Commit the regenerated `schema.d.ts`. See `.claude/skills/qa-checklist/SKILL.md` for the
 convention that keeps it from drifting.
 
 ## Known limitations & future work
@@ -591,15 +600,20 @@ convention that keeps it from drifting.
 
 ## Further reading
 
-- `docs/architecture.md` — binding architecture decisions
-- `docs/backend-stack.md`, `docs/frontend-stack.md` — stack choices and why
-- `docs/ingestion.md` — admin ingestion flow and CLI commands
-- `docs/demo-walkthrough.md` — replayable demo: consultation → catalogue
-  browse/filter/detail → recommendation-card click-through, plus curl role
-  scoping checks
-- `docs/roadmap.md` — phased implementation plan
-- `docs/core-requirements.md` — grading requirements
-- `docs/core-requirements-checklist.md` — every grading requirement and claimed bonus mapped
-  to concrete files/endpoints/screens, with how each is implemented
-- `docs/qa-checklist.md` — QA checklist and known rough edges
-- `125.md` — original task brief
+Start at **`docs/README.md`** — it indexes everything. Directly useful here:
+
+- `docs/general/project-vision.md` — what this is, and the graded requirements
+- `docs/general/architecture.md` — binding architecture decisions
+- `docs/general/decisions.md` — non-obvious choices, open decisions, what we did
+  not build
+- `docs/general/security.md` — auth, validation, prompt-injection fencing, known
+  gaps
+- `docs/general/backend-stack.md`, `docs/general/frontend-stack.md` — stack
+  choices and why
+- `docs/modules/ingestion.md` — admin ingestion flow, internals and CLI
+- `docs/modules/catalogue.md`, `docs/modules/retrieval-advisor.md`,
+  `docs/modules/chat-consultation.md` — the three main subsystems
+- `docs/modules/demo-data.md` — seeding, snapshots, bulk import
+- `docs/roadmap/roadmap.md` — phased implementation plan (history)
+- `.claude/skills/qa-checklist/SKILL.md` — QA checklist and known rough edges
+- `125.md` — Stage 01 task brief · `135.md` — Stage 02 task brief

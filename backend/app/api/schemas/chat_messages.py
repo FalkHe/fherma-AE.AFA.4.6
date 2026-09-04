@@ -1,6 +1,6 @@
 """Schemas for the `chat-messages` resource: one turn of a consultation.
 
-Wire shape is pinned by `docs/roadmap/phase-3/shared-knowledge.md` (§Persisted
+Wire shape is pinned by `docs/roadmap/stage-01/phase-3/shared-knowledge.md` (§Persisted
 JSONB shapes, §JSON:API resources): resource type `chat-messages`, attributes
 `role`, `body`, `toolCalls`, `sources`, `recommendations`, `createdAt`.
 

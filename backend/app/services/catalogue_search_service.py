@@ -37,7 +37,7 @@ three rules:
   where the catalogue has no verified number. Nothing is ever inferred to fill a
   gap; the comparison table shows the gap instead. Each entry also carries
   `parts: naming_service.NameParts`, loaded in the same statement, so a caller
-  can render the name in its own context (`docs/roadmap/phase-6/shared-knowledge.md`
+  can render the name in its own context (`docs/roadmap/stage-01/phase-6/shared-knowledge.md`
   D5); `name` itself stays a rendered convenience for a caller with no context.
 
 `browse_motorbikes` (step 4.3) serves the customer catalogue and keeps two of

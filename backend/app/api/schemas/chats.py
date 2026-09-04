@@ -1,6 +1,6 @@
 """Schemas for the `chats` resource: one consultation with the advisor.
 
-Wire shape is pinned by `docs/roadmap/phase-3/shared-knowledge.md`: resource
+Wire shape is pinned by `docs/roadmap/stage-01/phase-3/shared-knowledge.md`: resource
 type `chats`, camelCase attributes `title`, `activeOperationId`, `createdAt`,
 `updatedAt`.
 

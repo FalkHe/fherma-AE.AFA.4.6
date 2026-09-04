@@ -1,6 +1,6 @@
 """Schemas for the `documents` resource.
 
-Wire shape is pinned by `docs/roadmap/phase-2/shared-knowledge.md`: resource
+Wire shape is pinned by `docs/roadmap/stage-01/phase-2/shared-knowledge.md`: resource
 type `documents`, camelCase attributes, read-only. Documents are written by
 ingestion only — there is deliberately no request model, so no admin can edit
 the prose the extraction and the knowledge base were built from.

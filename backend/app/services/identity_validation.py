@@ -10,7 +10,7 @@ decide what to do with `(kept, warnings)`.
 `VARIANT_SPEC_KEYS` deliberately excludes `source_hints` and `extracted_at`
 from `motorbike_spec.SPEC_FIELDS`: those two are per-extraction bookkeeping
 about the *row*, not a property a trim can differ in. See
-`docs/roadmap/phase-6/shared-knowledge.md` D1 for the adjudication — this is
+`docs/roadmap/stage-01/phase-6/shared-knowledge.md` D1 for the adjudication — this is
 not the `UNCOMPARED_SPEC_FIELDS` tuple in `catalogue_search_service.py`, which
 also excludes `extra`; that tuple is not reused here.
 """

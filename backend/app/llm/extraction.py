@@ -511,7 +511,7 @@ class ExtractedSpec(BaseModel):
         *parsed* shape): the field's Python type stays exactly
         `list[dict[str, Any]]`, `to_identity_values()`'s shape is unaffected,
         and `identity_validation.normalize_variants` (unchanged) still decides
-        what is kept. See `docs/roadmap/phase-6/shared-knowledge.md` — Step
+        what is kept. See `docs/roadmap/stage-01/phase-6/shared-knowledge.md` — Step
         6.15's landed decisions record this as a disclosed deviation from the
         step's literal outline text.
         """

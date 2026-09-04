@@ -1,6 +1,6 @@
 """Schemas for the `product-images` resource.
 
-Wire shape is pinned by `docs/roadmap/phase-2/shared-knowledge.md`: resource
+Wire shape is pinned by `docs/roadmap/stage-01/phase-2/shared-knowledge.md`: resource
 type `product-images`, camelCase attributes, `status` the single writable one.
 
 The `variants` object is **computed, never stored and never read from disk**:

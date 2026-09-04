@@ -36,7 +36,7 @@ still records `result.model_dump(...)` unfenced — `tool_calls[].result` and
 what gets persisted.
 
 Step 6.14 (D7,
-`docs/roadmap/phase-6/shared-knowledge.md`): a chunk's `source_title` and
+`docs/roadmap/stage-01/phase-6/shared-knowledge.md`): a chunk's `source_title` and
 `heading_path` are exactly as attacker-controlled as its `text` — both are
 web-derived free text nobody has reviewed. `source_title` is the fetched page's
 own `<title>`, carried through unchanged by

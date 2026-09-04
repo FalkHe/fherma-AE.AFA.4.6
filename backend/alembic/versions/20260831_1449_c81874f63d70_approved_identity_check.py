@@ -1,6 +1,6 @@
 """approved identity check
 
-Fourth and final of the phase's four pinned migrations (`docs/roadmap/phase-6/
+Fourth and final of the phase's four pinned migrations (`docs/roadmap/stage-01/phase-6/
 shared-knowledge.md`, hard rules; D4). Adds
 `ck_motorbikes_approved_identity_complete`: an `approved` row must carry
 `manufacturer_id`, `model_name` and `year_from` — D4's completeness guard,

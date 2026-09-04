@@ -32,7 +32,7 @@ PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
 
 # Owner-approved (OQ-A) sole relaxation of "login is deliberately unvalidated"
-# (see `docs/roadmap/phase-1/shared-knowledge.md`): caps Argon2 work per
+# (see `docs/roadmap/stage-01/phase-1/shared-knowledge.md`): caps Argon2 work per
 # attempt, nothing else about login gains a rule.
 LOGIN_PASSWORD_MAX_LENGTH = 1024
 

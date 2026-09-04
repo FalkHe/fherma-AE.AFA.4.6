@@ -29,7 +29,7 @@ only after, the draft specification was written, and never loudly enough to
 cost the run its specification.
 
 The identity write additionally follows **D2b**
-(`docs/roadmap/phase-6/shared-knowledge.md`): `product_service.assign_identity`
+(`docs/roadmap/stage-01/phase-6/shared-knowledge.md`): `product_service.assign_identity`
 is a full-object replace, so this service **merges first** — the row's current
 identity wins over the extraction, field by field, and `type_codes` are
 unioned. A first ingestion therefore fills everything; a re-ingestion fills

@@ -13,7 +13,7 @@ A tool is four things, and nothing else:
    the job that owns the turn, because one `AsyncSession` cannot serve concurrent
    statements.
 3. **A JSON-serializable Pydantic result in the pinned shape.**
-   `docs/roadmap/phase-3/shared-knowledge.md` §Tool result schemas is frozen —
+   `docs/roadmap/stage-01/phase-3/shared-knowledge.md` §Tool result schemas is frozen —
    the chat UI's renderers are written against those exact camelCase keys, so a
    renamed field breaks the other track silently. A tool that cannot resolve a
    bike name returns the shared `UnknownBikeResult` instead of its normal result;

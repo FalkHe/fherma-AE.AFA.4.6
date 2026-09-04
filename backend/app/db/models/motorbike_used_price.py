@@ -1,7 +1,7 @@
 """The `motorbike_used_prices` table: one researched used-market snapshot per bike.
 
 `msrp_eur`/`price_band` on `motorbike_specs` stay the new-bike, MSRP-derived
-fields (D9, `docs/roadmap/phase-6/shared-knowledge.md`); this table is the
+fields (D9, `docs/roadmap/stage-01/phase-6/shared-knowledge.md`); this table is the
 separate, unrelated used-market figure a research run finds. There is no
 draft/verified kind split here — a used price is deliberately never presented
 as a signed-off fact, the `as_of` date and `sources` are the honesty mechanism

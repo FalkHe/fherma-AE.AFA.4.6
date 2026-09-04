@@ -1,13 +1,13 @@
 """Schemas for the `products` resource.
 
-Wire shape is pinned by `docs/roadmap/phase-2/shared-knowledge.md`: resource
+Wire shape is pinned by `docs/roadmap/stage-01/phase-2/shared-knowledge.md`: resource
 type `products`, camelCase attributes, specification objects mirroring the
 frozen column set (`null` when the model has no such revision).
 
 `manufacturer` is the one attribute that is **derived** rather than a column: it
 carries the name of the related `manufacturers` row (`null` when the model has
 no brand assigned), which the endpoint resolves — see
-`docs/roadmap/phase-2b/shared-knowledge.md`. The shape is unchanged by that.
+`docs/roadmap/stage-01/phase-2b/shared-knowledge.md`. The shape is unchanged by that.
 
 Two specification models on purpose:
 
@@ -23,7 +23,7 @@ Two specification models on purpose:
 path writes a `verified` row. `extra="forbid"` on the request models is what
 turns a `verifiedSpec` in a PATCH body into a 422 instead of a silent no-op.
 
-Step 6.20 (`docs/roadmap/phase-6/shared-knowledge.md`) adds the identity block,
+Step 6.20 (`docs/roadmap/stage-01/phase-6/shared-knowledge.md`) adds the identity block,
 additively (D6/D10): `queryName`, `buildingline`, `typeCodes`, `variants` and
 `suggestion` on `ProductAttributes`; a writable `identity` block
 (`IdentityRequest`) on `ProductPatchAttributes`, applied through

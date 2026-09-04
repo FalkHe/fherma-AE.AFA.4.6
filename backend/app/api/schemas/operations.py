@@ -1,6 +1,6 @@
 """Schemas for the `operations` resource.
 
-Wire shape is pinned by `docs/roadmap/phase-2/shared-knowledge.md`: resource
+Wire shape is pinned by `docs/roadmap/stage-01/phase-2/shared-knowledge.md`: resource
 type `operations`, camelCase attributes, read-only. There is deliberately no
 request model — operations are created and advanced by services, never over
 HTTP, so the API cannot invent job state.

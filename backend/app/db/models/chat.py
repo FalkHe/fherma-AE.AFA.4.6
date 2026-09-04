@@ -6,7 +6,7 @@ are what the interview learned about the customer, superseded rather than
 overwritten so the history of a changing mind survives.
 
 Three deliberate shapes, all pinned by
-`docs/roadmap/phase-3/shared-knowledge.md`:
+`docs/roadmap/stage-01/phase-3/shared-knowledge.md`:
 
 * **`chats.deleted_at` is the only lifecycle flag** — there is no `status`
   column. Every read filters `deleted_at IS NULL`, so a deleted consultation

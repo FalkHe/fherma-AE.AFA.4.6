@@ -1,6 +1,6 @@
 """Schemas for the `manufacturers` resource.
 
-Wire shape is pinned by `docs/roadmap/phase-2b/shared-knowledge.md`: resource
+Wire shape is pinned by `docs/roadmap/stage-01/phase-2b/shared-knowledge.md`: resource
 type `manufacturers`, camelCase attributes `name`, `slug`, `description`,
 `logoPath`, `createdAt`, `updatedAt` — `null` for the two columns no writer
 fills yet.

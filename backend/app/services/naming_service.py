@@ -1,6 +1,6 @@
 """Rendering catalogue names — the one module that turns parts into a string.
 
-Per `docs/roadmap/phase-6/shared-knowledge.md` D5: the database stores parts
+Per `docs/roadmap/stage-01/phase-6/shared-knowledge.md` D5: the database stores parts
 (`manufacturer`, `buildingline`, `model_name`, a year range), never a
 pre-built display string, and exactly one module — this one — turns those
 parts into text, on the server, so every surface (tools, API, CLI) renders

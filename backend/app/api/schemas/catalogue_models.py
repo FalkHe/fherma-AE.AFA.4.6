@@ -1,6 +1,6 @@
 """Schemas for the `catalogue-models` resource: the customer's view of the catalogue.
 
-Wire shape is pinned by `docs/roadmap/phase-4/shared-knowledge.md`: resource type
+Wire shape is pinned by `docs/roadmap/stage-01/phase-4/shared-knowledge.md`: resource type
 `catalogue-models`, camelCase attributes, **read-only** — there is deliberately
 no request model at all (the 2b.3 `SpecAttributes` precedent), because nothing on
 this surface is writable: the catalogue is curated through the admin resources.

@@ -3,7 +3,7 @@
 One call to `ingest_image` is one image: it downloads the bytes, retains them
 unmodified, derives the three pinned WebP renditions and creates the
 `motorbike_images` row in `pending`. Ingestion calls it **at most once per run**
-(pinned in `docs/roadmap/phase-2/shared-knowledge.md`); the review UI renders the
+(pinned in `docs/roadmap/stage-01/phase-2/shared-knowledge.md`); the review UI renders the
 newest row.
 
 Two contracts this module must not break:

@@ -1,6 +1,6 @@
 """add motorbike_used_prices
 
-Third of the phase's four pinned migrations (`docs/roadmap/phase-6/shared-
+Third of the phase's four pinned migrations (`docs/roadmap/stage-01/phase-6/shared-
 knowledge.md`, hard rules). Two independent changes, in this order:
 
 1. `ALTER TYPE source_type ADD VALUE IF NOT EXISTS 'listing'` — a used-price

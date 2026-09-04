@@ -2,8 +2,8 @@
 
 React + TypeScript SPA built with Vite (`@vitejs/plugin-react-swc`). See the
 root [`README.md`](../README.md) for prerequisites and full-stack setup
-(Docker Compose, `.env`), and `docs/frontend-stack.md` plus the Frontend
-Architecture section of `docs/architecture.md` for the binding conventions.
+(Docker Compose, `.env`), and `docs/general/frontend-stack.md` plus the Frontend
+Architecture section of `docs/general/architecture.md` for the binding conventions.
 
 ## Scripts
 
@@ -16,7 +16,7 @@ Architecture section of `docs/architecture.md` for the binding conventions.
 | `pnpm test:watch`    | Vitest watch mode                                       |
 | `pnpm lint`          | ESLint                                                  |
 | `pnpm preview`       | Serve the production build locally                      |
-| `pnpm generate:api`  | Regenerate `src/api/schema.d.ts` from the running backend's OpenAPI schema (stack must be up; see `docs/qa-checklist.md`) |
+| `pnpm generate:api`  | Regenerate `src/api/schema.d.ts` from the running backend's OpenAPI schema (stack must be up; see `.claude/skills/qa-checklist/SKILL.md`) |
 
 ## Conventions
 
