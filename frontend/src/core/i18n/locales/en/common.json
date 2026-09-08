@@ -1,0 +1,13 @@
+{
+  "app": {
+    "title": "AI Dungeon Master",
+    "loading": "Loading…"
+  },
+  "actions": {
+    "retry": "Try again"
+  },
+  "errors": {
+    "network": "Cannot reach the server. Check your connection and try again.",
+    "unexpected": "Something went wrong. Please try again."
+  }
+}
