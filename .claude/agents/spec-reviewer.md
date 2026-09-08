@@ -36,7 +36,7 @@ check the spec against the code, not against the docs.
 6. **Risk surface.** New write tools, autonomy without a human-in-the-loop gate,
    widened authorization, unfenced untrusted text reaching a model, uncapped
    input, secrets or PII in logs — call these out explicitly.
-7. **Grading requirements** (`125.md`, `135.md`): LLM access via OpenRouter
+7. **Grading requirements** (`135.md`): LLM access via OpenRouter
    through LangChain; ≥3 domain tool calls; visible retrieved context, sources
    and tool results; progress indicators for long operations; error handling and
    input validation. Flag anything the spec quietly drops.

@@ -87,67 +87,119 @@ the repo already does one way.
 
 # The Project
 
-A conversational AI advisor that helps people choose a motorcycle by interviewing them about their needs, then recommending models based on both verified specifications and retrieved prose about how those bikes are actually regarded. Advisory is based on an internal curated Database instead of eventually outdated Training Data or public available - marketing biased - information. see @docs/general/project-vision.md for more details.
+A single-player Dungeons & Dragons (5e SRD) game run entirely by an AI agent.
+The agent narrates, interprets free-form player actions, rolls dice, looks up
+rules and keeps game state consistent across play sessions. Target users:
+people who want to try pen & paper without a group and without learning the
+rules first. See @docs/general/project-vision.md for the full vision — it is
+the binding description of scope, the content hierarchy and the vocabulary.
+
+**Guiding principle from the vision: the project proves knowledge of AI agents
+(prompting, RAG, tools, memory, human-in-the-loop), not game design. Keep
+everything else minimal.**
+
+Three layers stay separate, and this separation is architectural, not
+stylistic:
+
+- **Content** — campaigns, adventures, scenes, monster stat blocks as
+  structured JSON. Structured lookups use JSON, not RAG.
+- **Reasoning** — the LLM agent decides how a scene plays out.
+- **Mechanics** — deterministic tools (dice, HP, state validation). The LLM
+  never fakes a roll and never edits state directly.
+
+Only the SRD rules text is RAG.
 
 ## Tech Stack
-- Monorepository with backend and frontend
-- Backend: Python
-  - Major Frameworks/Libraries:
-    - FastApi
-    - Typer
-  - for details: see @docs/general/backend-stack.md
-- Frontend: Typescript  
-  - Major Frameworks/Libraries:
-    - React
-    - Material UI
-    - Vite
-  - for details: see @docs/general/frontend-stack.md
+
+- Monorepository with `backend/` and `frontend/`.
+- Backend: Python — FastAPI, Typer, SQLAlchemy 2 (async), Alembic, PostgreSQL
+  (pgvector), LangChain/LangGraph over OpenRouter. There is **no background
+  job runner and no Redis**: every operation is request-scoped or a CLI
+  one-off. For details see @docs/general/backend-stack.md.
+- Frontend: TypeScript — React, Material UI, Vite, TanStack Query, React
+  Router, react-i18next. For details see @docs/general/frontend-stack.md.
+
+## Code layout — modular by domain
+
+Both trees are organised by **module**, not by technical layer. A module owns
+its models, schemas, routes and service, and a reader should be able to delete
+a module without hunting through six shared directories.
+
+```
+backend/app/
+├── main.py
+├── core/                 # settings, logging, security primitives, db session
+├── api/v1/router.py      # combines the modular routers, nothing else
+└── modules/
+    └── <module>/         # models.py schemas.py routes.py service.py
+backend/tests/
+└── <module>/             # mirrors modules/ one-to-one
+```
+
+```
+frontend/src/
+├── core/                 # theme, config, api client, i18n setup
+├── components/           # genuinely shared UI only
+└── modules/
+    └── <module>/         # components/ hooks/ routes/
+```
+
+Shared code earns its place in `core/` only once a second module needs it. A
+helper with one caller lives in that caller's module.
+
+## Landed conventions
+
+These are pinned decisions, not preferences. Do not introduce a second way to
+do any of them.
+
+- **Auth**: username + password, Argon2 hashing, opaque server-side sessions
+  in Postgres, session token in an HttpOnly cookie, CSRF token required on
+  mutations. One role (`user`); there is no admin persona.
+- **Wire shape**: plain REST — resource objects returned directly, camelCase
+  on the wire via Pydantic aliases. Errors are a single envelope,
+  `{"error": {"code", "message", "details"}}`, with stable domain codes behind
+  a catch-all 500 handler. There is no JSON:API document layer.
+- **i18n**: every user-facing string goes through a react-i18next key. No
+  literal copy in components.
+- **LLM access** goes through OpenRouter via LangChain. Never wire to
+  `api.openai.com` directly.
 
 ## What this repository is
 
-Turing College Sprint 4 project (AE.AFA.4.6, "Stage 02"), started as a copy of the Sprint 3 project (AE.AFA.3.5, "Stage 01"): a domain-specialised RAG chatbot built with LangChain, advanced RAG techniques, tool calling, and a vector database. The task briefs live in `125.md` (Stage 01, still binding — its requirements are graded) and `135.md` (Stage 02) — read them before making architectural decisions.
+Turing College Sprint 4 project (AE.AFA.4.6). `135.md` is the **only** binding
+brief; the earlier sprint's brief (`125.md`) and its motorcycle-advisor project
+are obsolete and have been removed. The repository keeps that project's Docker
+scaffolding, agent roster and delivery loop, and nothing else.
 
-Documentation is indexed in `docs/README.md`: `docs/general/` for system-wide topics (vision, architecture, decisions, security, observability, stacks), `docs/modules/` for one subsystem each (ingestion, catalogue, model-naming, retrieval-advisor, chat-consultation, used-prices, demo-data), `docs/roadmap/` for phase history. **Where a roadmap phase doc and the code disagree, the code wins** — Phase 6 is only partly landed.
-
-## Stage-02 goal
-
-Stage-01 built the RAG advisor. Stage-02 turns ingestion into an **Ingestion
-Harness Agent**: a conversational helper in the admin UI that researches a
-motorcycle largely autonomously, but chats with the admin and asks for help when
-it cannot proceed alone — investigating suspicious or contradictory data, asking
-the admin to upload a source that cannot be fetched, confirming that a page
-really describes the intended bike. Some of those judgements it delegates to a
-judging-LLM tool rather than to the human.
-
-The design centre is therefore **human-in-the-loop, not full autonomy**: the
-agent must make its reasoning, its evidence and its open questions visible, and
-must hand control back at the points where a human's answer is cheaper or safer
-than a guess. `135.md` is the binding brief for this stage.
-
-
+Documentation is indexed in `docs/README.md`: `docs/general/` for system-wide
+topics (vision, architecture, decisions, security, observability, stacks),
+`docs/modules/` for one subsystem each, `docs/roadmap/` for phase history.
+**Where a roadmap phase doc and the code disagree, the code wins.**
 
 ## Hard requirements
 
-Any implementation in this repo must satisfy these — they are the grading criteria.
+Any implementation in this repo must satisfy these — they are the grading
+criteria from `135.md`.
 
-**Stage-01 (`125.md`, still graded):**
-
-- **LLM access goes through OpenRouter** using the OpenAI-compatible SDK shape, integrated via **LangChain**. Do not wire directly to the OpenAI API.
-- **Advanced RAG**, not just similarity search: query translation and structured retrieval, plus a domain knowledge base with deliberate chunking strategy and embeddings.
-- **At least 3 tool calls** (functions) relevant to the chosen domain.
-- **UI in React.js** that shows retrieved context/sources, displays tool call results, and has progress indicators for long operations.
-- Proper error handling and user input validation; domain-appropriate security measures.
-
-**Stage-02 (`135.md`):**
-
-- A **clearly purposed agent**: stated problem, stated target user, and an articulated reason the agent — rather than a prompt or plain RAG — is the right shape.
-- **Core agent functionality that works end to end**, including its user interactions, with error handling and edge cases that survive real use.
-- **A UI covering every capability**, intuitive enough that a non-LLM-literate admin can drive it. Developer-facing settings (model choice, prompts) stay separate from the everyday experience.
-- **Documentation**: how to use the agent, worked examples, and the technical decisions behind it.
-- **Bonus targets (aim for ≥2 medium + 1 hard)**: short/long-term memory, token usage and cost display, a tool calling an external API, multi-model support, a user feedback loop, a security guard against misuse; agentic RAG, LLM observability (Langfuse is already wired), an evaluation report (Ragas/DeepEval).
+- A **clearly purposed agent**: stated problem, stated target user, and an
+  articulated reason the agent — rather than a prompt or plain RAG — is the
+  right shape.
+- **Core agent functionality that works end to end**, including its user
+  interactions, with error handling and edge cases that survive real use.
+- **A UI covering every capability**, intuitive enough that a player who knows
+  neither the rules nor LLMs can drive it. Developer-facing settings (model
+  choice, temperature, system prompt, DM personality) stay in a separate
+  developer drawer, not in the player experience.
+- **Documentation**: how to play, worked examples, a glossary of the game
+  terms (DC/AC/HP), and the technical decisions behind the agent.
+- **Bonus targets (aim for ≥2 medium + 1 hard)** — the vision commits to:
+  token usage and cost display, short/long-term memory (checkpointer plus
+  journal), a security guard against misuse and the developer/player split;
+  agentic RAG over the SRD as the hard target; DM personality and model
+  settings as the easy ones.
 
 ## Environment
-- Docker compose Stack defined in compose.yml
+- Docker compose stack defined in `compose.yaml`: `app-web`, `frontend`, `postgres` (pgvector), plus the `cli`-profile one-offs. Optional Langfuse tracing in `compose.langfuse.yaml`.
   - use `docker compose` commands to controll it
 - A root `Makefile` wraps the common operations (`make help` lists all): `make up` / `make down` / `make build` / `make rebuild` for the stack, `make test` / `make backend-test` / `make frontend-test` / `make lint` for checks, `make generate-api` for the typed client. No host Python/Node toolchain is required: test/lint/generate targets run in one-off CLI containers (`app-cli`, `node-cli` — profile `cli` in compose.yaml, invoked via `docker compose run --rm`), so they work even when the stack is down. Run `make build` after dependency changes so those images stay fresh (`make rebuild` additionally recreates the running stack and renews the frontend's node_modules volume).
 - Web lives in http://localhost:5173/
@@ -163,9 +215,9 @@ Any implementation in this repo must satisfy these — they are the grading crit
 ### Testing
 - Backend (run from `backend/`, after `uv sync`):
   - `uv run pytest` — pytest suite in `backend/tests/` (config in `[tool.pytest.ini_options]` of `backend/pyproject.toml`; warnings are errors).
-  - Tests never construct a real DB engine: `tests/conftest.py` overrides the `get_db_session` dependency with a stub session and pins env vars so the root `.env` can't leak in. Keep it that way — the `lru_cache`'d async-engine/event-loop pitfall is documented in `.claude/skills/qa-checklist/SKILL.md`. All tests are synchronous (TestClient / Typer CliRunner); don't add pytest-asyncio unless genuinely needed.
+  - Tests must never construct a real DB engine: `tests/conftest.py` overrides the DB-session dependency with a stub and pins env vars so the root `.env` can't leak in. Keep it that way — the `lru_cache`'d async-engine/event-loop pitfall is documented in `.claude/skills/qa-checklist/SKILL.md`. Tests are synchronous (TestClient / Typer CliRunner); don't add pytest-asyncio unless genuinely needed.
 - Frontend (run from `frontend/`, after `pnpm install`):
   - `pnpm test` — Vitest one-shot run (`pnpm test:watch` for watch mode). Config in `frontend/vitest.config.ts` (merges `vite.config.ts`; jsdom, no globals — import vitest APIs explicitly).
-  - Shared helpers live in `frontend/src/test/`: `render.tsx` (`renderWithProviders`), `network.ts` (fetch stubbing — the setup file installs one dispatcher at startup because openapi-fetch captures `fetch` at import time; unstubbed requests throw), `setup.ts` (jest-dom, `matchMedia` polyfill, per-test cleanup).
+  - Shared helpers live in `frontend/src/test/`: a `renderWithProviders` wrapper, fetch stubbing (one dispatcher installed at startup, because openapi-fetch captures `fetch` at import time; unstubbed requests must throw), and a setup file (jest-dom, `matchMedia` polyfill, per-test cleanup).
 - Preferred invocation is Docker-only: `make test` / `make backend-test` / `make frontend-test` run the suites in one-off CLI containers and need neither a host toolchain nor the stack up (`make build` after dependency changes). The host-side commands above remain a valid alternative when uv/pnpm are installed.
 - The QA agents (qa-backend, qa-frontend) remain the per-slice verification layer on top of lint + typecheck + tests. 

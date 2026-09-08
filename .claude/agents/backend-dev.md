@@ -39,7 +39,8 @@ The step spec · the phase's `shared-knowledge.md` including
 - Migrations: one linear Alembic chain, and `downgrade` must actually work.
 - LLM access goes through OpenRouter via LangChain — never the OpenAI API
   directly. Model ids come from settings; never hardcode or assert them.
-- Prompts are versioned Markdown under `backend/app/llm/prompts/`, rendered
+- Prompts are versioned Markdown owned by the module that uses them
+  (`backend/app/modules/<module>/prompts/`), rendered
   under `StrictUndefined`. Untrusted document text is fenced before it reaches
   a model.
 - Agent tools call services and contain no SQL. Write tools and anything that

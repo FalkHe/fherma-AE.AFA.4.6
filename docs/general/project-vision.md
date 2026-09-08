@@ -1,77 +1,113 @@
-# Project vision
+---
+title: "Sprint 4 Project Vision – AI Dungeon Master"
+created: 2026-09-08
+status: draft
+tags:
+  - sprint-04
+  - project
+  - vision
+---
 
-## What this is
+# AI Dungeon Master – Project Vision
 
-A conversational AI advisor that helps a person choose a motorcycle. It
-interviews them about their needs, then recommends models grounded in **both**
-verified specifications and retrieved prose about how those bikes are actually
-regarded.
+## Purpose
 
-## Why it exists
+A single-player Dungeons & Dragons (5e SRD) game run entirely by an AI agent. The agent narrates, interprets free-form player actions, rolls dice, looks up rules, and keeps all game state consistent across play sessions.
 
-A buyer researching a motorcycle gets three bad options: manufacturer marketing,
-forum folklore, or an LLM's training data — outdated, unattributable, and
-confidently wrong about numbers. This project's answer is a **curated internal
-database**: every specification is extracted from fetched sources and then
-*approved by a human* before a customer can see it, and every prose claim the
-advisor makes is retrieved from a stored document with visible provenance.
+**Target users:** people who want to try pen & paper without a group or without learning the rules first.
 
-That single decision drives most of the architecture:
+**Guiding principle:** the project proves knowledge of AI agents (prompting, RAG, tools, memory, human-in-the-loop) – not game design. Keep everything else minimal.
 
-- **Specs are LLM-extracted, admin-verified.** Extraction produces a *draft*;
-  approval promotes it to *verified*. Only approved models are visible to
-  customers, and only verified specs answer a spec question.
-- **Sources are retained permanently.** We fetch every page ourselves rather
-  than trusting a search API's copy, so provenance and raw bytes survive.
-- **The advisor may not judge a bike from memory.** A named model is looked up
-  through a tool; numbers come from the catalogue, opinion comes from retrieved
-  chunks.
+## Decisions
 
-## The product
+- Single player only. Data model prepared for multi-user (user id on every record, `visibility` flag on state and rolls) – multiplayer is the capstone candidate.
+- Content hierarchy: **Campaign** (series) > **Adventure** (one story, 3+ scenes) > **Scene** (one place/situation). A player's saved game is a **Playthrough** (never "session" – avoids collision with browser/HTTP sessions).
+- Content, reasoning and mechanics are separate layers:
+  - **Content** – campaigns, adventures, scenes and monster stats as structured JSON.
+  - **Reasoning** – LLM agent decides how a scene plays out.
+  - **Mechanics** – deterministic tools (dice, HP, state validation). The LLM never fakes a roll or edits state directly.
+- Scenes are written as **facts + intentions + consequences**, not scripts. The agent improvises within the stated truth; anything it improvises is saved to the journal and treated as fact from then on.
+- Hidden information uses passive checks (`10 + bonus` vs DC) or hidden rolls. The player-facing trace is filtered.
+- Structured lookups (scenes, monsters) use JSON, not RAG. Only the SRD rules text is RAG.
+- Stack: React web client, Python FastAPI backend, LangChain/LangGraph, OpenRouter.
 
-- **Consultation is a guided interview.** The advisor opens the conversation
-  (like a seller in a store), works through experience → licence → use case →
-  budget → physique → preferences, and records each answer with a *firmness*
-  (`hard` constraint / `soft` leaning / `exploring`). It steers; free-form
-  questions are still allowed.
-- **Recommendations render as cards in the chat**, linking to model detail
-  pages. There is no separate comparison screen — comparison happens
-  conversationally through a tool whose result renders inline.
-- **Retrieved sources and tool results are visible in the UI**, alongside
-  progress indicators for the long operations.
-- **Everything is behind a login.** Open self-signup; roles `user` and `admin`;
-  admin granted via CLI.
-- **Admins own the catalogue.** A model enters the backlog either because an
-  admin added it or because the advisor flagged a bike a customer mentioned that
-  isn't catalogued yet. Ingestion, review and approval happen in the admin UI;
-  the CLI only bootstraps the first admin and provides the building blocks.
+## Components
 
-## Domain constraints worth knowing
+### 1. Character Generation Agent (startup)
 
-Motorcycle identity is genuinely harder than "name + year": the same marketing
-name can span several technically incompatible generations, and displacement in
-a name rarely matches actual displacement. How that is modelled — and where the
-implementation deliberately simplifies the domain — is
-[`../modules/model-naming.md`](../modules/model-naming.md).
+Player gives a rough idea and a few attributes in plain words ("shy, strong, small, clever"). The agent
 
-## Course context
+- asks one or two follow-up questions if needed,
+- derives race/class and ability scores from the description with a little randomness,
+- generates a portrait (image API),
+- writes the character sheet to state.
 
-Turing College project. This repository is **AE.AFA.4.6 (Sprint 4, "Stage
-02")** and started as a copy of **AE.AFA.3.5 (Sprint 3, "Stage 01")**. The
-briefs are `/125.md` (Stage 01 — domain-specialised RAG chatbot) and `/135.md`
-(Stage 02 — AI agent project). Stage 01's graded requirements are all
-implemented and remain binding:
+### 2. Adventure Content
 
-| Requirement | Implementation |
+- One campaign, one adventure, 3 scenes to start.
+- AI-generated once, then hardcoded as JSON. A small CLI tool (`generate_adventure`) prompts the LLM with the SRD and enforces the schema, so output always matches the structure the game agent expects.
+- Scene schema: `truth[]`, `npc_intent`, `consequences[]`, `hidden[] (check, dc, reveal)`, `monsters[]`, `exits{}`, optional `pressure`.
+
+### 3. Rules Knowledge Base (RAG)
+
+- D&D 5e SRD 5.1 (CC-BY-4.0), chunked into a vector store by a one-time ingest script.
+- Agentic: the game agent decides whether a lookup is needed and may re-query.
+
+### 4. Game Agent (LangGraph)
+
+Loop: `narrate → decide (tool | ask_player) → tool → validate state → loop`, interrupt on `ask_player`.
+
+Tools:
+
+| Tool | Purpose |
 |---|---|
-| LLM access via **OpenRouter**, integrated through **LangChain** — never the OpenAI API directly | `llm/models.py` (`ChatOpenRouter`), `llm/embeddings.py` |
-| **Advanced RAG**: query translation + structured retrieval, deliberate chunking, embeddings | [`../modules/retrieval-advisor.md`](../modules/retrieval-advisor.md), [`ingestion.md`](../modules/ingestion.md) |
-| **≥ 3 tool calls** relevant to the domain | eight registered tools |
-| **React UI** showing retrieved context/sources, tool results, progress | [`../modules/chat-consultation.md`](../modules/chat-consultation.md), [`../modules/catalogue.md`](../modules/catalogue.md) |
-| Error handling, input validation, domain-appropriate security | [`security.md`](security.md) |
+| `roll_dice(expr, visibility)` | Deterministic dice; hidden rolls filtered from player view |
+| `lookup_rule(query)` | RAG over SRD |
+| `get_scene(id)` | Load scene facts |
+| `get_monster(name)` | Stat block from JSON |
+| `update_character(patch)` / `update_monster(id, patch)` | Validated state mutation |
+| `start_combat()` / `end_round()` | Initiative and turn tracking |
+| `add_journal_entry()` / `search_journal()` | Long-term memory |
+| `ask_player(prompt, options)` | Human-in-the-loop interrupt |
 
-Bonus tasks claimed by design: hybrid search (hard); user authentication and
-personalisation, prompt-injection protection, logging/monitoring via Langfuse,
-and real-time knowledge-base updates through admin-triggered ingestion
-(medium). The Langfuse claim is narrow — see
-[`observability.md`](observability.md).
+Guard node before the agent: rejects prompt injection and out-of-band state changes ("my HP is 100").
+
+### 5. Web Client
+
+Narration pane · state panel (HP, AC, inventory, turn order) · filtered agent trace with roll log and rule citations · token/cost display · playthrough list · developer drawer (model, temperature, system prompt, DM personality) separated from the player UI.
+
+## Requirement mapping
+
+| Requirement | Covered by |
+|---|---|
+| Purpose & users | Solo AI DM for rule-free entry into PnP |
+| ≥3 tools | 9 tools above |
+| User interactions | `ask_player` every turn, character generation dialogue |
+| UI | Web client above |
+| Error handling | Invalid dice, unknown ids, state validation, LLM/tool timeouts, checkpoint resume |
+| Documentation | README with glossary (DC/AC/HP), adventure authoring guide, tool reference, architecture decisions |
+
+## Optional tasks targeted
+
+| Task | Mechanic |
+|---|---|
+| Medium 1 – token usage & cost | Per turn / per playthrough in trace panel |
+| Medium 2 – memory | Checkpointer (short-term), journal + canon inventions (long-term) |
+| Medium 8 – security guard, dev/user split | Guard node, developer drawer |
+| Hard 1 – agentic RAG | On-demand SRD lookup with re-query |
+| Easy 2 – personality | DM tone switch |
+| Easy 4 – model settings | Developer drawer |
+
+Out of scope (future work / capstone): multiplayer, maps, voice.
+
+## Glossary
+
+- **d20** – 20-sided die. Every uncertain outcome is `d20 + bonus` vs a target number.
+- **DC (Difficulty Class)** – target number for a check. Easy 10, medium 15, hard 20.
+- **AC (Armor Class)** – target number an attacker must reach to hit you.
+- **HP (Hit Points)** – health. 0 = down.
+- **Passive check** – `10 + bonus` vs DC, no roll. Used for noticing hidden things without leaking information.
+- **Initiative** – `d20 + Dexterity bonus` to determine turn order in combat.
+- **SRD** – System Reference Document; the freely licensed subset of the D&D 5e rules.
+- **Campaign / Adventure / Scene** – content hierarchy: series > story > place.
+- **Playthrough** – one player's saved progress through an adventure.

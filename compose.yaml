@@ -18,36 +18,6 @@ services:
         # accept connections before the container starts.
         condition: service_healthy
 
-  app-worker:
-    build:
-      context: .
-      dockerfile: docker/backend.Dockerfile
-    env_file:
-      - .env
-    volumes:
-      # Same source bind mount as app-web: one image, two roles.
-      - ./backend:/app
-    # The image entrypoint migrates and starts uvicorn; the worker must do
-    # neither. Schema migration belongs to app-web alone.
-    entrypoint: []
-    # The module list grows as job families are added.
-    command:
-      [
-        "taskiq",
-        "worker",
-        "app.jobs.broker:broker",
-        "app.jobs.demo",
-        "app.jobs.ingestion",
-        "app.jobs.embeddings",
-        "app.jobs.chat",
-      ]
-    depends_on:
-      postgres:
-        # Jobs write operation state, so the database must accept connections.
-        condition: service_healthy
-      redis:
-        condition: service_started
-
   frontend:
     build:
       context: .
@@ -118,11 +88,6 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
-
-  redis:
-    # Taskiq broker only (see app-worker); the app never stores state here,
-    # so no volume and no readiness coupling.
-    image: redis:7-alpine
 
 volumes:
   postgres-data:

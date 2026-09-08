@@ -4,7 +4,7 @@
 # (append `:compose.local.yaml` if you use local overrides), or per command:
 #   docker compose -f compose.yaml -f compose.langfuse.yaml up -d
 # With the file enabled, plain `docker compose up -d` starts the six Langfuse
-# services AND wires app-web/app-worker to them (the environment overrides
+# services AND wires app-web to them (the environment overrides
 # below beat the empty LANGFUSE_* defaults from .env). Without it, the app
 # runs byte-identically with tracing off — nothing here is required.
 #
@@ -28,7 +28,7 @@
 # them set fails loudly at compose time). .env.dist documents each variable
 # and how to generate a value. Nothing here is published to a host port
 # except langfuse-web's UI (3000, chosen to avoid the app's
-# 5173/8000/5432/6379); every other service is reachable only inside the
+# 5173/8000/5432); every other service is reachable only inside the
 # Compose network.
 services:
   # Wire the app to the bundled Langfuse. `environment` beats `env_file`
@@ -37,15 +37,12 @@ services:
   # The key pair is the same LANGFUSE_INIT_* seed given to langfuse-web
   # below, read from .env.
   app-web:
-    environment: &app-langfuse-env
+    environment:
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?set in .env, see .env.dist}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?set in .env, see .env.dist}
-      # Service-name URL: app-web/app-worker reach Langfuse over the Compose
+      # Service-name URL: app-web reach Langfuse over the Compose
       # network. http://localhost:3000 is only valid from the host browser.
       LANGFUSE_HOST: http://langfuse-web:3000
-
-  app-worker:
-    environment: *app-langfuse-env
 
   langfuse-postgres:
     image: postgres:17-alpine
@@ -81,9 +78,9 @@ services:
       start_period: 1s
 
   valkey:
-    # Redis-protocol queue for Langfuse's ingestion pipeline; named `valkey`
-    # (not `redis`) to stay unambiguous next to the app's own `redis` service
-    # — they are unrelated brokers on unrelated networks-of-concern.
+    # Redis-protocol queue for Langfuse's ingestion pipeline. Named `valkey`
+    # after the image: the app itself has no Redis, so there is nothing to
+    # confuse it with.
     image: valkey/valkey:7-alpine
     command: >
       --requirepass ${LANGFUSE_VALKEY_PASSWORD:?set in .env, see .env.dist}
@@ -154,7 +151,7 @@ services:
     image: langfuse/langfuse:4
     depends_on: *langfuse-depends-on
     # UI port. Chosen to avoid the app stack's 5173 (frontend)/8000
-    # (app-web)/5432 (postgres)/6379 (redis).
+    # (app-web)/5432 (postgres).
     ports:
       - "3000:3000"
     environment:
@@ -162,12 +159,12 @@ services:
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?set in .env, see .env.dist}
       # Headless first-boot provisioning: creates the org, project, API key
-      # pair (the values wired into app-web/app-worker above) and a login
+      # pair (the values wired into app-web above) and a login
       # user if they don't exist yet; a no-op on every later boot.
       LANGFUSE_INIT_ORG_ID: local
       LANGFUSE_INIT_ORG_NAME: Local
-      LANGFUSE_INIT_PROJECT_ID: moto-advisor
-      LANGFUSE_INIT_PROJECT_NAME: Moto Advisor
+      LANGFUSE_INIT_PROJECT_ID: dungeon-master
+      LANGFUSE_INIT_PROJECT_NAME: AI Dungeon Master
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?set in .env, see .env.dist}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?set in .env, see .env.dist}
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:?set in .env, see .env.dist}

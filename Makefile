@@ -81,19 +81,6 @@ frontend-typecheck: ## TypeScript check (node-cli service)
 	$(RUN_NODE) pnpm typecheck
 .PHONY: frontend-typecheck
 
-# Demo catalogue fixture (see backend/app/services/snapshot.py). ARGS passes
-# through the command's own flags: `--force` to overwrite an existing archive,
-# `--replace` to restore over a non-empty catalogue.
-snapshot-save: ## Save the curated catalogue into backend/resources/catalogue-snapshot (ARGS="--force")
-	# Runs as the host user so the archive it writes is committable without a
-	# chown; every other backend container writes only to root-owned var/.
-	$(COMPOSE) run --rm --user $(shell id -u):$(shell id -g) app-cli app snapshot save $(ARGS)
-.PHONY: snapshot-save
-
-snapshot-load: ## Restore that snapshot into this instance (ARGS="--replace")
-	$(COMPOSE) run --rm app-cli app snapshot load $(ARGS)
-.PHONY: snapshot-load
-
 backend-cli: ## Open a bash shell in a one-off backend CLI container
 	$(COMPOSE) run --rm app-cli bash
 .PHONY: backend-cli

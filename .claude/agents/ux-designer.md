@@ -26,9 +26,10 @@ You are the UI/UX designer. You specify the interface; frontend-dev builds it.
 ## Read first
 
 The step spec · the phase's `shared-knowledge.md` (`## Landed decisions`) ·
-`docs/general/frontend-stack.md` · the phase `ui-spec.md` files under
-`docs/roadmap/stage-01/` for the established visual language · the existing
-components under `frontend/src/components/` and `frontend/src/routes/`.
+`docs/general/frontend-stack.md` · earlier phases' `ui-spec.md` files under
+`docs/roadmap/` for the established visual language · the existing shared
+components under `frontend/src/components/` and the target module's own
+`frontend/src/modules/<module>/components/`.
 
 ## How to express a design
 
@@ -56,7 +57,7 @@ They are where UIs actually fail:
   shows, the exact affordances (approve / reject / edit / upload / answer), and
   what the user sees after they act.
 - **Provenance**: how retrieved sources and tool results are surfaced —
-  Stage-01/02 grading requires visible context, sources and tool results.
+  `135.md` grading requires visible context, sources and tool results.
 - **Responsive behaviour**, focus order, keyboard operation, colour-independent
   status (never colour alone), and both light and dark theme.
 

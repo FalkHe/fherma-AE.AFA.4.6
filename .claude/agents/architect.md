@@ -60,7 +60,7 @@ must pin, explicitly:
 
 ## Output
 
-Write the spec to the phase directory under `docs/roadmap/stage-02/`, and append
+Write the spec to the phase directory under `docs/roadmap/`, and append
 anything a later step depends on to that phase's `shared-knowledge.md` under
 `## Landed decisions`. Report back: the spec path, the parallelisation split,
 the open questions you could not close.

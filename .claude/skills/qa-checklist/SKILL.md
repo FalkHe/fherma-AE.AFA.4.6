@@ -1,6 +1,6 @@
 ---
 name: qa-checklist
-description: Conventions and known traps to check when changing this repo — generated API types drifting, the openapi-typescript/TypeScript peer pin, the unsubsetted icon font, and the lru_cache'd async engine vs pytest event loops. Use when reviewing or landing backend/frontend changes, adding tests, or touching FastAPI routes and response models.
+description: Conventions and known traps to check when changing this repo — generated API types drifting, the modular layout, and the lru_cache'd async engine vs pytest event loops. Use when reviewing or landing backend/frontend changes, adding tests, or touching FastAPI routes and response models.
 ---
 
 # QA checklist
@@ -27,30 +27,26 @@ git diff --exit-code frontend/src/api/schema.d.ts
 - No diff means the schema didn't actually change, or was already regenerated.
 
 Watch for the reverse case too: a frontend type declared locally as a stand-in
-for a payload the backend does not send yet. `useCatalogueModel.ts` carries one
-for `usedPrice` — delete it when the backend field lands, don't build on it.
+for a payload the backend does not send yet. Delete the stand-in when the real
+field lands; never build on one.
 
-## Watch the openapi-typescript / TypeScript peer pin
+## Keep modules self-contained
 
-`frontend/package.json` pins `typescript@6.0.3`, while the installed
-`openapi-typescript@7.13.0` declares a peer dependency of `typescript: ^5.x`.
-This works today (pnpm does not hard-fail on the mismatch), but re-verify when
-either package is bumped: a later `openapi-typescript` may tighten the range, or
-TypeScript 6.x may break something 7.13.0 was never tested against.
+Both trees are organised by domain module, not by technical layer (see
+`.claude/CLAUDE.md`). When reviewing a change, check that it did not quietly
+re-centralise:
 
-## Material Symbols is loaded unsubsetted
-
-`frontend/src/main.tsx` imports `material-symbols/outlined.css`, which pulls the
-full outlined glyph set as a single ~3.8 MB `.woff2`.
-
-This is an **accepted cost**, not a bug to fix on sight: icons are used as
-`<Icon>` ligatures and `@mui/icons-material` is deliberately not a dependency.
-If the payload ever matters, subset the font to the glyphs actually used —
-switching icon libraries would touch every component.
+- A backend module's models, schemas, routes and service stay under
+  `app/modules/<module>/`. `app/api/v1/router.py` only wires routers together.
+- `app/core/` and `frontend/src/core/` are for code with **two or more**
+  module callers. A single-caller helper belongs to that caller.
+- One module must not import another module's `service.py` internals; go
+  through its public surface, or the dependency belongs in `core/`.
+- `backend/tests/<module>/` mirrors `backend/app/modules/<module>/` one to one.
 
 ## `lru_cache`'d async engine — pytest event-loop trap
 
-`backend/app/db/session.py` caches the async engine and session factory with
+The async engine and session factory in `backend/app/core/` are cached with
 `@lru_cache`, keyed process-wide rather than per event loop. That is correct for
 the running app (one loop for the process lifetime) but breaks async pytest
 fixtures: reusing an engine created on a previous loop raises "Future attached
@@ -68,12 +64,6 @@ fully synchronous (TestClient / Typer `CliRunner`) and overrides the
 `get_db_session` dependency with a stub, so no real engine is ever constructed.
 `tests/conftest.py` also pins env vars so the root `.env` cannot leak in. Don't
 add `pytest-asyncio` unless something genuinely needs it.
-
-## Worker does not hot-reload
-
-`app-worker` runs without `--reload`. After changing ORM models, services or
-task code, `docker compose restart app-worker` — otherwise you are testing the
-old code path and will misread the result.
 
 ## Test and lint entry points
 
