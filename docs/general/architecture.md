@@ -1,13 +1,28 @@
 # Architecture
 
-A high-level conceptual map: the domain layers, the deployment shape, the
-placement rules for the modular trees, the wire convention and the session
-model. Detail lives in the module READMEs and in
-[backend-stack.md](backend-stack.md) / [frontend-stack.md](frontend-stack.md).
+A high-level conceptual map: the guiding principle, the domain layers, the
+system components, the deployment shape, the placement rules for the modular
+trees, the wire convention and the session model. It is a map, not a spec —
+routes, columns and payloads are pinned by the step specs. What the product is
+for is [app-vision.md](app-vision.md); the data model is [model.md](model.md);
+the vocabulary is [glossary.md](glossary.md); stack detail lives in the module
+READMEs and in [backend-stack.md](backend-stack.md) /
+[frontend-stack.md](frontend-stack.md).
 
 Current state: scaffolding. The trees, the wire convention and authentication
 exist; the game agent does not. Where this document and the code disagree, the
 code wins.
+
+## Guiding principle
+
+The project proves knowledge of AI agents — prompting, RAG, tools, memory,
+human-in-the-loop — not game design. Everything else stays minimal: the
+smallest thing that makes the agent work and can be seen working.
+
+**Single player only.** Multiplayer is a capstone candidate, and the data
+model concedes exactly two things to it: a `playthrough_members` table as the
+ownership root, and one character per member. Rolls carry a visibility flag
+because hidden information is needed today, not because of multiplayer.
 
 ## The three domain layers
 
@@ -21,6 +36,48 @@ The separation is architectural, not stylistic:
 
 Only the SRD rules text is retrieved with RAG. None of these layers is built
 yet; the boundary is stated here so nothing is built across it later.
+
+## System components
+
+None of these exist yet. They are listed so the boundaries between them are
+fixed before anything is built.
+
+**Character generation agent** — runs once at the start of a playthrough. The
+player describes an idea in plain words; the agent asks a follow-up or two,
+derives race, class and ability scores from the description with a little
+randomness, generates a portrait through an image API and writes the character
+sheet to state.
+
+**Adventure content** — campaigns, adventures, scenes and definitions as
+static JSON in git, pinned per run by content version. Authored by an LLM once
+through a `generate_adventure` CLI that prompts with the SRD and enforces the
+schema, then reviewed as a diff and treated as fixed. Layout and scene fields
+are in [model.md](model.md).
+
+**Rules knowledge base** — SRD 5.1 chunked into pgvector by a one-time ingest
+CLI. Agentic: the game agent decides whether a lookup is needed and may
+re-query.
+
+**Game agent** — a LangGraph loop, `narrate -> decide (tool | ask_player) ->
+tool -> validate state -> loop`, interrupting on `ask_player`. A guard node
+runs before it and rejects prompt injection and out-of-band state changes
+("my HP is 100"). Its tools:
+
+| Tool | Purpose |
+|---|---|
+| `roll_dice(expr, visibility)` | Deterministic dice; hidden rolls filtered out of the player view |
+| `lookup_rule(query)` | RAG over the SRD |
+| `get_scene(id)` | Load scene facts |
+| `get_monster(name)` | Stat block from JSON |
+| `update_object(id, patch)` | Validated state mutation |
+| `start_combat()` / `end_round()` | Initiative and turn tracking |
+| `add_journal_entry()` / `search_journal()` | Long-term memory |
+| `ask_player(prompt, options)` | Human-in-the-loop interrupt |
+
+**Web client** — narration pane, state panel (HP, AC, inventory, turn order),
+filtered agent trace with roll log and rule citations, token and cost display,
+playthrough list, and a developer drawer (model, temperature, system prompt,
+DM personality) kept separate from the player UI.
 
 ## Deployment shape
 

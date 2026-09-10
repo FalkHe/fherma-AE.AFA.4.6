@@ -8,10 +8,13 @@ trail, not a description of the current state.
 
 | Doc | Contents |
 |---|---|
-| [general/project-vision.md](general/project-vision.md) | What this is, the content hierarchy, the vocabulary, course context and graded requirements |
-| [general/architecture.md](general/architecture.md) | Layer boundaries, the modular layout, the wire convention, request lifecycle |
+| [general/app-vision.md](general/app-vision.md) | What the app is, who it is for, its core principles and what a player experiences |
+| [general/architecture.md](general/architecture.md) | Guiding principle, layer boundaries, system components, the modular layout, the wire convention, request lifecycle |
+| [general/model.md](general/model.md) | The data model: entities, their hierarchy and relations, the decisions behind the shape, static content files, lifecycle |
+| [general/glossary.md](general/glossary.md) | The vocabulary: game terms, content terms, run terms, agent terms |
 | [general/backend-stack.md](general/backend-stack.md) | Python stack, conventions and tooling |
 | [general/frontend-stack.md](general/frontend-stack.md) | TypeScript stack, conventions and tooling |
+| [general/requirement-map.md](general/requirement-map.md) | How the project satisfies the graded brief in `135.md` |
 
 ## Modules
 

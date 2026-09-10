@@ -6,7 +6,16 @@ rules and keeps game state consistent across play sessions — so you can try
 pen & paper without a group and without learning the rules first.
 
 This is the AE.AFA.4.6 Turing College Sprint 4 project. `135.md` is the
-binding brief. `docs/general/project-vision.md` describes the design.
+binding brief; `docs/general/requirement-map.md` maps it onto the system.
+`docs/general/app-vision.md` describes what the app is for.
+
+The project proves knowledge of AI agents — prompting, RAG, tools, memory,
+human-in-the-loop — not game design, so everything else stays minimal. It is
+single player, and three layers stay separate: **content** (campaigns,
+adventures, scenes and stat blocks as static JSON), **reasoning** (the LLM
+agent) and **mechanics** (deterministic tools for dice, hit points and state
+validation). The agent never fakes a roll and never edits state directly.
+Only the SRD rules text is RAG. See `docs/general/architecture.md`.
 
 ## Current state
 
