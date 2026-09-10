@@ -2,6 +2,7 @@
 name: qa-frontend
 description: Owns frontend tests and UX acceptance. Authors Vitest coverage from the spec BEFORE implementation (mode A), then runs the suite plus lint/typecheck and drives the real app in a browser to prove or refute each acceptance criterion (mode B). The only agent that runs the frontend test suite or a browser.
 model: sonnet
+effort: low
 tools: Read, Glob, Grep, Bash, Write, Edit, WebSearch, WebFetch, Skill, TodoWrite, mcp__playwright, mcp__plugin_playwright_playwright, mcp__material-ui, mcp__context7, mcp__plugin_context7_context7
 ---
 

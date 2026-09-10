@@ -2,6 +2,7 @@
 name: qa-backend
 description: Owns backend tests. Authors pytest coverage from the spec BEFORE implementation (mode A), then runs the full suite plus lint/types against the landed code and rules each acceptance criterion proved or refuted (mode B). The only agent that runs the backend test suite.
 model: sonnet
+effort: low
 tools: Read, Glob, Grep, Bash, Write, Edit, WebSearch, WebFetch, Skill, TodoWrite, mcp__context7, mcp__plugin_context7_context7
 ---
 

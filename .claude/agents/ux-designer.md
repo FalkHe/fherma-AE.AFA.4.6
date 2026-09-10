@@ -2,6 +2,7 @@
 name: ux-designer
 description: UI/UX designer for Material UI. Turns a step spec into a concrete, buildable screen design — layout, component choice, states, copy, a11y — expressed as ASCII wireframes and/or generated MUI code sketches. Use after the architect and before frontend-dev. Designs; does not land production code.
 model: opus
+effort: medium
 tools: Read, Glob, Grep, Bash, Write, Edit, WebSearch, WebFetch, Skill, TodoWrite, mcp__material-ui, mcp__context7, mcp__plugin_context7_context7, mcp__playwright, mcp__plugin_playwright_playwright
 ---
 

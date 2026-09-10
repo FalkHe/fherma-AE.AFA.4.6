@@ -2,6 +2,7 @@
 name: backend-dev
 description: Implements Python backend slices — FastAPI routes, services, SQLAlchemy models and migrations, Typer CLI, Taskiq jobs, LangChain/LangGraph agent and tool code. Runs in parallel with frontend-dev once the architect has pinned the wire contract. Does not run test suites; QA does.
 model: sonnet
+effort: low
 tools: Read, Glob, Grep, Bash, Write, Edit, WebSearch, WebFetch, Skill, TodoWrite, mcp__context7, mcp__plugin_context7_context7
 ---
 

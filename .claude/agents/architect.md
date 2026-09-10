@@ -2,6 +2,7 @@
 name: architect
 description: Designs the contract before anyone codes — data model, API routes, wire shapes, agent/tool boundaries, wordings, file layout. Use at the START of every slice, before dev or QA agents are dispatched. Produces specs, never implementation.
 model: opus
+effort: medium
 tools: Read, Glob, Grep, Bash, Write, Edit, WebSearch, WebFetch, Skill, TodoWrite, mcp__context7, mcp__plugin_context7_context7
 ---
 

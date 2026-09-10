@@ -2,6 +2,7 @@
 name: frontend-dev
 description: Implements React + TypeScript slices — routes, components, TanStack Query hooks, MUI screens, i18n. Runs in parallel with backend-dev once the architect has pinned the wire contract and the ux-designer has pinned the screens. Does not run test suites; QA does.
 model: sonnet
+effort: low
 tools: Read, Glob, Grep, Bash, Write, Edit, WebSearch, WebFetch, Skill, TodoWrite, mcp__material-ui, mcp__context7, mcp__plugin_context7_context7
 ---
 
