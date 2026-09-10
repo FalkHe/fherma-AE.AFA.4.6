@@ -25,6 +25,7 @@ trail, not a description of the current state.
 | Phase | Contents |
 |---|---|
 | [roadmap/phase-0/](roadmap/phase-0/) | Scaffolding: modular skeletons, authentication, blank home page |
+| [roadmap/Stage-01/](roadmap/Stage-01/) | The MVP single-player release: capability inventory, twelve phases and their milestones, scope fence, open-decision and doc-correction registers |
 
 ## Conventions for editing these docs
 
