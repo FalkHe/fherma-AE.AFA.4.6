@@ -91,8 +91,9 @@ A single-player Dungeons & Dragons (5e SRD) game run entirely by an AI agent.
 The agent narrates, interprets free-form player actions, rolls dice, looks up
 rules and keeps game state consistent across play sessions. Target users:
 people who want to try pen & paper without a group and without learning the
-rules first. See @docs/general/project-vision.md for the full vision — it is
-the binding description of scope, the content hierarchy and the vocabulary.
+rules first. See @docs/general/app-vision.md for the vision and scope,
+@docs/general/glossary.md for the vocabulary, and
+@docs/general/requirement-map.md for how the graded brief is covered.
 
 **Guiding principle from the vision: the project proves knowledge of AI agents
 (prompting, RAG, tools, memory, human-in-the-loop), not game design. Keep
@@ -178,25 +179,17 @@ topics (vision, architecture, decisions, security, observability, stacks),
 
 ## Hard requirements
 
-Any implementation in this repo must satisfy these — they are the grading
-criteria from `135.md`.
+Every slice must keep the graded criteria from `135.md` satisfiable. The
+mapping — requirements, what covers them, and the bonus targets (≥2 medium +
+1 hard) — is @docs/general/requirement-map.md. Two of them bind day-to-day
+work and are repeated here:
 
-- A **clearly purposed agent**: stated problem, stated target user, and an
-  articulated reason the agent — rather than a prompt or plain RAG — is the
-  right shape.
-- **Core agent functionality that works end to end**, including its user
-  interactions, with error handling and edge cases that survive real use.
 - **A UI covering every capability**, intuitive enough that a player who knows
   neither the rules nor LLMs can drive it. Developer-facing settings (model
   choice, temperature, system prompt, DM personality) stay in a separate
   developer drawer, not in the player experience.
-- **Documentation**: how to play, worked examples, a glossary of the game
-  terms (DC/AC/HP), and the technical decisions behind the agent.
-- **Bonus targets (aim for ≥2 medium + 1 hard)** — the vision commits to:
-  token usage and cost display, short/long-term memory (checkpointer plus
-  journal), a security guard against misuse and the developer/player split;
-  agentic RAG over the SRD as the hard target; DM personality and model
-  settings as the easy ones.
+- **Error handling and edge cases that survive real use** — the agent's core
+  loop works end to end, not only on the happy path.
 
 ## Environment
 - Docker compose stack defined in `compose.yaml`: `app-web`, `frontend`, `postgres` (pgvector), plus the `cli`-profile one-offs. Optional Langfuse tracing in `compose.langfuse.yaml`.
