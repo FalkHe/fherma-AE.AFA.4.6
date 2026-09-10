@@ -129,15 +129,12 @@ export interface components {
         };
         /** UserRead */
         UserRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
+            /** Id */
             id: string;
             /** Username */
             username: string;
             /**
-             * Created At
+             * Createdat
              * Format: date-time
              */
             createdAt: string;

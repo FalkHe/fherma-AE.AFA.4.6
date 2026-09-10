@@ -8,6 +8,7 @@ assertions to `tests/core/test_security.py`, which tests the underlying
 primitives directly.
 """
 
+import re
 from datetime import datetime
 
 import pytest
@@ -18,6 +19,8 @@ from app.modules.auth.service import IssuedSession
 from app.modules.users import service as users_service
 from tests.conftest import SESSION_TTL_SECONDS
 from tests.factories import make_user
+
+ULID_PATTERN = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
 
 VALID_PAYLOAD = {"username": "Aragorn", "password": "hunter-of-orcs"}
 
@@ -49,6 +52,8 @@ def test_register_returns_201_with_lowercased_username_id_createdat_cookie_and_c
     body = response.json()
     assert body["username"] == "aragorn"  # the stored, lower-cased form (§5.3)
     assert body["id"] == str(user.id)
+    assert isinstance(body["id"], str)
+    assert ULID_PATTERN.fullmatch(body["id"])  # D38: emitted id is a ULID string, not a UUID
     datetime.fromisoformat(body["createdAt"])  # parses; literal spelling is not asserted (§5.3)
 
     assert "session" in response.cookies

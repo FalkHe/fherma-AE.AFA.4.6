@@ -7,7 +7,9 @@
   "paths": {
     "/api/v1/health": {
       "get": {
-        "tags": ["health"],
+        "tags": [
+          "health"
+        ],
         "summary": "Read Health",
         "operationId": "read_health_api_v1_health_get",
         "responses": {
@@ -15,7 +17,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/HealthRead" }
+                "schema": {
+                  "$ref": "#/components/schemas/HealthRead"
+                }
               }
             }
           }
@@ -24,23 +28,29 @@
     },
     "/api/v1/auth/register": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Register",
         "operationId": "register_api_v1_auth_register_post",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/RegisterRequest" }
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/UserRead" }
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
               }
             }
           },
@@ -48,7 +58,9 @@
             "description": "Conflict",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           },
@@ -56,7 +68,9 @@
             "description": "Unprocessable Entity",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           }
@@ -65,23 +79,29 @@
     },
     "/api/v1/auth/sign-in": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Sign In",
         "operationId": "sign_in_api_v1_auth_sign_in_post",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/SignInRequest" }
+              "schema": {
+                "$ref": "#/components/schemas/SignInRequest"
+              }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/UserRead" }
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
               }
             }
           },
@@ -89,7 +109,9 @@
             "description": "Unauthorized",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           },
@@ -97,7 +119,9 @@
             "description": "Unprocessable Entity",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           }
@@ -106,7 +130,9 @@
     },
     "/api/v1/auth/sign-out": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Sign Out",
         "operationId": "sign_out_api_v1_auth_sign_out_post",
         "responses": {
@@ -117,7 +143,9 @@
             "description": "Unauthorized",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           },
@@ -125,7 +153,9 @@
             "description": "Forbidden",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           }
@@ -134,7 +164,9 @@
     },
     "/api/v1/users/me": {
       "get": {
-        "tags": ["users"],
+        "tags": [
+          "users"
+        ],
         "summary": "Read Current User",
         "operationId": "read_current_user_api_v1_users_me_get",
         "responses": {
@@ -142,7 +174,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/UserRead" }
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
               }
             }
           },
@@ -150,7 +184,9 @@
             "description": "Unauthorized",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           }
@@ -184,7 +220,11 @@
           }
         },
         "type": "object",
-        "required": ["code", "message", "details"],
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
         "title": "ErrorBody"
       },
       "ErrorEnvelope": {
@@ -194,7 +234,9 @@
           }
         },
         "type": "object",
-        "required": ["error"],
+        "required": [
+          "error"
+        ],
         "title": "ErrorEnvelope"
       },
       "HealthRead": {
@@ -205,7 +247,9 @@
           }
         },
         "type": "object",
-        "required": ["status"],
+        "required": [
+          "status"
+        ],
         "title": "HealthRead"
       },
       "RegisterRequest": {
@@ -225,7 +269,10 @@
           }
         },
         "type": "object",
-        "required": ["username", "password"],
+        "required": [
+          "username",
+          "password"
+        ],
         "title": "RegisterRequest"
       },
       "SignInRequest": {
@@ -244,14 +291,16 @@
           }
         },
         "type": "object",
-        "required": ["username", "password"],
+        "required": [
+          "username",
+          "password"
+        ],
         "title": "SignInRequest"
       },
       "UserRead": {
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
             "title": "Id"
           },
           "username": {
@@ -261,11 +310,15 @@
           "createdAt": {
             "type": "string",
             "format": "date-time",
-            "title": "Created At"
+            "title": "Createdat"
           }
         },
         "type": "object",
-        "required": ["id", "username", "createdAt"],
+        "required": [
+          "id",
+          "username",
+          "createdAt"
+        ],
         "title": "UserRead"
       }
     }

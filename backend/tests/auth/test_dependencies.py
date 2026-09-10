@@ -5,8 +5,7 @@ through a protected route (GET /users/me) rather than by calling the
 dependency directly, per the suite's synchronous-only arrangement (§6.5).
 """
 
-import uuid
-
+from app.core.ids import generate_id
 from app.modules.auth import service as auth_service
 from app.modules.users import service as users_service
 from tests.factories import make_session, make_user
@@ -15,7 +14,7 @@ from tests.factories import make_session, make_user
 def test_require_auth_calls_resolve_session_then_get_user_by_id_in_that_order(
     client, monkeypatch, session_cookie_header
 ):
-    user_id = uuid.uuid4()
+    user_id = generate_id()
     call_order: list[str] = []
 
     async def fake_resolve_session(db, *, token):

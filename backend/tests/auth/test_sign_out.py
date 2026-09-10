@@ -1,12 +1,11 @@
 """§8 criteria 23-25: POST /api/v1/auth/sign-out."""
 
-import uuid
-
+from app.core.ids import generate_id
 from app.modules.auth import service as auth_service
 from app.modules.users import service as users_service
 from tests.factories import make_session, make_user
 
-USER_ID = uuid.uuid4()
+USER_ID = generate_id()
 VALID_TOKEN = "a-valid-session-cookie-value"  # noqa: S105
 CSRF_TOKEN = "the-matching-csrf-token"  # noqa: S105
 

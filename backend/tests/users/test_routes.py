@@ -6,13 +6,12 @@ test is `tests/auth/test_dependencies.py`), but the route itself is
 here per the one-to-one module mirror (D1).
 """
 
-import uuid
-
+from app.core.ids import generate_id
 from app.modules.auth import service as auth_service
 from app.modules.users import service as users_service
 from tests.factories import make_session, make_user
 
-USER_ID = uuid.uuid4()
+USER_ID = generate_id()
 
 
 def test_read_current_user_returns_200_with_user_and_csrf_header(

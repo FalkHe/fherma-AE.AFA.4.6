@@ -9,9 +9,10 @@ Create Date: 2026-09-08
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
+
+ID_TYPE = sa.CHAR(26)
 
 # revision identifiers, used by Alembic.
 revision: str = "0001"
@@ -23,7 +24,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "users",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", ID_TYPE, nullable=False),
         sa.Column("username", sa.String(length=32), nullable=False),
         sa.Column("password_hash", sa.String(length=255), nullable=False),
         sa.Column(
@@ -38,8 +39,8 @@ def upgrade() -> None:
 
     op.create_table(
         "sessions",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", ID_TYPE, nullable=False),
+        sa.Column("user_id", ID_TYPE, nullable=False),
         sa.Column("token_hash", sa.String(length=64), nullable=False),
         sa.Column("csrf_token", sa.String(length=64), nullable=False),
         sa.Column(

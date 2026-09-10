@@ -602,6 +602,39 @@ warning but forward `headers=` untouched. A later step's tests must keep
 using `session_cookie_header` (or the same `Cookie`-header pattern) rather
 than reintroducing `cookies=` on a `TestClient` call.
 
+### D38 — Primary keys and foreign keys are ULIDs, not UUIDs: `app/core/ids.py`
+
+Every model's id column is a 26-character Crockford base32 ULID string,
+stored as `CHAR(26)` (not `postgresql.UUID`), and is a plain `str` in Python
+and on the wire — no `uuid.UUID` anywhere in `app/`. The primitive lives in
+`app/core/ids.py` (a `users`+`sessions` two-caller case, hence `core/`):
+
+```python
+from app.core.ids import ID_TYPE, generate_id
+id: Mapped[str] = mapped_column(ID_TYPE, primary_key=True, default=generate_id)
+user_id: Mapped[str] = mapped_column(ID_TYPE, ForeignKey("users.id", ondelete="CASCADE"), ...)
+```
+
+`ID_TYPE` is `sqlalchemy.CHAR(26)`; `generate_id()` returns `str(ULID())` from
+the `python-ulid` package (`from ulid import ULID`), pinned
+`python-ulid>=3.1.0` in `pyproject.toml` (resolved to `4.0.1` at lock time).
+Every new model's PK/FK declares its column through `ID_TYPE` +
+`generate_id` — there is no second way to declare an id. Pydantic schemas
+type the field `str` (e.g. `UserRead.id: str`), not `uuid.UUID`.
+
+The baseline migration (`0001_baseline.py`) was edited in place (not
+stacked) to create `CHAR(26)` columns directly, since no production data
+exists; revision id, constraint names and `downgrade()` are unchanged.
+Verified with a real Postgres instance: `alembic upgrade head` →
+`downgrade -1` → `upgrade head` round-trips cleanly, `information_schema`
+confirms `character(26)` on `users.id`, `sessions.id`, `sessions.user_id`,
+and a live `POST /api/v1/auth/register` through `TestClient` returns a
+26-character ULID as `id`. `frontend/openapi.json` and
+`frontend/src/api/schema.d.ts` were regenerated accordingly (no `format:
+uuid` remains). Test fixtures build ids with `generate_id()` too —
+`tests/factories.py` defaults both `make_user` and `make_session` to it, so a
+test needing an id calls `generate_id()` rather than writing a literal.
+
 ### D37 — The failed-sign-in log event's name is `sign_in_failed`
 
 D25 pinned the level (`INFO`) and the payload (the submitted username) but not

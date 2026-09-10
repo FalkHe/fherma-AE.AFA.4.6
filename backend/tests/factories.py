@@ -8,16 +8,17 @@ from_attributes=True)` call only ever need attribute access, never SQLAlchemy
 machinery.
 """
 
-import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
+
+from app.core.ids import generate_id
 
 DEFAULT_CSRF_TOKEN = "csrf-token-value"  # noqa: S105 - fixture value, not a secret
 
 
-def make_user(*, username: str = "aragorn", user_id: uuid.UUID | None = None, created_at=None):
+def make_user(*, username: str = "aragorn", user_id: str | None = None, created_at=None):
     return SimpleNamespace(
-        id=user_id or uuid.uuid4(),
+        id=user_id or generate_id(),
         username=username,
         created_at=created_at or datetime.now(UTC),
     )
@@ -25,13 +26,13 @@ def make_user(*, username: str = "aragorn", user_id: uuid.UUID | None = None, cr
 
 def make_session(
     *,
-    user_id: uuid.UUID,
+    user_id: str,
     csrf_token: str = DEFAULT_CSRF_TOKEN,
-    session_id: uuid.UUID | None = None,
+    session_id: str | None = None,
     expires_at=None,
 ):
     return SimpleNamespace(
-        id=session_id or uuid.uuid4(),
+        id=session_id or generate_id(),
         user_id=user_id,
         csrf_token=csrf_token,
         expires_at=expires_at,

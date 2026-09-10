@@ -28,7 +28,7 @@ function stubAnonymousSession() {
 function stubSignInSuccess(username = "thorin") {
   mockRoute("POST", "/api/v1/auth/sign-in", {
     status: 200,
-    body: { id: "9f1c0b6a-6f7c-4a2f-9a3e-0b6d1c2e3f40", username, createdAt: "2026-09-08T12:34:56.789012+00:00" },
+    body: { id: "01ARZ3NDEKTSV4RRFFQ69G5FAV", username, createdAt: "2026-09-08T12:34:56.789012+00:00" },
     headers: { "X-CSRF-Token": "csrf-token-value" },
   });
 }
@@ -125,7 +125,7 @@ describe("SignInRoute (UI-1 … UI-12)", () => {
 
     pending.resolve({
       status: 200,
-      body: { id: "9f1c0b6a-6f7c-4a2f-9a3e-0b6d1c2e3f40", username: "thorin", createdAt: "2026-09-08T12:34:56.789012+00:00" },
+      body: { id: "01ARZ3NDEKTSV4RRFFQ69G5FAV", username: "thorin", createdAt: "2026-09-08T12:34:56.789012+00:00" },
       headers: { "X-CSRF-Token": "csrf-token-value" },
     });
   });
