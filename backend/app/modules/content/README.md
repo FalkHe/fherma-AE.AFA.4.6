@@ -11,7 +11,7 @@ table, no route: content lives in git, not in the database.
   `Scene`, `Definition`, `SeedCharacter` and their nested models.
 - The loader (`service.py`): `list_campaign_ids`, `list_versions`,
   `load_campaign`, `load_scene`, `load_definition`.
-- The referential rule set (R1–R18), applied by `load_campaign`.
+- The referential rule set (R1–R16), applied by `load_campaign`.
 - `ContentError` / `ContentNotFoundError` / `ContentInvalidError`
   (`errors.py`).
 - The `app content validate` command (`commands.py`).

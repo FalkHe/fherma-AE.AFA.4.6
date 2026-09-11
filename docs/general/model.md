@@ -215,9 +215,10 @@ stray autogenerate will try to drop it.
 ```
 backend/content/campaigns/<campaign_id>/<version>/
     campaign.json          # metadata + ordered adventure list + seed player character
-    adventures/<id>.json   # includes a prose intro and an entry_scene
-    scenes/<id>.json       # truth[], npc_intent?, consequences[], hidden[],
-                           # creatures[], exits[] (a list, not a map), pressure?
+    adventures/<id>.json   # the adventure and its scenes inline: a prose intro,
+                           # an entry_scene, and scenes[] carrying truth[],
+                           # npc_intent?, consequences[], hidden[], creatures[],
+                           # exits[] (a list, not a map), pressure?
     definitions/<id>.json  # one entity for NPCs and monsters alike; always
                            # carries a stat block
 backend/content/srd/        # SRD 5.1 source for the ingest CLI
@@ -235,6 +236,10 @@ The content root is `backend/content/`, not a repository-root `content/`: the
 Dockerfile copies `backend/` and compose bind-mounts it, so the path is
 identical in the image, under the dev bind mount and on the host, with no
 configuration.
+
+**There is no `scenes/` directory.** A scene belongs to exactly one adventure,
+so it lives inside that adventure's file; a definition is campaign-scoped and
+shared between adventures, so it stays its own file.
 
 - **Content** is read-only by convention — nothing writes it and the loader
   only reads — and is reviewed as diffs in PRs. NPC prompt fragments belong to

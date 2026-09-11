@@ -138,80 +138,50 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
             continue
         adventures_by_id[adventure_id] = adventure
 
-    scenes_dir = base / "scenes"
-    scene_files_by_stem = {f.stem: f for f in scenes_dir.glob("*.json")}
-
     for adventure_id, adventure in adventures_by_id.items():
-        scene_seen: set[str] = set()
-        scene_dupes: set[str] = set()
-        for scene_id in adventure.scenes:
-            if scene_id in scene_seen:
-                scene_dupes.add(scene_id)
-            scene_seen.add(scene_id)
-        for scene_id in sorted(scene_dupes):
+        scene_ids = [scene.id for scene in adventure.scenes]
+        if adventure.entry_scene not in scene_ids:
             errors.append(
-                f"adventures/{adventure_id}.json: [R7] scene '{scene_id}' listed more than once"
-            )
-        for scene_id in dict.fromkeys(adventure.scenes):
-            if scene_id not in scene_files_by_stem:
-                errors.append(
-                    f"adventures/{adventure_id}.json: [R7] scene '{scene_id}' has no "
-                    f"scenes/{scene_id}.json"
-                )
-        if adventure.entry_scene not in adventure.scenes:
-            errors.append(
-                f"adventures/{adventure_id}.json: [R10] entry_scene "
+                f"adventures/{adventure_id}.json: [R7] entry_scene "
                 f"'{adventure.entry_scene}' is not in this adventure's scenes"
             )
 
-    claims: dict[str, list[str]] = {}
-    for adventure_id, adventure in adventures_by_id.items():
-        for scene_id in dict.fromkeys(adventure.scenes):
-            claims.setdefault(scene_id, []).append(adventure_id)
-
     scenes_by_id: dict[str, Scene] = {}
-    for stem, path in scene_files_by_stem.items():
-        owners = claims.get(stem, [])
-        if not owners:
-            errors.append(f"scenes/{path.name}: [R8] scene not claimed by any adventure")
+    scene_owner_by_id: dict[str, str] = {}
+    for adventure_id in dedup_adventure_ids:
+        adventure = adventures_by_id.get(adventure_id)
+        if adventure is None:
             continue
-        if len(owners) > 1:
-            errors.append(
-                f"adventures/{owners[1]}.json: [R8] scene '{stem}' is claimed by more "
-                "than one adventure"
-            )
-        scene, err = _load_json_model(path, Scene)
-        if err:
-            errors.append(f"scenes/{path.name}: {err}")
-            continue
-        assert isinstance(scene, Scene)
-        scenes_by_id[stem] = scene
-
-    for stem, scene in scenes_by_id.items():
-        if scene.id != stem:
-            errors.append(
-                f"scenes/{stem}.json: [R9] scene id '{scene.id}' does not match filename '{stem}'"
-            )
+        for scene in adventure.scenes:
+            if scene.id in scenes_by_id:
+                errors.append(
+                    f"adventures/{adventure_id}.json: [R8] scene '{scene.id}' is not "
+                    "unique across the campaign"
+                )
+                continue
+            scenes_by_id[scene.id] = scene
+            scene_owner_by_id[scene.id] = adventure_id
 
     for adventure_id, adventure in adventures_by_id.items():
-        for scene_id in adventure.scenes:
-            scene = scenes_by_id.get(scene_id)
-            if scene is None:
+        adventure_scene_ids = {scene.id for scene in adventure.scenes}
+        for scene in adventure.scenes:
+            if scene_owner_by_id.get(scene.id) != adventure_id:
                 continue
             for exit_ in scene.exits:
-                if exit_.to == scene_id or exit_.to not in adventure.scenes:
+                if exit_.to == scene.id or exit_.to not in adventure_scene_ids:
                     errors.append(
-                        f"scenes/{scene_id}.json: [R11] exit targets unknown scene '{exit_.to}'"
+                        f"adventures/{adventure_id}.json: [R9] scene '{scene.id}': "
+                        f"exit targets unknown scene '{exit_.to}'"
                     )
 
         terminal = any(
-            scenes_by_id[scene_id].exits == []
-            for scene_id in adventure.scenes
-            if scene_id in scenes_by_id
+            scene.exits == []
+            for scene in adventure.scenes
+            if scene_owner_by_id.get(scene.id) == adventure_id
         )
         if not terminal:
             errors.append(
-                f"adventures/{adventure_id}.json: [R12] no scene in this adventure "
+                f"adventures/{adventure_id}.json: [R10] no scene in this adventure "
                 "is terminal (exits == [])"
             )
 
@@ -220,16 +190,18 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
         while frontier:
             current = frontier.pop()
             scene = scenes_by_id.get(current)
-            if scene is None:
+            if scene is None or scene_owner_by_id.get(current) != adventure_id:
                 continue
             for exit_ in scene.exits:
-                if exit_.to in adventure.scenes and exit_.to not in reachable:
+                if exit_.to in adventure_scene_ids and exit_.to not in reachable:
                     reachable.add(exit_.to)
                     frontier.append(exit_.to)
-        for scene_id in adventure.scenes:
-            if scene_id not in reachable:
+        for scene in adventure.scenes:
+            if scene_owner_by_id.get(scene.id) != adventure_id:
+                continue
+            if scene.id not in reachable:
                 errors.append(
-                    f"adventures/{adventure_id}.json: [R13] scene '{scene_id}' is not "
+                    f"adventures/{adventure_id}.json: [R11] scene '{scene.id}' is not "
                     "reachable from entry_scene"
                 )
 
@@ -237,26 +209,29 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
     definition_files_by_stem = {f.stem: f for f in definitions_dir.glob("*.json")}
 
     referenced_definition_ids: set[str] = set()
-    for stem, scene in scenes_by_id.items():
-        placement_ids: set[str] = set()
-        for placement in scene.creatures:
-            referenced_definition_ids.add(placement.definition)
-            if placement.definition not in definition_files_by_stem:
-                errors.append(
-                    f"scenes/{stem}.json: [R14] creature definition "
-                    f"'{placement.definition}' not found"
-                )
-            if placement.definition in placement_ids:
-                errors.append(
-                    f"scenes/{stem}.json: [R18] definition '{placement.definition}' "
-                    "placed more than once"
-                )
-            placement_ids.add(placement.definition)
+    for adventure_id, adventure in adventures_by_id.items():
+        for scene in adventure.scenes:
+            if scene_owner_by_id.get(scene.id) != adventure_id:
+                continue
+            placement_ids: set[str] = set()
+            for placement in scene.creatures:
+                referenced_definition_ids.add(placement.definition)
+                if placement.definition not in definition_files_by_stem:
+                    errors.append(
+                        f"adventures/{adventure_id}.json: [R12] scene '{scene.id}': "
+                        f"creature definition '{placement.definition}' not found"
+                    )
+                if placement.definition in placement_ids:
+                    errors.append(
+                        f"adventures/{adventure_id}.json: [R16] scene '{scene.id}': "
+                        f"definition '{placement.definition}' placed more than once"
+                    )
+                placement_ids.add(placement.definition)
 
     definitions_by_id: dict[str, Definition] = {}
     for stem, path in definition_files_by_stem.items():
         if stem not in referenced_definition_ids:
-            errors.append(f"definitions/{path.name}: [R16] definition not referenced by any scene")
+            errors.append(f"definitions/{path.name}: [R14] definition not referenced by any scene")
             continue
         definition, err = _load_json_model(path, Definition)
         if err:
@@ -268,7 +243,7 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
     for stem, definition in definitions_by_id.items():
         if definition.id != stem:
             errors.append(
-                f"definitions/{stem}.json: [R15] definition id '{definition.id}' "
+                f"definitions/{stem}.json: [R13] definition id '{definition.id}' "
                 f"does not match filename '{stem}'"
             )
 
@@ -279,7 +254,7 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
     for stems in name_groups.values():
         for dup_stem in stems[1:]:
             errors.append(
-                f"definitions/{dup_stem}.json: [R17] duplicate definition name "
+                f"definitions/{dup_stem}.json: [R15] duplicate definition name "
                 f"'{definitions_by_id[dup_stem].name}'"
             )
 
@@ -296,15 +271,19 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
 
 
 def load_scene(campaign_id: str, version: str, scene_id: str) -> Scene:
+    if not _is_content_id(campaign_id) or not VERSION_PATTERN.match(version):
+        raise ContentNotFoundError(f"campaigns/{campaign_id}/{version}")
     if not _is_content_id(scene_id):
-        raise ContentNotFoundError(f"campaigns/{campaign_id}/{version}/scenes/{scene_id}.json")
+        raise ContentNotFoundError(f"campaigns/{campaign_id}/{version}/scene/{scene_id}")
     loaded = load_campaign(campaign_id, version)
     if scene_id not in loaded.scenes:
-        raise ContentNotFoundError(f"campaigns/{campaign_id}/{version}/scenes/{scene_id}.json")
+        raise ContentNotFoundError(f"campaigns/{campaign_id}/{version}/scene/{scene_id}")
     return loaded.scenes[scene_id]
 
 
 def load_definition(campaign_id: str, version: str, definition_id: str) -> Definition:
+    if not _is_content_id(campaign_id) or not VERSION_PATTERN.match(version):
+        raise ContentNotFoundError(f"campaigns/{campaign_id}/{version}")
     if not _is_content_id(definition_id):
         raise ContentNotFoundError(
             f"campaigns/{campaign_id}/{version}/definitions/{definition_id}.json"

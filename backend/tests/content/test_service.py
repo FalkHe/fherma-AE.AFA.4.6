@@ -1,8 +1,18 @@
 """Tests for `app.modules.content.service` -- the loader, the id/version
 validation guard (phase contract §5.1) and the referential rule set (§11).
 
-Criterion numbers refer to `step-1.1.md` §6 ("Loading" 9-17, "Error
-reporting" 18-24, "The referential rules" 25-41).
+Criterion numbers refer to `step-1.1.md` §6 ("Loading" 11-19, "Error
+reporting" 20-27, "The referential rules" 28-42).
+
+**P1-D20 rework.** An adventure is one file, its scenes inline. The old R7, R8
+and R9 (which policed the multi-file scene layout) are gone, not renumbered --
+a scene cannot be orphaned or claimed by two adventures by construction, so
+the six tests that proved those rules are deleted rather than carried
+forward. A new R8 (scene id unique across the whole campaign) replaces them.
+The rest of the rule list shifts down: old R10..R18 become new R7..R16 (see
+`shared-knowledge.md` §11's old->new map). Every rule that used to be
+reported on a scene's own file (`scenes/<id>.json`) is now reported on its
+*adventure* file, with the scene id folded into the detail.
 """
 
 import re
@@ -40,10 +50,10 @@ def _paths(exc_info):
     return [m.group(1) for m in _entries(exc_info)]
 
 
-# --- Loading (criteria 9-17) -------------------------------------------------
+# --- Loading (criteria 11-19) ------------------------------------------------
 
 
-def test_load_campaign_returns_loaded_campaign_c9(content_root):
+def test_load_campaign_returns_loaded_campaign_c11(content_root):
     build_version_dir(content_root)
 
     loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
@@ -54,7 +64,7 @@ def test_load_campaign_returns_loaded_campaign_c9(content_root):
     assert set(loaded.definitions.keys()) == {"bog-lurker"}
 
 
-def test_load_scene_and_load_definition_c10(content_root):
+def test_load_scene_and_load_definition_c12(content_root):
     build_version_dir(content_root)
 
     scene = service.load_scene(CAMPAIGN_ID, VERSION, "mill-floor")
@@ -64,7 +74,7 @@ def test_load_scene_and_load_definition_c10(content_root):
     assert found_definition.id == "bog-lurker"
 
 
-def test_list_campaign_ids_sorted_and_empty_raises_nothing_c11(content_root):
+def test_list_campaign_ids_sorted_and_empty_raises_nothing_c13(content_root):
     assert service.list_campaign_ids() == []
 
     build_version_dir(content_root, campaign_id="zeta-quest", campaign=campaign(id="zeta-quest"))
@@ -73,7 +83,7 @@ def test_list_campaign_ids_sorted_and_empty_raises_nothing_c11(content_root):
     assert service.list_campaign_ids() == ["alpha-quest", "zeta-quest"]
 
 
-def test_list_versions_sorted_numerically_and_not_found_c12(content_root):
+def test_list_versions_sorted_numerically_and_not_found_c14(content_root):
     build_version_dir(content_root, version="v2")
     build_version_dir(content_root, version="v10")
 
@@ -84,7 +94,7 @@ def test_list_versions_sorted_numerically_and_not_found_c12(content_root):
     assert exc_info.value.relative_path == "campaigns/no-such-campaign"
 
 
-def test_load_campaign_missing_version_directory_c13(content_root):
+def test_load_campaign_missing_version_directory_c15(content_root):
     build_version_dir(content_root)
 
     with pytest.raises(errors.ContentNotFoundError) as exc_info:
@@ -92,15 +102,14 @@ def test_load_campaign_missing_version_directory_c13(content_root):
     assert exc_info.value.relative_path == f"campaigns/{CAMPAIGN_ID}/v9"
 
 
-def test_load_scene_and_definition_unknown_id_c14(content_root):
+def test_load_scene_and_definition_unknown_id_c16(content_root):
     build_version_dir(content_root)
 
     with pytest.raises(errors.ContentNotFoundError) as exc_info:
         service.load_scene(CAMPAIGN_ID, VERSION, "no-such-scene")
-    assert (
-        exc_info.value.relative_path
-        == f"campaigns/{CAMPAIGN_ID}/{VERSION}/scenes/no-such-scene.json"
-    )
+    # P1-D20 (§6.1): a scene is a logical address, singular "scene", no
+    # ".json" -- there is no scene file to name.
+    assert exc_info.value.relative_path == f"campaigns/{CAMPAIGN_ID}/{VERSION}/scene/no-such-scene"
 
     with pytest.raises(errors.ContentNotFoundError) as exc_info:
         service.load_definition(CAMPAIGN_ID, VERSION, "no-such-definition")
@@ -110,23 +119,26 @@ def test_load_scene_and_definition_unknown_id_c14(content_root):
     )
 
 
-def test_non_json_file_in_scenes_is_ignored_c15(content_root):
+def test_non_json_file_in_adventures_is_ignored_c17(content_root):
     version_dir = build_version_dir(content_root)
-    (version_dir / "scenes" / "notes.md").write_text("not loaded, not reported")
+    (version_dir / "adventures" / "notes.md").write_text("not loaded, not reported")
 
     loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
 
     assert set(loaded.scenes.keys()) == {"mill-approach", "mill-floor"}
 
 
-def test_missing_definitions_directory_is_r14_not_oserror_c16(content_root):
+def test_missing_definitions_directory_is_r12_not_oserror_c18(content_root):
     version_dir = build_version_dir(content_root)
     shutil.rmtree(version_dir / "definitions")
 
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    assert "R14" in _tags(exc_info)
+    # No definitions directory at all: mill-floor's placement of bog-lurker
+    # cannot resolve -> R12 (creatures[].definition resolves to a file), not
+    # an OSError and not R14 (there is no orphan definition *file* to report).
+    assert "R12" in _tags(exc_info)
 
 
 @pytest.mark.parametrize(
@@ -139,11 +151,11 @@ def test_missing_definitions_directory_is_r14_not_oserror_c16(content_root):
         ),
         (
             lambda: service.load_scene(CAMPAIGN_ID, VERSION, "../campaign"),
-            f"campaigns/{CAMPAIGN_ID}/{VERSION}/scenes/../campaign.json",
+            f"campaigns/{CAMPAIGN_ID}/{VERSION}/scene/../campaign",
         ),
     ],
 )
-def test_id_arguments_never_reach_the_filesystem_c17(content_root, call, expected_relative_path):
+def test_id_arguments_never_reach_the_filesystem_c19(content_root, call, expected_relative_path):
     # A readable, parseable file sits just outside CONTENT_ROOT. If any of
     # these calls built a path before validating the id/version pattern, a
     # naive ".." join could resolve onto this file instead of raising
@@ -173,25 +185,30 @@ def test_id_arguments_never_reach_the_filesystem_c17(content_root, call, expecte
     assert sentinel.read_text() == '{"leak": true}'
 
 
-# --- Error reporting (criteria 18-24) ---------------------------------------
+# --- Error reporting (criteria 20-27) ----------------------------------------
 
 
-def test_every_error_entry_matches_the_pinned_grammar_c18(content_root):
+def test_every_error_entry_matches_the_pinned_grammar_c20(content_root):
     build_version_dir(content_root, campaign=campaign(id="wrong-id"))
 
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    grammar = re.compile(r"^[^:]+(/[^:]+)*: \[(READ|SCHEMA|R2|R([4-9]|1[0-8]))\] .+$")
+    grammar = re.compile(r"^[^:]+(/[^:]+)*: \[(READ|SCHEMA|R2|R([4-9]|1[0-6]))\] .+$")
     for entry in exc_info.value.errors:
         assert grammar.match(entry), entry
 
 
-def test_errors_sorted_and_deterministic_between_calls_c19(content_root):
+def test_errors_sorted_and_deterministic_between_calls_c21(content_root):
+    # Two independent problems: an unresolved entry_scene (R7) and an
+    # unreferenced definition (R14) -- exercised together so sorting and
+    # determinism are proved over more than one entry.
     build_version_dir(
         content_root,
-        adventures={
-            "the-sunken-mill": adventure(scenes=["mill-approach", "mill-floor", "ghost-scene"])
+        adventures={"the-sunken-mill": adventure(entry_scene="no-such-scene")},
+        definitions={
+            "bog-lurker": definition(),
+            "unused": definition(id="unused", name="Unused Thing"),
         },
     )
 
@@ -202,9 +219,10 @@ def test_errors_sorted_and_deterministic_between_calls_c19(content_root):
 
     assert first.value.errors == sorted(first.value.errors)
     assert first.value.errors == second.value.errors
+    assert len(first.value.errors) >= 2
 
 
-def test_broken_scene_and_broken_definition_both_reported_c20(content_root):
+def test_broken_adventure_and_broken_definition_both_reported_c22(content_root):
     build_version_dir(
         content_root,
         scenes={
@@ -223,11 +241,11 @@ def test_broken_scene_and_broken_definition_both_reported_c20(content_root):
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
     tags = _tags(exc_info)
-    assert "R14" in tags
-    assert "R15" in tags
+    assert "R12" in tags  # mill-floor's placement of "no-such-thing"
+    assert "R13" in tags  # bog-lurker.json's id no longer matches its stem
 
 
-def test_malformed_campaign_json_is_exactly_one_read_entry_c21(content_root):
+def test_malformed_campaign_json_is_exactly_one_read_entry_c23(content_root):
     version_dir = build_version_dir(content_root)
     (version_dir / "campaign.json").write_text("{not valid json")
 
@@ -238,7 +256,7 @@ def test_malformed_campaign_json_is_exactly_one_read_entry_c21(content_root):
     assert exc_info.value.errors[0].startswith("campaign.json: [READ]")
 
 
-def test_schema_invalid_campaign_json_is_exactly_one_schema_entry_c22(content_root):
+def test_schema_invalid_campaign_json_is_exactly_one_schema_entry_c24(content_root):
     version_dir = build_version_dir(content_root)
     write_json(version_dir / "campaign.json", {"id": "hollow-reach"})
 
@@ -249,9 +267,11 @@ def test_schema_invalid_campaign_json_is_exactly_one_schema_entry_c22(content_ro
     assert exc_info.value.errors[0].startswith("campaign.json: [SCHEMA]")
 
 
-def test_model_level_schema_failure_has_no_empty_location_segment_c23(content_root):
+def test_model_level_schema_failure_has_no_empty_location_segment_c25(content_root):
     version_dir = build_version_dir(content_root)
-    (version_dir / "scenes" / "mill-floor.json").write_text("[]")
+    # A JSON array instead of an object: a model-level Pydantic failure whose
+    # `loc` is empty.
+    (version_dir / "adventures" / "the-sunken-mill.json").write_text("[]")
 
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
@@ -262,7 +282,28 @@ def test_model_level_schema_failure_has_no_empty_location_segment_c23(content_ro
         assert ": : " not in entry
 
 
-def test_content_invalid_error_str_and_empty_errors_guard_c24():
+def test_broken_scene_reported_once_on_its_adventure_file_c26(content_root):
+    """P1-D20: a schema-invalid inline scene is one [SCHEMA] entry on its
+    *adventure* file -- never one per scene, never on a scene file, which no
+    longer exists -- and the entry's detail carries Pydantic's `loc`, which
+    names the scene's position (e.g. `scenes.1.truth`)."""
+    build_version_dir(
+        content_root,
+        scenes={"mill-approach": scene_approach(), "mill-floor": scene_floor(truth=[])},
+    )
+
+    with pytest.raises(errors.ContentInvalidError) as exc_info:
+        service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    schema_entries = [e for e in exc_info.value.errors if "[SCHEMA]" in e]
+    assert len(schema_entries) == 1
+    entry = schema_entries[0]
+    assert entry.startswith("adventures/the-sunken-mill.json: [SCHEMA]")
+    assert "scenes" in entry
+    assert "1" in entry  # mill-floor is scenes[1] in insertion order
+
+
+def test_content_invalid_error_str_and_empty_errors_guard_c27():
     exc = errors.ContentInvalidError("hollow-reach", "v1", ["a: [READ] boom"])
     text = str(exc)
     assert "hollow-reach" in text
@@ -272,10 +313,10 @@ def test_content_invalid_error_str_and_empty_errors_guard_c24():
     errors.ContentInvalidError("hollow-reach", "v1", [])  # must not raise
 
 
-# --- The referential rules (criteria 25-41) ---------------------------------
+# --- The referential rules (criteria 28-42) ----------------------------------
 
 
-def test_r1_missing_campaign_json_c25(content_root):
+def test_r1_missing_campaign_json_c28(content_root):
     version_dir = build_version_dir(content_root)
     (version_dir / "campaign.json").unlink()
 
@@ -286,7 +327,7 @@ def test_r1_missing_campaign_json_c25(content_root):
     assert exc_info.value.errors[0].startswith("campaign.json: [READ]")
 
 
-def test_r2_campaign_id_does_not_match_directory_name_c26(content_root):
+def test_r2_campaign_id_does_not_match_directory_name_c29(content_root):
     build_version_dir(content_root, campaign=campaign(id="wrong-id"))
 
     with pytest.raises(errors.ContentInvalidError) as exc_info:
@@ -295,7 +336,7 @@ def test_r2_campaign_id_does_not_match_directory_name_c26(content_root):
     assert any(e.startswith("campaign.json: [R2]") for e in exc_info.value.errors)
 
 
-def test_r4_unknown_adventure_id_c27(content_root):
+def test_r4_unknown_adventure_id_c30(content_root):
     build_version_dir(
         content_root,
         campaign=campaign(adventures=["the-sunken-mill", "no-such-adventure"]),
@@ -307,7 +348,7 @@ def test_r4_unknown_adventure_id_c27(content_root):
     assert any(e.startswith("campaign.json: [R4]") for e in exc_info.value.errors)
 
 
-def test_r4_duplicate_adventure_deduplicated_before_r8_c27(content_root):
+def test_r4_duplicate_adventure_deduplicated_before_r8_c30(content_root):
     build_version_dir(
         content_root,
         campaign=campaign(adventures=["the-sunken-mill", "the-sunken-mill"]),
@@ -321,12 +362,14 @@ def test_r4_duplicate_adventure_deduplicated_before_r8_c27(content_root):
     assert "R8" not in tags
 
 
-def test_r5_orphan_adventure_file_c28(content_root):
+def test_r5_orphan_adventure_file_c31(content_root):
     build_version_dir(
         content_root,
         adventures={
             "the-sunken-mill": adventure(),
-            "orphan": adventure(id="orphan", entry_scene="mill-approach"),
+            "orphan": adventure(
+                id="orphan", entry_scene="mill-approach", scenes=[scene_approach()]
+            ),
         },
     )
 
@@ -336,41 +379,27 @@ def test_r5_orphan_adventure_file_c28(content_root):
     assert any(e.startswith("adventures/orphan.json: [R5]") for e in exc_info.value.errors)
 
 
-def test_r6_adventure_id_does_not_match_filename_stem_c29(content_root):
-    build_version_dir(content_root, adventures={"the-sunken-mill": adventure(id="other")})
-
-    with pytest.raises(errors.ContentInvalidError) as exc_info:
-        service.load_campaign(CAMPAIGN_ID, VERSION)
-
-    assert any(e.startswith("adventures/the-sunken-mill.json: [R6]") for e in exc_info.value.errors)
-
-
-def test_r6_dropped_adventure_yields_no_further_findings_about_itself_p1d19(content_root):
-    """P1-D19: an adventure failing R6 is dropped from R7/R10/R11/R12/R13 and
-    claims no scenes for R8 -- its scenes become unclaimed orphans instead."""
+def test_r6_adventure_id_mismatch_drops_it_yielding_exactly_r6_and_r14_c32(content_root):
+    """Criterion 32: setting the adventure file's `id` to a mismatch yields
+    exactly two entries -- its own [R6], and an [R14] on the definition the
+    dropped adventure no longer references (a dropped adventure contributes
+    no scenes to R14). No third entry, and none naming a scene of that
+    adventure, because the adventure is dropped from R7-R12."""
     build_version_dir(content_root, adventures={"the-sunken-mill": adventure(id="other")})
 
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
     path_tag_pairs = {(m.group(1), m.group(2)) for m in _entries(exc_info)}
-    assert ("adventures/the-sunken-mill.json", "R6") in path_tag_pairs
-    # dropped -- no R10/R12/R13 finding attributed to the same adventure file
-    assert not any(
-        path == "adventures/the-sunken-mill.json" and tag in {"R10", "R12", "R13"}
-        for path, tag in path_tag_pairs
-    )
-    # its scenes are unclaimed, reported as R8 orphans
-    assert ("scenes/mill-approach.json", "R8") in path_tag_pairs
-    assert ("scenes/mill-floor.json", "R8") in path_tag_pairs
+    assert path_tag_pairs == {
+        ("adventures/the-sunken-mill.json", "R6"),
+        ("definitions/bog-lurker.json", "R14"),
+    }
 
 
-def test_r7_unknown_scene_id_in_adventure_c30(content_root):
+def test_r7_entry_scene_not_in_adventure_scenes_c33(content_root):
     build_version_dir(
-        content_root,
-        adventures={
-            "the-sunken-mill": adventure(scenes=["mill-approach", "mill-floor", "no-such-scene"])
-        },
+        content_root, adventures={"the-sunken-mill": adventure(entry_scene="no-such-scene")}
     )
 
     with pytest.raises(errors.ContentInvalidError) as exc_info:
@@ -379,39 +408,33 @@ def test_r7_unknown_scene_id_in_adventure_c30(content_root):
     assert any(e.startswith("adventures/the-sunken-mill.json: [R7]") for e in exc_info.value.errors)
 
 
-def test_r7_duplicate_scene_id_in_adventure_c30(content_root):
-    build_version_dir(
-        content_root,
-        adventures={
-            "the-sunken-mill": adventure(scenes=["mill-approach", "mill-floor", "mill-floor"])
-        },
-    )
-
-    with pytest.raises(errors.ContentInvalidError) as exc_info:
-        service.load_campaign(CAMPAIGN_ID, VERSION)
-
-    assert any(e.startswith("adventures/the-sunken-mill.json: [R7]") for e in exc_info.value.errors)
-
-
-def test_r8_orphan_scene_file_c31(content_root):
+def test_r8_duplicate_scene_id_within_one_adventure_c34(content_root):
     build_version_dir(
         content_root,
         scenes={
-            "mill-approach": scene_approach(),
+            "mill-approach": scene_approach(id="mill-floor"),
             "mill-floor": scene_floor(),
-            "orphan": scene_floor(id="orphan", creatures=[]),
         },
     )
 
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    assert any(e.startswith("scenes/orphan.json: [R8]") for e in exc_info.value.errors)
+    r8_entries = [(m.group(1), m.group(3)) for m in _entries(exc_info) if m.group(2) == "R8"]
+    assert len(r8_entries) == 1
+    path, detail = r8_entries[0]
+    assert path == "adventures/the-sunken-mill.json"
+    assert "mill-floor" in detail
+    # Companions R7 (entry scene lost) and R11 (unreachable) are expected and
+    # not asserted on -- the assertion is "exactly one R8", not len == 1.
+    assert len(exc_info.value.errors) > 1
 
 
-def test_r8_scene_claimed_by_two_adventures_names_the_second_c31(content_root):
+def test_r8_scene_id_reused_across_two_adventures_names_the_later_one_c34(content_root):
     second_adventure = adventure(
-        id="second-adventure", entry_scene="mill-floor", scenes=["mill-floor"]
+        id="second-adventure",
+        entry_scene="mill-floor",
+        scenes=[scene_floor(creatures=[])],
     )
     build_version_dir(
         content_root,
@@ -423,60 +446,12 @@ def test_r8_scene_claimed_by_two_adventures_names_the_second_c31(content_root):
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
     assert any(
-        e.startswith("adventures/second-adventure.json: [R8]") for e in exc_info.value.errors
+        m.group(1) == "adventures/second-adventure.json" and m.group(2) == "R8"
+        for m in _entries(exc_info)
     )
 
 
-def test_r9_scene_id_does_not_match_filename_stem_c32(content_root):
-    build_version_dir(
-        content_root,
-        scenes={"mill-approach": scene_approach(), "mill-floor": scene_floor(id="other")},
-    )
-
-    with pytest.raises(errors.ContentInvalidError) as exc_info:
-        service.load_campaign(CAMPAIGN_ID, VERSION)
-
-    assert any(e.startswith("scenes/mill-floor.json: [R9]") for e in exc_info.value.errors)
-
-
-def test_r9_scene_report_and_continue_p1d19(content_root):
-    """P1-D19: a scene failing R9 is not dropped -- it remains under its
-    filename stem and is still evaluated by later rules, e.g. R14 for an
-    unresolved creature placement."""
-    build_version_dir(
-        content_root,
-        scenes={
-            "mill-approach": scene_approach(),
-            "mill-floor": scene_floor(
-                id="other",
-                creatures=[{"definition": "no-such-thing", "count": 1}],
-            ),
-        },
-        definitions={},
-    )
-
-    with pytest.raises(errors.ContentInvalidError) as exc_info:
-        service.load_campaign(CAMPAIGN_ID, VERSION)
-
-    path_tag_pairs = {(m.group(1), m.group(2)) for m in _entries(exc_info)}
-    assert ("scenes/mill-floor.json", "R9") in path_tag_pairs
-    assert ("scenes/mill-floor.json", "R14") in path_tag_pairs
-
-
-def test_r10_entry_scene_not_in_adventure_scenes_c33(content_root):
-    build_version_dir(
-        content_root, adventures={"the-sunken-mill": adventure(entry_scene="no-such-scene")}
-    )
-
-    with pytest.raises(errors.ContentInvalidError) as exc_info:
-        service.load_campaign(CAMPAIGN_ID, VERSION)
-
-    assert any(
-        e.startswith("adventures/the-sunken-mill.json: [R10]") for e in exc_info.value.errors
-    )
-
-
-def test_r11_exit_targets_unknown_scene_c34(content_root):
+def test_r9_exit_targets_unknown_scene_c35(content_root):
     build_version_dir(
         content_root,
         scenes={
@@ -490,10 +465,14 @@ def test_r11_exit_targets_unknown_scene_c34(content_root):
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    assert any(e.startswith("scenes/mill-approach.json: [R11]") for e in exc_info.value.errors)
+    r9_entries = [(m.group(1), m.group(3)) for m in _entries(exc_info) if m.group(2) == "R9"]
+    assert len(r9_entries) == 1
+    path, detail = r9_entries[0]
+    assert path == "adventures/the-sunken-mill.json"
+    assert "mill-approach" in detail
 
 
-def test_r11_exit_targets_own_scene_c34(content_root):
+def test_r9_exit_targets_own_scene_c35(content_root):
     build_version_dir(
         content_root,
         scenes={
@@ -507,34 +486,47 @@ def test_r11_exit_targets_own_scene_c34(content_root):
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    assert any(e.startswith("scenes/mill-approach.json: [R11]") for e in exc_info.value.errors)
+    assert any(
+        m.group(1) == "adventures/the-sunken-mill.json"
+        and m.group(2) == "R9"
+        and "mill-approach" in m.group(3)
+        for m in _entries(exc_info)
+    )
 
 
-def test_r11_exit_targets_scene_in_a_different_adventure_c34(content_root):
+def test_r9_exit_targets_scene_in_a_different_adventure_c35(content_root):
     other_scene = scene_floor(id="other-scene", creatures=[])
     other_adventure = adventure(
-        id="other-adventure", entry_scene="other-scene", scenes=["other-scene"]
+        id="other-adventure", entry_scene="other-scene", scenes=[other_scene]
     )
     build_version_dir(
         content_root,
         campaign=campaign(adventures=["the-sunken-mill", "other-adventure"]),
-        adventures={"the-sunken-mill": adventure(), "other-adventure": other_adventure},
-        scenes={
-            "mill-approach": scene_approach(
-                exits=[{"to": "other-scene", "description": "d", "condition": None}]
+        adventures={
+            "the-sunken-mill": adventure(
+                scenes=[
+                    scene_approach(
+                        exits=[{"to": "other-scene", "description": "d", "condition": None}]
+                    ),
+                    scene_floor(),
+                ]
             ),
-            "mill-floor": scene_floor(),
-            "other-scene": other_scene,
+            "other-adventure": other_adventure,
         },
     )
 
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    assert any(e.startswith("scenes/mill-approach.json: [R11]") for e in exc_info.value.errors)
+    assert any(
+        m.group(1) == "adventures/the-sunken-mill.json"
+        and m.group(2) == "R9"
+        and "mill-approach" in m.group(3)
+        for m in _entries(exc_info)
+    )
 
 
-def test_r12_no_terminal_scene_c35(content_root):
+def test_r10_no_terminal_scene_c36(content_root):
     build_version_dir(
         content_root,
         scenes={
@@ -549,16 +541,13 @@ def test_r12_no_terminal_scene_c35(content_root):
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
     assert any(
-        e.startswith("adventures/the-sunken-mill.json: [R12]") for e in exc_info.value.errors
+        e.startswith("adventures/the-sunken-mill.json: [R10]") for e in exc_info.value.errors
     )
 
 
-def test_r13_scene_unreachable_from_entry_scene_c36(content_root):
+def test_r11_scene_unreachable_from_entry_scene_c37(content_root):
     build_version_dir(
         content_root,
-        adventures={
-            "the-sunken-mill": adventure(scenes=["mill-approach", "mill-floor", "isolated"])
-        },
         scenes={
             "mill-approach": scene_approach(),
             "mill-floor": scene_floor(),
@@ -570,11 +559,11 @@ def test_r13_scene_unreachable_from_entry_scene_c36(content_root):
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
     assert any(
-        e.startswith("adventures/the-sunken-mill.json: [R13]") for e in exc_info.value.errors
+        e.startswith("adventures/the-sunken-mill.json: [R11]") for e in exc_info.value.errors
     )
 
 
-def test_r13_scene_reachable_only_through_a_conditioned_exit_is_not_flagged_c36(content_root):
+def test_r11_scene_reachable_only_through_a_conditioned_exit_is_not_flagged_c37(content_root):
     build_version_dir(content_root)  # mill-floor is reached only via a conditioned exit
 
     loaded = service.load_campaign(CAMPAIGN_ID, VERSION)  # must not raise
@@ -582,12 +571,13 @@ def test_r13_scene_reachable_only_through_a_conditioned_exit_is_not_flagged_c36(
     assert set(loaded.scenes.keys()) == {"mill-approach", "mill-floor"}
 
 
-def test_r13_single_scene_adventure_is_not_flagged_unreachable_c36(content_root):
-    single_scene_adventure = adventure(scenes=["mill-approach"], entry_scene="mill-approach")
+def test_r11_single_scene_adventure_is_not_flagged_unreachable_c37(content_root):
+    single_scene_adventure = adventure(
+        entry_scene="mill-approach", scenes=[scene_approach(exits=[])]
+    )
     build_version_dir(
         content_root,
         adventures={"the-sunken-mill": single_scene_adventure},
-        scenes={"mill-approach": scene_approach(exits=[])},
         definitions={},
     )
 
@@ -596,7 +586,7 @@ def test_r13_single_scene_adventure_is_not_flagged_unreachable_c36(content_root)
     assert list(loaded.adventures.keys()) == ["the-sunken-mill"]
 
 
-def test_r14_creature_placement_targets_unknown_definition_c37(content_root):
+def test_r12_creature_placement_targets_unknown_definition_c38(content_root):
     build_version_dir(
         content_root,
         scenes={
@@ -609,21 +599,25 @@ def test_r14_creature_placement_targets_unknown_definition_c37(content_root):
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    assert any(e.startswith("scenes/mill-floor.json: [R14]") for e in exc_info.value.errors)
+    r12_entries = [(m.group(1), m.group(3)) for m in _entries(exc_info) if m.group(2) == "R12"]
+    assert len(r12_entries) == 1
+    path, detail = r12_entries[0]
+    assert path == "adventures/the-sunken-mill.json"
+    assert "mill-floor" in detail
 
 
-def test_r15_definition_id_does_not_match_filename_stem_c38(content_root):
+def test_r13_definition_id_does_not_match_filename_stem_c39(content_root):
     build_version_dir(content_root, definitions={"bog-lurker": definition(id="other")})
 
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    assert any(e.startswith("definitions/bog-lurker.json: [R15]") for e in exc_info.value.errors)
+    assert any(e.startswith("definitions/bog-lurker.json: [R13]") for e in exc_info.value.errors)
 
 
-def test_r15_definition_report_and_continue_p1d19(content_root):
-    """P1-D19: a definition failing R15 is not dropped -- it remains under
-    its filename stem and is still evaluated by R17, e.g. a name collision
+def test_r13_definition_report_and_continue_p1d19(content_root):
+    """P1-D19: a definition failing R13 is not dropped -- it remains under
+    its filename stem and is still evaluated by R15, e.g. a name collision
     against another definition."""
     build_version_dir(
         content_root,
@@ -646,11 +640,11 @@ def test_r15_definition_report_and_continue_p1d19(content_root):
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
     path_tag_pairs = {(m.group(1), m.group(2)) for m in _entries(exc_info)}
-    assert ("definitions/bog-lurker.json", "R15") in path_tag_pairs
-    assert ("definitions/bog-lurker-2.json", "R17") in path_tag_pairs
+    assert ("definitions/bog-lurker.json", "R13") in path_tag_pairs
+    assert ("definitions/bog-lurker-2.json", "R15") in path_tag_pairs
 
 
-def test_r16_unreferenced_definition_c39(content_root):
+def test_r14_unreferenced_definition_c40(content_root):
     build_version_dir(
         content_root,
         definitions={
@@ -662,10 +656,10 @@ def test_r16_unreferenced_definition_c39(content_root):
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    assert any(e.startswith("definitions/unused.json: [R16]") for e in exc_info.value.errors)
+    assert any(e.startswith("definitions/unused.json: [R14]") for e in exc_info.value.errors)
 
 
-def test_r17_three_way_name_collision_case_insensitive_c40(content_root):
+def test_r15_three_way_name_collision_case_insensitive_c41(content_root):
     build_version_dir(
         content_root,
         scenes={
@@ -689,12 +683,12 @@ def test_r17_three_way_name_collision_case_insensitive_c40(content_root):
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
     path_tag_pairs = set(zip(_paths(exc_info), _tags(exc_info), strict=True))
-    assert ("definitions/bog-lurker-2.json", "R17") in path_tag_pairs
-    assert ("definitions/bog-lurker-3.json", "R17") in path_tag_pairs
-    assert ("definitions/bog-lurker.json", "R17") not in path_tag_pairs
+    assert ("definitions/bog-lurker-2.json", "R15") in path_tag_pairs
+    assert ("definitions/bog-lurker-3.json", "R15") in path_tag_pairs
+    assert ("definitions/bog-lurker.json", "R15") not in path_tag_pairs
 
 
-def test_r18_definition_placed_twice_in_one_scene_c41(content_root):
+def test_r16_definition_placed_twice_in_one_scene_c42(content_root):
     build_version_dir(
         content_root,
         scenes={
@@ -711,4 +705,21 @@ def test_r18_definition_placed_twice_in_one_scene_c41(content_root):
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    assert any(e.startswith("scenes/mill-floor.json: [R18]") for e in exc_info.value.errors)
+    r16_entries = [(m.group(1), m.group(3)) for m in _entries(exc_info) if m.group(2) == "R16"]
+    assert len(r16_entries) == 1
+    path, detail = r16_entries[0]
+    assert path == "adventures/the-sunken-mill.json"
+    assert "mill-floor" in detail
+
+
+def test_scenes_directory_is_ignored_entirely_c43(content_root):
+    """Criterion 43: no rule polices the file layout any more. A `scenes/`
+    directory placed in an otherwise-valid tree is not read, not reported,
+    and the tree still loads."""
+    version_dir = build_version_dir(content_root)
+    (version_dir / "scenes").mkdir()
+    (version_dir / "scenes" / "mill-approach.json").write_text('{"not": "even valid content"}')
+
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)  # must not raise
+
+    assert set(loaded.scenes.keys()) == {"mill-approach", "mill-floor"}

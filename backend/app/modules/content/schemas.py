@@ -35,6 +35,8 @@ class StatBlock(ContentModel):
 
 
 class Definition(ContentModel):
+    """A campaign-scoped template; what appears in a scene during a run is an instance of it."""
+
     id: ContentId
     name: ProseText
     description: ProseText
@@ -76,7 +78,7 @@ class Adventure(ContentModel):
     title: ProseText
     intro: ProseText
     entry_scene: ContentId
-    scenes: list[ContentId] = Field(min_length=1)
+    scenes: list[Scene] = Field(min_length=1)
 
 
 class SeedCharacter(ContentModel):

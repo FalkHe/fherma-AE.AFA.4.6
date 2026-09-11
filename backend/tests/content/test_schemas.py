@@ -1,13 +1,20 @@
 """Tests for `app.modules.content.schemas` -- phase contract §3.
 
-Criterion numbers refer to `step-1.1.md` §6 ("Schema", 1-8).
+Criterion numbers refer to `step-1.1.md` §6 ("Schema", 1-10).
 """
 
 import pytest
-from app.modules.content import schemas
 from pydantic import ValidationError
 
-from tests.content.conftest import abilities, definition, scene_approach, seed_character
+from app.modules.content import schemas
+from tests.content.conftest import (
+    abilities,
+    adventure,
+    campaign,
+    definition,
+    scene_approach,
+    seed_character,
+)
 
 
 def test_definition_rejects_missing_stat_block_c1():
@@ -79,3 +86,28 @@ def test_content_model_rejects_attribute_assignment_c8():
     instance = schemas.Definition(**definition())
     with pytest.raises(ValidationError):
         instance.name = "New Name"
+
+
+def test_adventure_rejects_pre_amendment_scene_id_list_c9():
+    """P1-D20: `Adventure.scenes` is `list[Scene]`, not `list[ContentId]`.
+    This is the one field the rework changes and the likeliest regression."""
+    payload = adventure(scenes=["mill-approach", "mill-floor"])
+    with pytest.raises(ValidationError):
+        schemas.Adventure(**payload)
+
+
+def test_adventure_rejects_scenes_objects_alongside_extra_scene_ids_key_c9():
+    payload = adventure()
+    payload["scene_ids"] = ["mill-approach", "mill-floor"]
+    with pytest.raises(ValidationError):
+        schemas.Adventure(**payload)
+
+
+def test_adventure_rejects_empty_scenes_list_c10():
+    with pytest.raises(ValidationError):
+        schemas.Adventure(**adventure(scenes=[]))
+
+
+def test_campaign_rejects_empty_adventures_list_c10():
+    with pytest.raises(ValidationError):
+        schemas.Campaign(**campaign(adventures=[]))

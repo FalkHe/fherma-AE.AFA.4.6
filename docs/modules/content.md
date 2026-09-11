@@ -24,19 +24,34 @@ backend/content/
         └── <version>/
             ├── campaign.json
             ├── adventures/<adventure_id>.json
-            ├── scenes/<scene_id>.json
             └── definitions/<definition_id>.json
 ```
 
 Example: `backend/content/campaigns/hollow-reach/v1/campaign.json`.
 
+A campaign version is exactly **three kinds of file**:
+
+- `campaign.json` — the campaign's metadata and its seed player character.
+- `adventures/<adventure_id>.json` — **the whole adventure, its scenes
+  included, inline.** There is no `scenes/` directory and no separate scene
+  file.
+- `definitions/<definition_id>.json` — one file per campaign-scoped NPC or
+  monster template.
+
+**Why the granularity is what it is.** A scene belongs to exactly one
+adventure and cannot be shared or orphaned, so it lives inside that
+adventure's file. A definition is campaign-scoped — the villain of adventure 1
+can return in adventure 3 — so it cannot live inside any one adventure and
+stays its own file. The campaign's own metadata and its seed character are
+neither, and stay in `campaign.json`.
+
 - **Only `*.json` files are considered.** A `README.md`, a `.DS_Store` or an
-  editor swap file sitting inside `adventures/`, `scenes/` or `definitions/` is
-  ignored entirely — never read, never reported as an orphan.
-- **A missing `adventures/`, `scenes/` or `definitions/` directory is treated
-  as an empty directory**, not an error by itself — but an adventure, scene or
-  definition that a `campaign.json` or scene expects and does not find still
-  fails the referential rules below (§7).
+  editor swap file sitting inside `adventures/` or `definitions/` is ignored
+  entirely — never read, never reported as an orphan.
+- **A missing `adventures/` or `definitions/` directory is treated as an
+  empty directory**, not an error by itself — but an adventure or definition
+  that `campaign.json` or a scene expects and does not find still fails the
+  referential rules below (§7).
 
 ## 3. Versioning
 
@@ -115,12 +130,21 @@ skills, saves.
 
 One entity used for both NPCs and monsters — there is no npc/monster split.
 Campaign-scoped: a definition may recur across every adventure of the
-campaign. File: `definitions/<id>.json`.
+campaign. File: `definitions/<id>.json` — the one file in the tree that
+belongs to no single adventure.
+
+**What a `Definition` is, and why the word is `Definition`.** A definition is
+a **template**: the campaign-scoped description of a kind of creature. What
+appears in a scene during a run is an **instance** of it — a creature with
+current hit points, an aliveness flag and its own disposition, created fresh
+each time the scene is populated. `Scene.creatures` entries point at a
+`definition` by id; the directory that holds the templates is `definitions/`.
+Follow that one word — `definition` — from the placement to the file.
 
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
 | `id` | content id | yes | — | Must equal the filename stem |
-| `name` | prose string | yes | — | Player-facing name; **must be unique within the campaign, case-insensitively** (R17) |
+| `name` | prose string | yes | — | Player-facing name; **must be unique within the campaign, case-insensitively** (R15) |
 | `description` | prose string | yes | — | Who they are, what they look like |
 | `disposition` | prose string | yes | — | What they want, how they treat the player |
 | `stat_block` | `StatBlock` | yes | — | **Required on every definition** — a definition with no stat block does not exist in this schema |
@@ -147,7 +171,7 @@ One entry of a scene's `creatures` list.
 | `definition` | content id | yes | — | The id of a `Definition` this scene places |
 | `count` | integer, ≥1 | no | `1` | How many instances of that definition appear |
 
-**A definition may appear at most once in a scene's `creatures` list** (R18):
+**A definition may appear at most once in a scene's `creatures` list** (R16):
 write `{"definition": "goblin", "count": 3}` for three goblins, never three
 separate entries.
 
@@ -162,16 +186,19 @@ One entry of a scene's `exits` list — **a list, not a map**.
 | `condition` | prose string or `null` | no | `null` | Prose the DM judges before allowing the exit; `null` means always open |
 
 **A scene with `exits: []` is terminal** — reaching it ends the adventure.
-Every adventure must have at least one terminal scene (R12).
+Every adventure must have at least one terminal scene (R10).
 
 ### 5.8 `Scene`
 
-File: `scenes/<id>.json`. Facts, intentions and consequences — never a script
-(see §10).
+**A scene is not a file.** It is an element of its adventure's `scenes` list
+(§5.9), so a scene belongs to exactly one adventure and cannot be orphaned or
+shared between adventures. It keeps its own `id`, which is how exits, runs and
+the loaded campaign's flat scene map address it. Facts, intentions and
+consequences — never a script (see §10).
 
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
-| `id` | content id | yes | — | Must equal the filename stem |
+| `id` | content id | yes | — | Unique across the **whole campaign** (R8), not just the adventure |
 | `title` | prose string | yes | — | Short location label, shown to the player |
 | `truth` | list of prose strings, min length 1 | yes | — | What is true here — at least one fact is required |
 | `npc_intent` | prose string or `null` | no | `null` | What the creatures present want; `null` when the scene has no creatures |
@@ -183,15 +210,15 @@ File: `scenes/<id>.json`. Facts, intentions and consequences — never a script
 
 ### 5.9 `Adventure`
 
-File: `adventures/<id>.json`.
+File: `adventures/<id>.json` — **the whole adventure, its scenes included.**
 
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
 | `id` | content id | yes | — | Must equal the filename stem |
 | `title` | prose string | yes | — | Player-facing title |
 | `intro` | prose string | yes | — | Prose read aloud when the adventure starts |
-| `entry_scene` | content id | yes | — | Must be a member of `scenes` |
-| `scenes` | list of content ids, min length 1 | yes | — | The scene ids belonging to this adventure — a set semantically; order carries no meaning, traversal is defined by exits |
+| `entry_scene` | content id | yes | — | Must be the id of one of this adventure's own `scenes` |
+| `scenes` | list of `Scene`, min length 1 | yes | — | The scenes themselves, inline — not ids. Order is authoring convenience only; traversal is defined by exits and `entry_scene` |
 
 ### 5.10 `SeedCharacter`
 
@@ -249,7 +276,8 @@ else, so the two can never disagree.
 Applied after every file in the tree has already passed the field checks
 above. Each rule's tag is what appears in a validation error, in the form
 `<path>: [<TAG>] <detail>` (§8) — an author who sees `[R11]` can look the
-number up here.
+number up here. **Sixteen rules, `R1` through `R16`; R1 carries no tag of its
+own.**
 
 | # | Where checked | Rule |
 |---|---|---|
@@ -259,18 +287,16 @@ number up here.
 | R4 | loader | Every id in `campaign.adventures` has a matching `adventures/<id>.json`, with no duplicate ids in the list |
 | R5 | loader | Every `*.json` file in `adventures/` is listed in `campaign.adventures` — no orphans |
 | R6 | loader | Each adventure's `id` equals its own filename stem |
-| R7 | loader | Every id in an adventure's `scenes` has a matching `scenes/<id>.json`, with no duplicates |
-| R8 | loader | Every `*.json` file in `scenes/` is claimed by exactly one adventure — no orphans, no scene shared by two adventures |
-| R9 | loader | Each scene's `id` equals its own filename stem |
-| R10 | loader | `adventure.entry_scene` is one of `adventure.scenes` |
-| R11 | loader | Every `exit.to` names a scene in the **same** adventure, and is never the scene's own id |
-| R12 | loader | Each adventure has at least one scene whose `exits` is `[]` |
-| R13 | loader | Every scene of an adventure is reachable from `entry_scene` by following exits (conditions ignored for this check); the entry scene itself counts as reached |
-| R14 | loader | Every `creatures[].definition` resolves to a `definitions/<id>.json` |
-| R15 | loader | Each definition's `id` equals its own filename stem |
-| R16 | loader | Every `*.json` file in `definitions/` is referenced by at least one scene — no dead content |
-| R17 | loader | `Definition.name` is unique across the campaign, compared case-insensitively after stripping — `"Bog Lurker"` and `"bog lurker"` collide |
-| R18 | loader | A definition appears at most once in a single scene's `creatures` list |
+| R7 | loader | `adventure.entry_scene` is the `id` of one of that adventure's own `scenes` |
+| R8 | loader | A scene `id` appears **at most once across the whole campaign** — twice in one adventure and once each in two adventures are the same failure |
+| R9 | loader | Every `exit.to` names a scene in the **same** adventure, and is never the scene's own id |
+| R10 | loader | Each adventure has at least one scene whose `exits` is `[]` |
+| R11 | loader | Every scene of an adventure is reachable from `entry_scene` by following exits (conditions ignored for this check); the entry scene itself counts as reached |
+| R12 | loader | Every `creatures[].definition` resolves to a `definitions/<id>.json` |
+| R13 | loader | Each definition's `id` equals its own filename stem |
+| R14 | loader | Every `*.json` file in `definitions/` is referenced by at least one scene — no dead content |
+| R15 | loader | `Definition.name` is unique across the campaign, compared case-insensitively after stripping — `"Bog Lurker"` and `"bog lurker"` collide |
+| R16 | loader | A definition appears at most once in a single scene's `creatures` list |
 
 **What an id/filename mismatch gets you.** An entity is always identified by
 its **filename**, never by the `id` field inside the file, so a mismatch never
@@ -278,15 +304,23 @@ changes what the entity is called elsewhere in the tree — it only earns a
 report:
 
 - An **adventure** whose `id` disagrees with its filename (`[R6]`) is dropped:
-  it produces no other findings about itself, and every scene it would have
-  claimed is reported as an orphan (`[R8]`) instead. One renamed adventure file
-  therefore shows up as a cluster of `[R8]` lines, not as one obvious `[R6]`
-  line — if several scenes suddenly look orphaned, check the adventure's `id`
-  first.
-- A **scene** or **definition** whose `id` disagrees with its filename
-  (`[R9]` / `[R15]`) is reported but not dropped: it is still checked against
-  every other rule under its filename, so fixing the `id` alone is enough —
-  there is nothing else to redo.
+  it produces no other findings about itself, and its scenes are reported by
+  nothing — they are not files and cannot be orphans.
+- A **definition** whose `id` disagrees with its filename (`[R13]`) is
+  reported but not dropped: it is still checked against every other rule under
+  its filename, so fixing the `id` alone is enough — there is nothing else to
+  redo.
+- A **scene** has no filename, so its identity is its `id` field; `R8` is
+  what keeps that identity unambiguous across the whole campaign.
+
+**What one broken adventure does to the rest of the report.** An adventure
+that fails `[R6]`, `[READ]` or `[SCHEMA]` is dropped whole: it is excluded from
+every later rule and produces no further findings about itself, and its scenes
+go with it. **A dropped adventure contributes no scenes to R14**, so a
+definition that only that adventure referenced is reported `[R14]` as
+unreferenced — this is the deliberate answer, not an oversight. Fix the
+adventure and the `[R14]` disappears on its own; there is nothing else to do
+about it.
 
 `seed_character` has no referential rule — it references nothing else in
 content.
@@ -301,16 +335,20 @@ Every reported problem has the shape:
 
 - `[READ]` — the file could not be read, or is not valid JSON.
 - `[SCHEMA]` — the file parsed as JSON but failed a field check (§6).
-- `[R2]` … `[R18]` — the numbered referential rule that failed (§7). **R1 has
+- `[R2]` … `[R16]` — the numbered referential rule that failed (§7). **R1 has
   no tag of its own** — its failure is always reported as `[READ]` or
   `[SCHEMA]` against `campaign.json`. **R3 never appears here** — it is a
   CLI-level check, not a loader rule.
 
+**A rule that fails inside a scene names its adventure file** — a scene is not
+its own file, so the message is against `adventures/<id>.json` — and puts the
+scene id in the detail so the place in it can still be found.
+
 Example messages:
 
 ```
-scenes/mill-floor.json: [R11] exit 2 targets unknown scene 'under-whee'
-scenes/mill-floor.json: [SCHEMA] truth.0: String should have at least 1 character
+adventures/the-sunken-mill.json: [R9] scene 'mill-approach': exit targets unknown scene 'under-whee'
+adventures/the-sunken-mill.json: [SCHEMA] scenes.1.truth.0: String should have at least 1 character
 campaign.json: [SCHEMA] Input should be a valid dictionary
 definitions/bog-lurker.json: [READ] Expecting ',' delimiter: line 8 column 3 (char 214)
 ```
@@ -352,7 +390,8 @@ outside"`. Never write `"alarm_raised == false"` or anything resembling it.
 
 This is a minimal campaign, valid against every rule in §7. Reproduced
 verbatim — copy from it directly. It is illustrative only; it is not shipped
-as `backend/content/`.
+as `backend/content/`. It is **three files** — the whole adventure, both its
+scenes included, is one of them.
 
 `campaigns/hollow-reach/v1/campaign.json`
 
@@ -391,58 +430,49 @@ as `backend/content/`.
   "title": "The Sunken Mill",
   "intro": "The rain stopped three days ago and the water has not gone down. The mill at the bend has not turned since, and nobody who went to look has come back to say why.",
   "entry_scene": "mill-approach",
-  "scenes": ["mill-approach", "mill-floor"]
-}
-```
-
-`campaigns/hollow-reach/v1/scenes/mill-approach.json`
-
-```json
-{
-  "id": "mill-approach",
-  "title": "The Mill Approach",
-  "truth": [
-    "The mill leans into the flooded race; its wheel is jammed with black debris.",
-    "The door is barred from the inside."
-  ],
-  "consequences": [
-    "Breaking the bar is loud, and anything inside the mill hears it."
-  ],
-  "hidden": [
+  "scenes": [
     {
-      "fact": "Fresh bootprints lead into the mill and none lead out.",
-      "dc": 12,
-      "discovered_by": "a Wisdom (Perception) check on the mud, or searching the bank"
-    }
-  ],
-  "exits": [
+      "id": "mill-approach",
+      "title": "The Mill Approach",
+      "truth": [
+        "The mill leans into the flooded race; its wheel is jammed with black debris.",
+        "The door is barred from the inside."
+      ],
+      "consequences": [
+        "Breaking the bar is loud, and anything inside the mill hears it."
+      ],
+      "hidden": [
+        {
+          "fact": "Fresh bootprints lead into the mill and none lead out.",
+          "dc": 12,
+          "discovered_by": "a Wisdom (Perception) check on the mud, or searching the bank"
+        }
+      ],
+      "exits": [
+        {
+          "to": "mill-floor",
+          "description": "The mill door, barred from within.",
+          "condition": "the bar has been broken, forced, or lifted from outside"
+        }
+      ]
+    },
     {
-      "to": "mill-floor",
-      "description": "The mill door, barred from within.",
-      "condition": "the bar has been broken, forced, or lifted from outside"
+      "id": "mill-floor",
+      "title": "The Milling Floor",
+      "truth": [
+        "Knee-deep water covers the floor; the grain chute above is dry.",
+        "Two bog lurkers have made the flooded floor their nest."
+      ],
+      "npc_intent": "The lurkers want to drag anything warm under the water and wait.",
+      "consequences": [
+        "Climbing to the dry grain chute puts the player out of the lurkers' reach."
+      ],
+      "creatures": [
+        { "definition": "bog-lurker", "count": 2 }
+      ],
+      "pressure": "The water is still rising; the chute will be the only dry footing within the hour."
     }
   ]
-}
-```
-
-`campaigns/hollow-reach/v1/scenes/mill-floor.json`
-
-```json
-{
-  "id": "mill-floor",
-  "title": "The Milling Floor",
-  "truth": [
-    "Knee-deep water covers the floor; the grain chute above is dry.",
-    "Two bog lurkers have made the flooded floor their nest."
-  ],
-  "npc_intent": "The lurkers want to drag anything warm under the water and wait.",
-  "consequences": [
-    "Climbing to the dry grain chute puts the player out of the lurkers' reach."
-  ],
-  "creatures": [
-    { "definition": "bog-lurker", "count": 2 }
-  ],
-  "pressure": "The water is still rising; the chute will be the only dry footing within the hour."
 }
 ```
 
@@ -473,12 +503,13 @@ as `backend/content/`.
 }
 ```
 
-Why it is valid: `mill-floor` is reachable from `mill-approach` (R13) and has
-no `exits`, so it is terminal (R12); `bog-lurker` is referenced by a scene
-(R16) and its name is unique (R17); no scene places a definition twice (R18);
-the omitted optional fields — `npc_intent`, `creatures`, `pressure` on
-`mill-approach`, and `exits` on `mill-floor` — take their defaults, which is
-legal and is how absence is expressed.
+Why it is valid: the two scene ids are unique across the campaign (R8);
+`mill-floor` is reachable from `mill-approach` (R11) and has no `exits`, so it
+is terminal (R10); `bog-lurker` is referenced by a scene (R14) and its name is
+unique (R15); no scene places a definition twice (R16); the omitted optional
+fields — `npc_intent`, `creatures`, `pressure` on `mill-approach`, and `exits`
+on `mill-floor` — take their defaults, which is legal and is how absence is
+expressed.
 
 ## 12. Authoring checklist
 
@@ -490,8 +521,11 @@ Run down this list before validating:
 - [ ] Every definition is referenced by at least one scene.
 - [ ] No scene places the same definition twice — use `count` instead.
 - [ ] Every definition's `name` is unique across the campaign, ignoring case.
+- [ ] Every scene id is unique across the whole campaign, not just its own
+      adventure.
 - [ ] Every id (`campaign.id`, adventure/scene/definition ids) matches its own
-      filename stem and is lowercase kebab-case.
+      filename stem (or, for a scene, is unique campaign-wide) and is
+      lowercase kebab-case.
 - [ ] Every prose field has real content — no accidental whitespace-only
       string.
 - [ ] The player-class key is `character_class`, and the armour key is

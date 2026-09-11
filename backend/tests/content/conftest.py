@@ -4,6 +4,11 @@ Mode-A note (phase-1 shared-knowledge.md §8, P1-D13): `app.modules.content`
 does not exist yet, so every test in this package fails to collect until
 step 1.1 lands `backend/app/modules/content/`. That is expected.
 
+**P1-D20 rework.** An adventure is one file, its scenes inline
+(`Adventure.scenes: list[Scene]`). There is no `scenes/` directory and no
+per-scene file: `build_version_dir` writes only `campaign.json`,
+`adventures/<id>.json` and `definitions/<id>.json`.
+
 Nothing here is committed as a fixture corpus (§8): `build_version_dir`
 writes the §4.1 worked example (or a deliberately broken variant of it) into
 `tmp_path` for the duration of one test, and `content_root` repoints
@@ -17,6 +22,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from app.modules.content import service
 
 CAMPAIGN_ID = "hollow-reach"
@@ -49,18 +55,6 @@ CAMPAIGN: dict = {
         "armour_class": 14,
         "inventory": ["a shortsword", "a coil of rope", "a tin lantern"],
     },
-}
-
-ADVENTURE: dict = {
-    "id": "the-sunken-mill",
-    "title": "The Sunken Mill",
-    "intro": (
-        "The rain stopped three days ago and the water has not gone down. "
-        "The mill at the bend has not turned since, and nobody who went to "
-        "look has come back to say why."
-    ),
-    "entry_scene": "mill-approach",
-    "scenes": ["mill-approach", "mill-floor"],
 }
 
 SCENE_APPROACH: dict = {
@@ -100,6 +94,18 @@ SCENE_FLOOR: dict = {
     "pressure": (
         "The water is still rising; the chute will be the only dry footing within the hour."
     ),
+}
+
+ADVENTURE: dict = {
+    "id": "the-sunken-mill",
+    "title": "The Sunken Mill",
+    "intro": (
+        "The rain stopped three days ago and the water has not gone down. "
+        "The mill at the bend has not turned since, and nobody who went to "
+        "look has come back to say why."
+    ),
+    "entry_scene": "mill-approach",
+    "scenes": [SCENE_APPROACH, SCENE_FLOOR],
 }
 
 DEFINITION: dict = {
@@ -196,13 +202,25 @@ def build_version_dir(
 ) -> Path:
     """Writes the phase contract §4.1 worked example (or the given overrides)
     under `root/campaigns/<campaign_id>/<version>/` and returns that
-    directory. Pass `campaign=None` to write no `campaign.json` at all (R1);
-    pass `definitions={}` / `scenes={}` / `adventures={}` to write none of
-    that kind."""
+    directory.
+
+    P1-D20: there is no `scenes/` directory any more -- a scene is an element
+    of its adventure's `scenes` list. `scenes` here is therefore sugar over
+    the single default adventure: pass a `dict[scene_id, scene_payload]` to
+    override the *default* adventure's inline `scenes` list (order follows
+    dict insertion order), or pass `adventures` directly when a test needs
+    more than one adventure or a scene list that is not a simple override.
+    `adventures` takes precedence over `scenes` when both are given.
+
+    Pass `campaign=None` to write no `campaign.json` at all (R1); pass
+    `definitions={}` / `adventures={}` to write none of that kind.
+    `scenes={}` yields an adventure with an empty `scenes` list -- schema
+    invalid by itself (`Adventure.scenes` has `min_length=1`), useful for a
+    test that wants exactly that.
+    """
     if adventures is None:
-        adventures = {"the-sunken-mill": ADVENTURE}
-    if scenes is None:
-        scenes = {"mill-approach": SCENE_APPROACH, "mill-floor": SCENE_FLOOR}
+        scene_list = list(scenes.values()) if scenes is not None else [SCENE_APPROACH, SCENE_FLOOR]
+        adventures = {"the-sunken-mill": adventure(scenes=scene_list)}
     if definitions is None:
         definitions = {"bog-lurker": DEFINITION}
 
@@ -212,8 +230,6 @@ def build_version_dir(
         write_json(version_dir / "campaign.json", campaign)
     for adventure_id, data in adventures.items():
         write_json(version_dir / "adventures" / f"{adventure_id}.json", data)
-    for scene_id, data in scenes.items():
-        write_json(version_dir / "scenes" / f"{scene_id}.json", data)
     for definition_id, data in definitions.items():
         write_json(version_dir / "definitions" / f"{definition_id}.json", data)
     return version_dir

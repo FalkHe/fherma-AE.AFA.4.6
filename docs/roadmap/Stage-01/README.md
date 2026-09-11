@@ -325,7 +325,7 @@ capability the phase just changed is the phase's own output.
 
 | Contradiction | File | Owning phase |
 |---|---|---|
-| The static-file tree's content root, the `npcs/` + `monsters/` split, the scene-field line, the missing `intro` / `entry_scene` / seed character, and the unstated version mechanism — enumerated in `roadmap/Stage-01/phase-01/shared-knowledge.md` §9.2 | `general/model.md` | 1 |
+| The static-file tree's content root, its `scenes/` directory, the `npcs/` + `monsters/` split, the scene-field line, the missing `intro` / `entry_scene` / seed character, and the unstated version mechanism — enumerated in `roadmap/Stage-01/phase-01/shared-knowledge.md` §9.2 | `general/model.md` | 1 |
 | "Authored by an LLM once through a `generate_adventure` CLI that prompts with the SRD and enforces the schema" — content is hand-authored | `general/architecture.md` | 1 |
 | The tool table's `get_monster(name)` row — with one `Definition` entity the binding is id- or name-addressed over `definitions`, and its final name and argument are phase 8's to pin | `general/architecture.md` | 8 |
 | Requirement 3's wording does not state the player-capability reading | `general/requirement-map.md` | 1 (states it) · 11 (full argument) |
