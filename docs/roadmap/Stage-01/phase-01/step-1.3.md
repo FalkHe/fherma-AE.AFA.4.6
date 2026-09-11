@@ -77,10 +77,14 @@ Out of scope, and a deviation if it appears:
   `scenes` is a list of four ids, `scenes/` holding `village-green.json`,
   `thornway.json`, `lair-hollow.json` and `lair-maw.json`, and `definitions/`
   holding `mira.json`, `goblin.json` and `goblin-boss.json`.
-- **Running `app content validate` right now exits `1`** with a `[SCHEMA]` entry
-  on `adventures/goblins-of-greenhollow.json` — the adventure still carries a
-  list of scene ids. That is the starting state, and making it exit `0` is this
-  step's headline evidence.
+- **Running `app content validate` right now exits `1` with four stderr
+  lines**: a `[SCHEMA]` entry on `adventures/goblins-of-greenhollow.json` — the
+  adventure still carries a list of scene ids — and then an `[R14]` for each of
+  `definitions/goblin-boss.json`, `definitions/goblin.json` and
+  `definitions/mira.json`, because the dropped adventure contributes no scenes
+  and nothing else references them (phase contract §11's drop block). **All four
+  lines are the starting state, and all four clear together** when the migration
+  lands: making this command exit `0` is this step's headline evidence.
 - `backend/tests/content/test_shipped_tree.py` exists and is currently red for
   the same reason. That is expected (phase contract §8).
 

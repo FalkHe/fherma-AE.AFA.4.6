@@ -456,8 +456,9 @@ somewhere in the detail, since the file alone no longer locates the problem.
     `[R14]` and never loaded, so without it the criterion proves R14 and not
     R15. A second definition named `"bog lurker"` produces the same entry: the
     comparison is case-insensitive, after stripping. A *third* colliding
-    definition, likewise placed, produces a third entry — every colliding
-    definition after the first is reported.
+    definition, likewise placed, produces a **second** `[R15]` entry — every
+    colliding definition after the first is reported, so three colliding
+    definitions yield two entries.
 42. **R16** — give `mill-floor` two `creatures` entries for `bog-lurker` →
     `adventures/the-sunken-mill.json: [R16] …` with `mill-floor` in the detail.
 43. **No rule polices the file layout any more.** There is no criterion for an
@@ -517,14 +518,17 @@ built, and step 1.3 migrates it. Therefore:
 - **No criterion above concerns the real `backend/content/` tree.** The unmocked
   shipped-tree test, and the assertion that `app content validate` exits `0`
   against the repository as checked out, belong to **step 1.3**.
-- **`app content validate` is expected to FAIL at the end of this step**, with a
-  `[SCHEMA]` entry on `adventures/goblins-of-greenhollow.json`: the shipped
-  adventure still carries `"scenes": [<ids>]` and the amended `Adventure` model
-  wants scene objects. That failure is this step landing correctly. **It is not
-  a deviation, it is not to be reported as a blocker, and it is not to be fixed
-  from this step** — do not edit `backend/content/`, do not keep a compatibility
-  branch for the id-list shape, and do not relax `extra="forbid"`. It clears in
-  step 1.3 and only there.
+- **`app content validate` is expected to FAIL at the end of this step**, with
+  **four** stderr lines, not one (§8 pins them). The shipped adventure still
+  carries `"scenes": [<ids>]` while the amended `Adventure` model wants scene
+  objects, so it earns a `[SCHEMA]` entry and is dropped; because a dropped
+  adventure contributes no scenes to R14 (phase contract §11), each of the three
+  definitions is then unreferenced and earns an `[R14]`. That whole four-line
+  failure is this step landing correctly. **It is not a deviation, it is not to
+  be reported as a blocker, and it is not to be fixed from this step** — do not
+  edit `backend/content/`, do not keep a compatibility branch for the id-list
+  shape, do not relax `extra="forbid"`, and do not suppress the `[R14]` lines.
+  They clear in step 1.3 and only there.
 - Likewise, the landed `backend/tests/content/` suite will go red against this
   step's code. qa-backend re-authors it; backend-dev does not touch it and does
   not run it.
@@ -544,12 +548,28 @@ docker compose run --rm --no-deps app-cli app openapi export > /dev/null
 ```
 
 Expected: ruff clean; the app constructs; `app openapi export` still succeeds;
-and **`app content validate` exits `1`**, writing nothing to stdout and a
-`greenhollow/v1: adventures/goblins-of-greenhollow.json: [SCHEMA] …` line to
-stderr. **That failure is the expected result of this step, not a defect**
-(§7): the shipped campaign is still in the pre-amendment layout and step 1.3
-re-shapes it. Run the check to see *that* message — a different message, a
-traceback, or an exit `0`, is what would be worth reporting. The host ruff equivalents (`cd backend &&
+and **`app content validate` exits `1`**, writing nothing to stdout and
+**exactly these four lines**, in this order, to stderr:
+
+```
+greenhollow/v1: adventures/goblins-of-greenhollow.json: [SCHEMA] …
+greenhollow/v1: definitions/goblin-boss.json: [R14] …
+greenhollow/v1: definitions/goblin.json: [R14] …
+greenhollow/v1: definitions/mira.json: [R14] …
+```
+
+**All four are the expected result of this step, not a defect** (§7). The
+shipped campaign is still in the pre-amendment layout, so its adventure fails
+`[SCHEMA]` and is dropped; **a dropped adventure contributes no scenes to R14**
+(phase contract §11's drop block), so all three definitions are left with no
+referrer and each earns an `[R14]`. **The three `[R14]` lines are the drop block
+working exactly as specified.** Do not make them go away — not by editing
+`backend/content/`, not by special-casing R14 for a dropped adventure, not by
+suppressing the tag. All four lines clear together in step 1.3, when the
+migrated adventure validates and its scenes reference the definitions again.
+
+Worth reporting: a *fifth* line, a missing line, a different tag, a traceback,
+or an exit `0`. The host ruff equivalents (`cd backend &&
 uv run ruff check .`, `uv run ruff format --check .`) are acceptable if uv is
 installed. **There is no host fallback for `app content validate`**: `Settings`
 pins `env_file=".env"` relative to the working directory and `backend/.env` does

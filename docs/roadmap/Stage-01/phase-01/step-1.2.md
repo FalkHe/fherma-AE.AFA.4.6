@@ -24,9 +24,12 @@ touches only `docs/`. Neither may edit the other's files.
 
 ## 1. Scope
 
-In scope: one new document, one index row, eight corrections across three
-general documents, and three rows added to the stage README — two to its §9
-doc-correction register, one to its §7 open-decisions register.
+In scope: the rewrite of one existing document, and — in the stage README —
+**one amended row** in §9's doc-correction register. Everything else this step
+once landed is already in place and is **verify-only, expect no diff**: the
+`docs/README.md` index row, corrections C1–C3 and C5–C7, §9's
+`general/architecture.md` row and §7's open-decision row. The only new
+correction is C2a, plus one added clause in C4 (§6).
 
 Out of scope, and a deviation if it appears:
 
@@ -196,34 +199,37 @@ the correction requires.
 C1–C5 (including C2a) land in one edit of the *Static files* section; do not
 fragment it.
 
-## 7. The two stage-register rows
+## 7. The stage-register rows
 
-Phase 1 adds **three** rows to `docs/roadmap/Stage-01/README.md`: two to §9's
-doc-correction register and one to §7's open-decisions register. Change nothing
-else in that document.
+**All three rows are already in `docs/roadmap/Stage-01/README.md` from the
+previous pass. This step amends the wording of exactly one of them and adds
+none.** §9 carries the phase-1 `general/model.md` row and the phase-8
+`general/architecture.md` row; §7 carries the phase-8 open-decision row. Change
+nothing else in that document — and in particular **do not add any row**, since
+a second copy of either is precisely the defect criterion 20 fails on.
 
-### 7.1 Two rows for §9
+### 7.1 §9's two rows — one amended, one verified
 
-Stage README §9 declares itself the single home for doc corrections, and phase 1
-found more of them against `general/model.md` than its existing row names. **Do
-not add a second `general/model.md` phase-1 row**: §9 already carries one, and
-two rows for one contradiction set is the duplication this register exists to
-prevent. **Replace that existing row** with the enumerated one below — which now
-also names the `scenes/` directory removed by P1-D20 — and **add** the
-`general/architecture.md` row. If a previous pass already landed the enumerated
-row, amend it in place rather than adding another:
+Stage README §9 declares itself the single home for doc corrections. The
+`general/model.md` phase-1 row is **already the enumerated one**; **amend it in
+place** so that it also names the `scenes/` directory removed by P1-D20, giving
+the wording below. The `general/architecture.md` row below is **already present
+and already correct — verify it and change nothing.** Under no circumstances add
+a second phase-1 `general/model.md` row: two rows for one contradiction set is
+the duplication this register exists to prevent.
 
 | Contradiction | File | Owning phase |
 |---|---|---|
 | The static-file tree's content root, its `scenes/` directory, the `npcs/` + `monsters/` split, the scene-field line, the missing `intro` / `entry_scene` / seed character, and the unstated version mechanism — enumerated in `roadmap/Stage-01/phase-01/shared-knowledge.md` §9.2 | `general/model.md` | 1 |
 | The tool table's `get_monster(name)` row — with one `Definition` entity the binding is id- or name-addressed over `definitions`, and its final name and argument are phase 8's to pin | `general/architecture.md` | 8 |
 
-### 7.2 One row for §7
+### 7.2 §7's row — verified only
 
 Phase contract §10.3 records an obligation that is a **note, not a control**: if
 nothing carries it forward, phase 8 ships a leak that phase 9 discovers. §7 is
 the register for exactly this — recorded, not settled, settled in the owning
-phase's step spec. Add exactly this row to §7's table:
+phase's step spec. **This row is already present in §7's table from the previous
+pass: verify it reads as below and change nothing. Do not add it again.**
 
 | Open decision | Owning phase |
 |---|---|
@@ -311,10 +317,15 @@ Numbered, each provable or refutable by a QA agent without reading
     `app content validate` on the first run after the owner's prose review; any
     field name, constraint or rule the author had to guess at is a defect in
     this guide and is fixed in the guide, not worked around in the content.
-    **It was measured and passed when the guide first landed.** Step 1.3 is now
-    a mechanical migration of already-accepted prose (step-1.3 §3), so there is
-    no fresh authoring to measure and this criterion is **not re-run**. It
-    stands for the next campaign authored from this guide.
+    **It was measured and passed against the *pre-amendment* guide**, and that
+    is the limit of what carries: the sections this pass rewrites — the
+    three-file layout, the three-file worked example, R1–R16 and the `[R14]`
+    drop paragraph — are exactly what a fresh author would trip on and they
+    carry **no independent measurement of their own**. Step 1.3 is now a
+    mechanical migration of already-accepted prose (step-1.3 §3), so there is no
+    authoring in this pass to measure against, and criteria 1–22 are the
+    mechanical substitute. This criterion stands, unmeasured, for the next
+    campaign authored from this guide.
 
 Criterion 23 was verified in step 1.3's first pass and is the reason this step
 exists; it is carried, not re-measured (see the criterion).
@@ -328,9 +339,14 @@ checks are:
 git status --porcelain -- docs/   # the docs/ paths this step touched
 ```
 
-- Every `docs/` path it lists is one of §3's table. **Do not run a tree-wide
-  `git diff --stat`**: step 1.1 runs concurrently in the same working tree, so
-  `backend/` paths are expected there and are out of scope for this step.
+- **It should list exactly three paths**: `docs/modules/content.md`,
+  `docs/general/model.md` and `docs/roadmap/Stage-01/README.md`. The other
+  entries of §3's table are verify-only in this pass and a diff on any of them —
+  `docs/README.md`, `docs/general/architecture.md`,
+  `docs/general/requirement-map.md` — means something was re-applied that was
+  already landed. **Do not run a tree-wide `git diff --stat`**: step 1.1 runs
+  concurrently in the same working tree, so `backend/` paths are expected there
+  and are out of scope for this step.
 - Every JSON block in `docs/modules/content.md` parses — verify each one, e.g.
   by pasting it through `python -m json.tool`.
 - Every relative link in the touched documents resolves.
@@ -349,7 +365,7 @@ not by accident.
 
 | Agent | Owns |
 |---|---|
-| backend-dev | `docs/modules/content.md`, `docs/README.md`, the three `docs/general/*` corrections, and the three rows in `docs/roadmap/Stage-01/README.md` (§7). Nothing else. |
+| backend-dev | The rewrite of `docs/modules/content.md`, correction C2a and C4's added clause in `docs/general/model.md`, and the one amended §9 row in `docs/roadmap/Stage-01/README.md` (§7). Everything else named in §3 is verify-only. Nothing else. |
 | qa-backend | Verification of criteria 1–22 against the landed documents. Criterion 23 is carried from the previous pass and is not re-measured. |
 
 **This step must not touch `backend/app/modules/content/` — step 1.1 owns it and

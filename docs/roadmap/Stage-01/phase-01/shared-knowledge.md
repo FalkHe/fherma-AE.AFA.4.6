@@ -63,7 +63,7 @@ One new backend module, `content`, plus one additive block in `app/cli.py`.
 | `docs/README.md` | backend-dev | 1.2 | One added table row under *Modules* (§9.2). |
 | `docs/general/model.md`, `docs/general/architecture.md`, `docs/general/requirement-map.md` | backend-dev | 1.2 | The corrections of §9.2. |
 | `docs/roadmap/Stage-01/README.md` | backend-dev | 1.2 | Three added rows: two in §9's doc-correction register, one in §7's open-decisions register (§9.3). The only edit phase 1 makes to another plan document. |
-| `backend/content/campaigns/**` | backend-dev | 1.3 | The authored content tree (§4), written **from `docs/modules/content.md`**, not from the implementation. |
+| `backend/content/campaigns/**` | backend-dev | 1.3 | The authored content tree (§4), written **from `docs/modules/content.md`**, not from the implementation. **In the P1-D20 rework this is a mechanical migration of the already-authored tree, with no authoring and no prose change — see `step-1.3.md` §3.** |
 | `backend/tests/content/**` | qa-backend | 1.1, 1.3 | The test suite, mirroring the module one-to-one (§8). |
 
 **qa-backend never writes into `backend/content/`.** If the agent that proves
@@ -73,7 +73,11 @@ evidence is circular. Symmetrically, backend-dev never writes into
 
 *Human in the loop* for step 1.3 means an agent authors the campaign and the
 **owner reads the prose and accepts or rejects the diff**; no agent judges prose
-quality.
+quality. **This was satisfied in the first pass and does not recur in the
+P1-D20 rework**, which moves already-accepted prose between files without
+changing a character of it: `step-1.3.md` §3 and §9 close the owner out of that
+pass, and its criterion 24 — byte-identical scene bodies — is what stands in for
+the acceptance.
 
 There is **no** `models.py` (no table) and **no** `routes.py` (no route) in this
 module. Do not create empty ones.
