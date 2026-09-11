@@ -1,6 +1,7 @@
 ---
-title: "Stage-01 — phases (v2)"
+title: "Stage-01 — Phases"
 stage: 1
+version: 2
 created: 2026-09-11
 ---
 
