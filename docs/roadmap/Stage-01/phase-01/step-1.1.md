@@ -5,6 +5,7 @@ phase: 1
 step: 1.1
 status: spec
 created: 2026-09-11
+revised: 2026-09-11
 ---
 
 # Step 1.1 — The content module
@@ -44,13 +45,13 @@ Out of scope, and a deviation if it appears:
 ## 2. Environment you will meet
 
 - The Docker stack is **down**. No service is running.
-- **There is no `.env` file.** Only `.env.dist` exists, and it is owner-only —
-  do not edit it. **Run `cp .env.dist .env` before anything else.** Without it
-  `app content validate` raises a `pydantic` `ValidationError` before doing any
-  work, because `cli.py`'s callback calls `configure_logging()`, which calls
-  `get_settings()`, and `Settings.database_url` has no default. `compose.yaml`
-  also declares `env_file: .env` on `app-cli`, so no `make` target can start a
-  container without it.
+- **`.env` exists**, copied from `.env.dist` and byte-identical to it;
+  `.env.dist` stays owner-only and must not be edited. It has to exist, because
+  `app content validate` otherwise raises a `pydantic` `ValidationError` before
+  doing any work — `cli.py`'s callback calls `configure_logging()`, which calls
+  `get_settings()`, and `Settings.database_url` has no default — and because
+  `compose.yaml` declares `env_file: .env` on `app-cli`, so no `make` target can
+  start a container without it. If it is missing, run `cp .env.dist .env`.
 - Alembic head is `0001` (`backend/alembic/versions/0001_baseline.py`). **This
   step adds no migration.** Content is static JSON in git, never rows.
 - `backend/app/modules/content/` does not exist.
@@ -147,6 +148,14 @@ phase contract §5. **There is no `latest_version`.**
 are implemented over it and translate a missing key into
 `ContentNotFoundError` with the exact `relative_path` of phase contract §6.1.
 
+**Guard clause first, in every one of them** (phase contract §5.1): if
+`campaign_id` does not match the `ContentId` pattern, or `version` does not match
+`VERSION_PATTERN`, or — in `load_scene` / `load_definition` — the entity id does
+not match `ContentId`, raise `ContentNotFoundError` with §6.1's pinned
+`relative_path` **before any path is joined to `CONTENT_ROOT`**: no `Path`, no
+`exists()`, no open. `list_versions` guards `campaign_id` likewise. A few lines
+in each function, not a helper module and not a new dependency.
+
 The walk:
 
 0. If the version directory does not exist, raise
@@ -193,9 +202,10 @@ is a CLI check. For `SCHEMA`, the detail is
 is never a `": : "` in any message. Paths use forward slashes and no leading
 slash.
 
-R8 and R17 must name a deterministic file when the conflict involves two: R8's
-double-claim names the **second** adventure in `campaign.adventures` order, R17
-names the **second** definition in sorted-id order.
+R8 and R17 must name deterministic files when a conflict involves several:
+R8's double-claim names the **second** adventure in `campaign.adventures` order,
+and R17 names **every colliding definition after the first** in sorted-id
+order — for the two-definition case, the second.
 
 ### 5.4 `commands.py`
 
@@ -307,25 +317,32 @@ implementation. Unless stated otherwise, "a tree" means a content tree built in
     the valid tree still loads and no error mentions it.
 16. Deleting the `definitions/` directory from a tree that references a
     definition produces an `[R14]` entry, not an `OSError` or a traceback.
+17. **No id argument reaches the filesystem unvalidated** (phase contract §5.1).
+    `load_campaign("../x", "v1")`, `load_campaign("hollow-reach", "../v1")` and
+    `load_scene("hollow-reach", "v1", "../campaign")` each raise
+    `ContentNotFoundError` carrying §6.1's pinned `relative_path`, and nothing
+    outside `CONTENT_ROOT` is read — provable by pointing `CONTENT_ROOT` at a
+    `tmp_path` subdirectory with a readable file beside it and asserting the
+    raise, with no `ContentInvalidError` and no file content returned.
 
 ### Error reporting
 
-17. Every entry of `ContentInvalidError.errors` matches
+18. Every entry of `ContentInvalidError.errors` matches
     `^[^:]+(/[^:]+)*: \[(READ|SCHEMA|R2|R([4-9]|1[0-8]))\] .+$` — a
     version-directory-relative path, a bracketed tag, a non-empty detail.
-18. `errors` is sorted ascending as strings, and two loads of the same broken
+19. `errors` is sorted ascending as strings, and two loads of the same broken
     tree produce identical lists.
-19. A tree with a broken scene **and** a broken definition produces **both**
+20. A tree with a broken scene **and** a broken definition produces **both**
     entries from one call — the walk does not abort on the first.
-20. A tree whose `campaign.json` is malformed JSON produces exactly **one**
+21. A tree whose `campaign.json` is malformed JSON produces exactly **one**
     entry, tagged `[READ]`, naming `campaign.json`, and no entry for any other
     file.
-21. A tree whose `campaign.json` is schema-invalid produces exactly one entry,
+22. A tree whose `campaign.json` is schema-invalid produces exactly one entry,
     tagged `[SCHEMA]`.
-22. A model-level Pydantic failure (e.g. a scene file containing a JSON array
+23. A model-level Pydantic failure (e.g. a scene file containing a JSON array
     rather than an object) yields a `[SCHEMA]` message containing no `": : "`
     and no empty location segment.
-23. `ContentInvalidError`'s `str()` contains the campaign id, the version and
+24. `ContentInvalidError`'s `str()` contains the campaign id, the version and
     the problem count, and constructing one with `errors=[]` does not raise.
 
 ### The referential rules — one criterion per rule
@@ -335,79 +352,90 @@ loading, and asserting that `errors` contains an entry whose tag is the rule's
 and whose path is the file phase contract §11 says it names. **The assertion is
 on the path and the tag, never on the detail wording.**
 
-24. **R1** — delete `campaign.json` → `campaign.json: [READ] …` and nothing else.
-25. **R2** — set `campaign.id` to `"wrong-id"` → `campaign.json: [R2] …`.
-26. **R4** — add `"no-such-adventure"` to `campaign.adventures` →
+25. **R1** — delete `campaign.json` → `campaign.json: [READ] …` and nothing else.
+26. **R2** — set `campaign.id` to `"wrong-id"` → `campaign.json: [R2] …`.
+27. **R4** — add `"no-such-adventure"` to `campaign.adventures` →
     `campaign.json: [R4] …`; and listing `"the-sunken-mill"` twice produces an
     `[R4]` entry **and no `[R8]` entry**, because the list is de-duplicated
     before any later rule runs.
-27. **R5** — add `adventures/orphan.json` (schema-valid, unlisted) →
+28. **R5** — add `adventures/orphan.json` (schema-valid, unlisted) →
     `adventures/orphan.json: [R5] …`.
-28. **R6** — set the adventure file's `id` to `"other"` →
+29. **R6** — set the adventure file's `id` to `"other"` →
     `adventures/the-sunken-mill.json: [R6] …`.
-29. **R7** — add `"no-such-scene"` to the adventure's `scenes` →
+30. **R7** — add `"no-such-scene"` to the adventure's `scenes` →
     `adventures/the-sunken-mill.json: [R7] …`; a duplicate entry in `scenes`
     likewise.
-30. **R8** — add `scenes/orphan.json` unclaimed by any adventure →
+31. **R8** — add `scenes/orphan.json` unclaimed by any adventure →
     `scenes/orphan.json: [R8] …`. With two adventures both claiming
     `mill-floor`, the entry names the **second** adventure file in
     `campaign.adventures` order.
-31. **R9** — set `scenes/mill-floor.json`'s `id` to `"other"` →
+32. **R9** — set `scenes/mill-floor.json`'s `id` to `"other"` →
     `scenes/mill-floor.json: [R9] …`.
-32. **R10** — set `entry_scene` to a scene id not in the adventure's `scenes` →
+33. **R10** — set `entry_scene` to a scene id not in the adventure's `scenes` →
     `adventures/the-sunken-mill.json: [R10] …`.
-33. **R11** — point `mill-approach`'s exit at `"under-whee"` →
+34. **R11** — point `mill-approach`'s exit at `"under-whee"` →
     `scenes/mill-approach.json: [R11] …`; an exit whose `to` is
     `"mill-approach"` itself likewise; an exit pointing at a scene that exists
     but belongs to a different adventure likewise.
-34. **R12** — give `mill-floor` an exit back to `mill-approach`, so no scene is
+35. **R12** — give `mill-floor` an exit back to `mill-approach`, so no scene is
     terminal → `adventures/the-sunken-mill.json: [R12] …`.
-35. **R13** — add a third scene listed in the adventure but reachable from no
+36. **R13** — add a third scene listed in the adventure but reachable from no
     exit → `adventures/the-sunken-mill.json: [R13] …`. A scene reachable only
     through an exit carrying a `condition` **is** reachable and produces no
     entry. An adventure of exactly one scene, which is its `entry_scene` and has
     no exits, produces no `[R13]` entry — the entry scene counts as reached with
     no exits traversed.
-36. **R14** — set `mill-floor`'s placement `definition` to `"no-such-thing"` →
+37. **R14** — set `mill-floor`'s placement `definition` to `"no-such-thing"` →
     `scenes/mill-floor.json: [R14] …`.
-37. **R15** — set `definitions/bog-lurker.json`'s `id` to `"other"` →
+38. **R15** — set `definitions/bog-lurker.json`'s `id` to `"other"` →
     `definitions/bog-lurker.json: [R15] …`.
-38. **R16** — add `definitions/unused.json` referenced by no scene →
+39. **R16** — add `definitions/unused.json` referenced by no scene →
     `definitions/unused.json: [R16] …`.
-39. **R17** — add a second definition whose `name` is also `"Bog Lurker"` → an
+40. **R17** — add a second definition whose `name` is also `"Bog Lurker"` → an
     `[R17]` entry naming the second definition file in sorted-id order. A second
     definition named `"bog lurker"` produces the same entry: the comparison is
-    case-insensitive, after stripping.
-40. **R18** — give `mill-floor` two `creatures` entries for `bog-lurker` →
+    case-insensitive, after stripping. A *third* colliding definition produces a
+    third entry — every colliding definition after the first is reported.
+41. **R18** — give `mill-floor` two `creatures` entries for `bog-lurker` →
     `scenes/mill-floor.json: [R18] …`.
 
 ### The CLI
 
-41. `app content validate` over a tree containing only the §4.1 worked example
+**Which app each assertion drives is contract.** Criteria 42–48 are asserted via
+`CliRunner().invoke(content_app, [...])`. **Criterion 49 is asserted via
+`CliRunner().invoke(cli, ["content", "validate"])`** — `content_app` has no
+callback, so `configure_logging()` runs on that path only, and an assertion made
+against `content_app` would pass for any implementation. Criterion 50 drives
+`cli` by nature.
+
+42. `app content validate` over a tree containing only the §4.1 worked example
     exits `0`, writes `hollow-reach/v1: ok` to stdout and nothing to stderr.
     **Stdout is compared after `.strip()`** — a trailing newline is not part of
     the contract; the line content is.
-42. Over a tree with one broken campaign version it exits `1`, writes nothing
+43. Over a tree with one broken campaign version it exits `1`, writes nothing
     to stdout for that version, and writes one stderr line per
     `ContentInvalidError.errors` entry, each prefixed `<campaign_id>/<version>: `.
-43. With two campaign versions, one valid and one broken, it exits `1`, the
+44. With two campaign versions, one valid and one broken, it exits `1`, the
     valid one still appears on stdout, and the broken one's problems appear on
     stderr.
-44. Over a `CONTENT_ROOT` with no `campaigns/` directory, or with an empty one,
+45. Over a `CONTENT_ROOT` with no `campaigns/` directory, or with an empty one,
     it exits `1` and writes `no campaigns found under <CONTENT_ROOT>` to stderr.
-45. A campaign directory containing a version directory named `v1.0` (alongside
+46. A campaign directory containing a version directory named `v1.0` (alongside
     a valid `v1`) makes the command exit `1` and write
     `<campaign_id>/v1.0: [R3] version directory name must match ^v[0-9]+$` to
     stderr, while `<campaign_id>/v1: ok` still reaches stdout.
-45a. A campaign directory holding no version directory at all, or only
+47. A campaign directory holding no version directory at all, or only
     non-conformant ones, makes the command exit `1` and write
     `<campaign_id>: no version directory found` to stderr.
-46. `monkeypatch.setattr(service, "CONTENT_ROOT", tmp_path)` changes what the
+48. `monkeypatch.setattr(service, "CONTENT_ROOT", tmp_path)` changes what the
     **CLI** validates — i.e. the command reads the attribute at call time, not
     at import.
-47. No line the command writes to stderr carries a structlog timestamp or level
-    prefix at the default log level.
-48. `app --help` lists a `content` command group, and `app content --help` lists
+49. Driven as `CliRunner().invoke(cli, ["content", "validate"])` over a broken
+    tree: no line the command writes to **stderr** carries a structlog timestamp
+    or level prefix at the default log level, and **stdout** carries no log
+    record at all — an unconfigured structlog `PrintLogger` writes to stdout,
+    which criterion 42's stream split would otherwise fail on silently.
+50. `app --help` lists a `content` command group, and `app content --help` lists
     `validate`. `app openapi export` still prints parseable JSON and only JSON
     to stdout.
 
@@ -420,7 +448,7 @@ on the path and the tag, never on the detail wording.**
   shipped-tree test, and the assertion that `app content validate` exits `0`
   against the repository as checked out, belong to **step 1.3**.
 - Running `app content validate` by hand in this step will exit `1` with
-  `no campaigns found` — that is criterion 44 passing, not a defect.
+  `no campaigns found` — that is criterion 45 passing, not a defect.
 
 ## 8. Static checks the dev agent runs
 
@@ -438,8 +466,11 @@ docker compose run --rm --no-deps app-cli app openapi export > /dev/null
 
 Expected: ruff clean; the app constructs; `app content validate` exits `1` with
 `no campaigns found under /app/content` on stderr and nothing on stdout;
-`app openapi export` still succeeds. The host equivalents (`cd backend && uv run
-ruff check .` etc.) are acceptable if uv is installed.
+`app openapi export` still succeeds. The host ruff equivalents (`cd backend &&
+uv run ruff check .`, `uv run ruff format --check .`) are acceptable if uv is
+installed. **There is no host fallback for `app content validate`**: `Settings`
+pins `env_file=".env"` relative to the working directory and `backend/.env` does
+not exist, so run that check in `app-cli` as given.
 
 **No Alembic round-trip is required: this step adds no migration.**
 

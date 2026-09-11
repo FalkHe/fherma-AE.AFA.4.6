@@ -5,6 +5,7 @@ phase: 1
 step: 1.3
 status: spec
 created: 2026-09-11
+revised: 2026-09-11
 human_in_the_loop: true
 ---
 
@@ -17,10 +18,11 @@ validates.
 
 **This step is dispatched in two halves, with different reading lists (§9).**
 
-- The **authoring half** reads `step-1.3.md` and `docs/modules/content.md`, and
-  nothing else. It does **not** read `shared-knowledge.md` and does **not** read
-  `backend/app/modules/content/`. Everything it needs that the guide does not
-  carry is in §4 of this file.
+- The **authoring half** reads `docs/modules/content.md` and `step-1.3.md`
+  §1–§5 and §7–§8 — §6 is withheld, because it names the field set the guide is
+  supposed to supply (§9) — and nothing else. It does **not** read
+  `shared-knowledge.md` and does **not** read `backend/app/modules/content/`.
+  Everything it needs that the guide does not carry is in §4 of this file.
 - The **QA half** reads `step-1.3.md` and
   [`shared-knowledge.md`](shared-knowledge.md), the binding phase contract, and
   may read anything.
@@ -57,9 +59,10 @@ Out of scope, and a deviation if it appears:
 ## 2. Environment you will meet
 
 - The Docker stack is **down**.
-- **There is no `.env` file.** Run `cp .env.dist .env` first. Without it
-  `app content validate` raises a `ValidationError` before doing any work, and
-  `docker compose run app-cli` cannot start at all.
+- **`.env` exists**, copied from `.env.dist`; `.env.dist` stays owner-only and
+  must not be edited. It has to exist: without it `app content validate` raises
+  a `ValidationError` before doing any work, and `docker compose run app-cli`
+  cannot start at all. If it is missing, run `cp .env.dist .env`.
 - Alembic head is `0001`. **This step adds no migration.**
 - `backend/app/modules/content/` exists and `app content validate` works
   (step 1.1).
@@ -70,9 +73,9 @@ Out of scope, and a deviation if it appears:
 
 ## 3. The rule that makes this step meaningful
 
-**The authoring agent is dispatched with `step-1.3.md` and
-`docs/modules/content.md` only.** The restriction is enforced by the dispatch,
-not requested of the agent — an agent that has already read
+**The authoring agent is dispatched with `docs/modules/content.md` and
+`step-1.3.md` §1–§5 and §7–§8 only.** The restriction is enforced by the
+dispatch, not requested of the agent — an agent that has already read
 `shared-knowledge.md` has seen the complete schema, the worked example and the
 rule table, and criterion 21 would then measure that agent's self-restraint
 rather than the guide's completeness.
@@ -141,7 +144,7 @@ Prose standards the owner will read for:
 | `backend/content/campaigns/greenhollow/v1/scenes/<id>.json` | backend-dev | Three or more scenes |
 | `backend/content/campaigns/greenhollow/v1/definitions/<id>.json` | backend-dev | The patron, the goblin boss, and whatever else the scenes place |
 | `docs/modules/content.md` | backend-dev | **Only** if the authoring exposed a guide defect (§7) |
-| `backend/tests/content/**` | qa-backend | The unmocked shipped-tree tests (§6, criteria 11–16) |
+| `backend/tests/content/**` | qa-backend | The unmocked shipped-tree tests (§6, criteria 15–19) |
 
 **qa-backend must not write into `backend/content/`.** If the agent that proves
 the tree valid is also the agent that authored it, the phase's central evidence
@@ -180,7 +183,10 @@ Numbered, each provable or refutable without reading
 12. `campaign.json` carries a `seed_character` with all of `name`, `race`,
     `character_class`, `background`, `appearance`, `abilities` (all six scores),
     `max_hp`, `armour_class` and a non-empty `inventory`.
-13. Some `consequences` entry describes the villain escaping.
+13. At least one `consequences` entry, in any scene, contains the villain
+    definition's `name` string verbatim. (That the entry actually makes the
+    villain's escape a possible outcome — B12 — is the owner's judgement, and
+    is part of criterion 23.)
 
 ### The command line
 
@@ -222,8 +228,10 @@ Numbered, each provable or refutable without reading
 
 ### Human in the loop
 
-23. The owner has read the campaign prose and accepted it. **This criterion is
-    closed by the owner, not by an agent**, and the step is not done until it is.
+23. The owner has read the campaign prose and accepted it — including that
+    B12's escape consequence is present and reads as a possible outcome rather
+    than a scripted one. **This criterion is closed by the owner, not by an
+    agent**, and the step is not done until it is.
 
 ## 7. Recording a guide defect
 
@@ -266,12 +274,18 @@ evidence depends on the artefact.
 | owner | Criterion 23 | After authoring, before QA is dispatched |
 | qa-backend | `backend/tests/content/**` — the unmocked tests of criteria 15–19 — and verification of criteria 1–14 and 20–22 | After the owner accepts |
 
-**The authoring half is dispatched with exactly two files: `step-1.3.md` and
-`docs/modules/content.md`.** Not `shared-knowledge.md`, not `steps.md`, not
-`step-1.1.md`, not `step-1.2.md`, and no file under
-`backend/app/modules/content/`. This is a property of the briefing, not an
-instruction the agent is trusted to honour, and it is what makes criterion 21 a
-measurement rather than a request.
+**The authoring half is dispatched with exactly two documents:
+`docs/modules/content.md`, and `step-1.3.md` cut down to §1–§5 and §7–§8.** Not
+`shared-knowledge.md`, not `steps.md`, not `step-1.1.md`, not `step-1.2.md`, and
+no file under `backend/app/modules/content/`. **§6 is withheld** because it
+enumerates roughly a dozen field names the guide is supposed to supply —
+`character_class`, `armour_class`, `stat_block.attacks`, the nine
+`seed_character` fields, `hidden` / `dc` / `discovered_by`, `creatures` /
+`count`, `exits` / `condition`, `consequences`, `entry_scene` — and is the QA
+half's checklist, not the author's; §8 already carries the exit-0 check the
+author needs. This is a property of the briefing, not an instruction the agent
+is trusted to honour, and it is what makes criterion 21 a measurement rather
+than a request.
 
 The QA half is dispatched normally, with `shared-knowledge.md` and everything
 else. qa-backend authoring its tests before the content exists is fine and

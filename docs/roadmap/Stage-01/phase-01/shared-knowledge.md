@@ -62,7 +62,7 @@ One new backend module, `content`, plus one additive block in `app/cli.py`.
 | `docs/modules/content.md` | backend-dev | 1.2 | The authoring guide / schema reference (§9.1). |
 | `docs/README.md` | backend-dev | 1.2 | One added table row under *Modules* (§9.2). |
 | `docs/general/model.md`, `docs/general/architecture.md`, `docs/general/requirement-map.md` | backend-dev | 1.2 | The corrections of §9.2. |
-| `docs/roadmap/Stage-01/README.md` | backend-dev | 1.2 | Three added rows: two in §9's doc-correction register, one in §7's open-decisions register (§9.3). The only edit this phase makes outside the phase directory and the module. |
+| `docs/roadmap/Stage-01/README.md` | backend-dev | 1.2 | Three added rows: two in §9's doc-correction register, one in §7's open-decisions register (§9.3). The only edit phase 1 makes to another plan document. |
 | `backend/content/campaigns/**` | backend-dev | 1.3 | The authored content tree (§4), written **from `docs/modules/content.md`**, not from the implementation. |
 | `backend/tests/content/**` | qa-backend | 1.1, 1.3 | The test suite, mirroring the module one-to-one (§8). |
 
@@ -633,7 +633,8 @@ VERSION_PATTERN: re.Pattern[str]        # ^v[0-9]+$ — written once, used by th
 
 
 def list_campaign_ids() -> list[str]:
-    """Campaign directory names under CONTENT_ROOT/campaigns, sorted.
+    """Campaign *directory* names under CONTENT_ROOT/campaigns, sorted.
+    Directories only -- a file lying directly under campaigns/ is ignored.
     Returns [] when the directory does not exist. Raises nothing."""
 
 
@@ -660,6 +661,23 @@ def load_definition(campaign_id: str, version: str, definition_id: str) -> Defin
     """Raises ContentNotFoundError if the definition is not in that campaign
     version; otherwise as load_campaign."""
 ```
+
+### 5.1 Every id argument is validated before a path is built
+
+`campaign_id`, `scene_id` and `definition_id` must match the `ContentId` pattern
+(`^[a-z0-9]+(-[a-z0-9]+)*$`) and `version` must match `VERSION_PATTERN`
+(`^v[0-9]+$`) — **checked in the function body before any path is joined to
+`CONTENT_ROOT`**. A non-conforming value raises `ContentNotFoundError` carrying
+that raiser's pinned `relative_path` from §6.1, and the function reads nothing:
+no `Path` is built, no `exists()` is called, no file is opened. So
+`load_campaign("../../app", "v1")` and `load_scene("hollow-reach", "v1",
+"../campaign")` are ordinary not-found errors, never a traversal out of the
+content root and never a filesystem read. `list_versions` validates
+`campaign_id` the same way, raising `campaigns/<campaign_id>`.
+
+This is inside the existing loader functions — no new module, no new dependency,
+no sanitisation helper. Phases 5, 7 and 8 feed these arguments from client
+requests, so the validation belongs at the module boundary that owns the path.
 
 `load_scene` and `load_definition` are implemented over `load_campaign`, so a
 single-entity read is never served from an unvalidated tree. They exist rather
@@ -771,9 +789,12 @@ definitions/bog-lurker.json: [READ] Expecting ',' delimiter: line 8 column 3 (ch
 **Any failure to read or parse any file under the version directory becomes one
 `errors[]` entry, and the walk continues.** There is no branch table: an
 unreadable file, malformed JSON and a schema violation are all one entry each,
-and the load as a whole fails once at the end with all of them. A *missing* file
-is never a read failure — under the glob model nothing tries to open it, and its
-absence surfaces as `[R4]`, `[R7]` or `[R14]`.
+and the load as a whole fails once at the end with all of them. **Under
+`adventures/`, `scenes/` and `definitions/` a *missing* file is never a read
+failure** — under the glob model nothing tries to open it, and its absence
+surfaces as `[R4]`, `[R7]` or `[R14]`. `campaign.json` is the exception: it is
+opened by name, so a missing one *is* reported, tagged `[READ]` or `[SCHEMA]`
+per R1, and reported alone (below).
 
 The single exception: **if `campaign.json` itself is missing, unreadable or
 schema-invalid, that is the only reported problem**, because nothing else in the
@@ -894,6 +915,20 @@ import and call:
 - `from app.modules.content.commands import content_app` — driven with Typer's
   `CliRunner`, as `tests/test_cli.py` already does for `openapi export`.
 
+**`backend/tests/content/__init__.py` is required**, as every landed test
+package has one: `backend/tests/users/test_service.py` already exists, so an
+`__init__.py`-less `tests/content/test_service.py` gives pytest two modules of
+the same basename and an import collision.
+
+**Which Typer app a CLI assertion drives is contract.** `content_app` has no
+callback, so `configure_logging()` never runs under it; every CLI behaviour
+assertion therefore runs against `content_app`, **except the "no log record"
+assertion, which must run against `cli` from `app.cli`** — the only path on
+which the callback configures logging — and must check *stdout* as well as
+stderr, because an unconfigured structlog `PrintLogger` writes to stdout and
+would otherwise corrupt the result data unnoticed. Pinned per criterion in
+`step-1.1.md` §6.
+
 **Fixture content is built in `tmp_path` per test and is never committed.**
 A test that needs a broken tree writes JSON files into `tmp_path` and does
 `monkeypatch.setattr(service, "CONTENT_ROOT", tmp_path)`. This is why
@@ -988,8 +1023,8 @@ stage README §9.
 
 ### 9.3 Three rows phase 1 adds to the stage README
 
-**The only edit this phase makes outside the phase directory and the `content`
-module.** Step 1.2 applies all three; the exact wording is in `step-1.2.md` §7.
+**The only edit phase 1 makes to another plan document.** Step 1.2 applies all
+three; the exact wording is in `step-1.2.md` §7.
 
 Two go to §9's doc-correction register, which claims to be the single home for
 corrections and does not list these:
@@ -1192,6 +1227,17 @@ over `LoadedCampaign.definitions` return at most one result — without it,
 phase 8's creature tool has an ambiguity no amount of prompting fixes. One rule,
 no new field.
 
+### P1-D18 — Every id argument is validated before a path is built
+
+`load_campaign`, `load_scene`, `load_definition` and `list_versions` check
+`campaign_id` / `scene_id` / `definition_id` against the `ContentId` pattern and
+`version` against `VERSION_PATTERN` **before joining anything to
+`CONTENT_ROOT`**, and raise `ContentNotFoundError` with §6.1's pinned
+`relative_path` when a value does not conform (§5.1). Reason: phases 5, 7 and 8
+feed these from client requests, so `load_campaign("../../app", "v1")` must be a
+not-found error and not a read outside the content root. It is a guard clause in
+the existing functions — not a new module, a helper or a dependency.
+
 ---
 
 ## 11. The referential rule list
@@ -1218,7 +1264,7 @@ with the tag each failure carries in `errors[]` (§6.2).
 | R14 | load | Every `creatures[].definition` resolves to a `definitions/<id>.json` | the scene file |
 | R15 | load | Each definition's `id` equals its filename stem | the definition file |
 | R16 | load | Every `*.json` in `definitions/` is referenced by at least one scene (no dead content) | the orphan file |
-| R17 | load | `Definition.name` is unique across the campaign's definitions, compared **case-insensitively** after `ProseText` stripping — `"Bog Lurker"` and `"bog lurker"` collide, because they are exactly the pair phase 8's name lookup cannot disambiguate | the **second** definition file in sorted-id order, so the message is deterministic |
+| R17 | load | `Definition.name` is unique across the campaign's definitions, compared **case-insensitively** after `ProseText` stripping — `"Bog Lurker"` and `"bog lurker"` collide, because they are exactly the pair phase 8's name lookup cannot disambiguate | **every colliding definition after the first**, in sorted-id order, so the message set is deterministic |
 | R18 | load | A definition appears at most once in a scene's `creatures` list | the scene file |
 
 **Rules are scoped to what is actually claimed.** R6–R13 are evaluated only for

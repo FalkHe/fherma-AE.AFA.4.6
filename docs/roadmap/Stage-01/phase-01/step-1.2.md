@@ -5,6 +5,7 @@ phase: 1
 step: 1.2
 status: spec
 created: 2026-09-11
+revised: 2026-09-11
 ---
 
 # Step 1.2 — The authoring guide and the documents this phase invalidates
@@ -43,8 +44,8 @@ Out of scope, and a deviation if it appears:
 ## 2. Environment you will meet
 
 - The Docker stack is **down**; nothing in this step needs it running.
-- There is no `.env` file, only `.env.dist`, which is owner-only. This step runs
-  no command that reads it.
+- `.env` exists, copied from `.env.dist`; `.env.dist` is owner-only and must
+  not be edited. This step runs no command that reads either.
 - `docs/modules/` **does not exist** — create the directory.
 - `docs/README.md` currently says, under *Modules*:
   `*None yet — the first module doc lands with the first subsystem.*`
@@ -66,9 +67,9 @@ All owned by **backend-dev**.
 | `docs/general/requirement-map.md` | One correction (§6). |
 | `docs/roadmap/Stage-01/README.md` | Two rows added to §9's register and one to §7's (§7). |
 
-`docs/roadmap/Stage-01/README.md` is the **only** file phase 1 edits outside the
-phase directory and the `content` module. Add rows to the §9 and §7 tables;
-change nothing else in that document.
+`docs/roadmap/Stage-01/README.md` is the **only** other plan document phase 1
+edits. Add rows to the §9 and §7 tables — replacing one existing row, per §7.1 —
+and change nothing else in that document.
 
 ## 4. `docs/modules/content.md` — the authoring guide
 
@@ -151,7 +152,7 @@ the correction requires.
 
 | # | File | Section | Correction |
 |---|---|---|---|
-| C1 | `docs/general/model.md` | *Static files* | The content root is `backend/content/`, not `content/`. Give the reason in one clause: the Dockerfile copies `backend/` and compose bind-mounts it, so the path is identical in the image, under the dev bind mount and on the host, with no configuration. |
+| C1 | `docs/general/model.md` | *Static files* | The content root is `backend/content/`, not `content/`. Give the reason in one clause: the Dockerfile copies `backend/` and compose bind-mounts it, so the path is identical in the image, under the dev bind mount and on the host, with no configuration. **In the same pass, strike "mounted read-only" from the *Content* bullet**: the landed mount is `./backend:/app`, read-write; content is read-only by convention — nothing writes it and the loader only reads — and is reviewed as diffs in PRs. |
 | C2 | `docs/general/model.md` | *Static files* | `npcs/` and `monsters/` become one `definitions/` directory holding one `Definition` entity, which **always** carries a stat block. The same document already rules there is no npc/monster split; this is that ruling applied. |
 | C3 | `docs/general/model.md` | *Static files* | The scene-field line becomes the pinned set: `truth[]`, `npc_intent?`, `consequences[]`, `hidden[]`, `creatures[]`, `exits[]` — **a list, not a map** — and `pressure?`. |
 | C4 | `docs/general/model.md` | *Static files* | `campaign.json` also carries the **seed player character**, and each adventure file carries a prose **`intro`** and an **`entry_scene`**. |
@@ -170,7 +171,12 @@ else in that document.
 ### 7.1 Two rows for §9
 
 Stage README §9 declares itself the single home for doc corrections, and phase 1
-found corrections it does not list. Add exactly these two rows to that table:
+found more of them against `general/model.md` than its existing row names. **Do
+not add a second `general/model.md` phase-1 row**: §9 already carries one
+("The content shape describes neither the per-adventure `intro` nor the seed
+player character"), and two rows for one contradiction set is the duplication
+this register exists to prevent. **Replace that existing row** with the
+enumerated one below, and **add** the `general/architecture.md` row:
 
 | Contradiction | File | Owning phase |
 |---|---|---|
@@ -241,12 +247,17 @@ Numbered, each provable or refutable by a QA agent without reading
 17. `docs/general/requirement-map.md`'s requirement-3 entry states the
     player-capability reading and names content validation as an operator
     capability.
-18. `docs/roadmap/Stage-01/README.md` §9's table contains the two rows of §7.1,
-    §7's table contains the row of §7.2, and the document is otherwise unchanged
-    (provable from the diff).
+18. `docs/roadmap/Stage-01/README.md` §9's table carries the enumerated
+    `general/model.md` row of §7.1 **in place of** the previous phase-1
+    `general/model.md` row — which no longer appears — plus §7.1's
+    `general/architecture.md` row; §7's table carries the row of §7.2; and
+    `git diff -- docs/roadmap/Stage-01/README.md` shows only those added rows
+    and that one replacement, and nothing else.
 19. `docs/general/glossary.md` is unchanged.
-20. No file under `backend/` is created or modified by this step (provable from
-    the diff).
+20. No file under `backend/` appears among the files this step's agent edited,
+    as listed in its own report, and no `docs/` file outside §3's table was
+    touched. **`backend/` paths in the working tree are not evidence**: step 1.1
+    runs concurrently in the same tree and legitimately produces them.
 21. **The falsifiable criterion.** Step 1.3's author works from
     `docs/modules/content.md` alone, without opening
     `backend/app/modules/content/`, and the campaign they produce passes
@@ -262,10 +273,12 @@ This step lands no code, so there is nothing to lint, type-check or boot. The
 checks are:
 
 ```bash
-git diff --stat                 # must show only docs/ paths
+git status --porcelain -- docs/   # the docs/ paths this step touched
 ```
 
-- Every changed path is under `docs/`.
+- Every `docs/` path it lists is one of §3's table. **Do not run a tree-wide
+  `git diff --stat`**: step 1.1 runs concurrently in the same working tree, so
+  `backend/` paths are expected there and are out of scope for this step.
 - Every JSON block in `docs/modules/content.md` parses — verify each one, e.g.
   by pasting it through `python -m json.tool`.
 - Every relative link in the touched documents resolves.
