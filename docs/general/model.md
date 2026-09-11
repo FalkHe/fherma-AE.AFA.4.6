@@ -82,6 +82,9 @@ campaign extended with a fourth adventure ships as a new version that only new
 runs pick up. Existing runs finish what they started — which is why objects can
 be instantiated eagerly (below) with no backfill path.
 
+**The mechanism**: a version is a `v<n>` directory under the campaign,
+served whole by the loader and never edited in place.
+
 ### Settings live on the run
 
 Model, temperature, DM personality and any system-prompt override belong to the
@@ -210,14 +213,14 @@ stray autogenerate will try to drop it.
 ## Static files
 
 ```
-content/campaigns/<campaign_id>/<version>/
-    campaign.json          # metadata + ordered adventure list
-    adventures/<id>.json
-    npcs/<id>.json         # campaign-scoped, referenced by any scene
-    scenes/<id>.json       # truth[], npc_intent, consequences[], hidden[],
-                           # monsters[], exits{}, pressure?
-    monsters/<id>.json     # stat blocks
-content/srd/                # SRD 5.1 source for the ingest CLI
+backend/content/campaigns/<campaign_id>/<version>/
+    campaign.json          # metadata + ordered adventure list + seed player character
+    adventures/<id>.json   # includes a prose intro and an entry_scene
+    scenes/<id>.json       # truth[], npc_intent?, consequences[], hidden[],
+                           # creatures[], exits[] (a list, not a map), pressure?
+    definitions/<id>.json  # one entity for NPCs and monsters alike; always
+                           # carries a stat block
+backend/content/srd/        # SRD 5.1 source for the ingest CLI
 
 backend/app/modules/game/prompts/
     system/dm.md
@@ -228,9 +231,15 @@ backend/app/modules/game/prompts/
 /data/media/portraits/<id>.png       # Docker volume, never in git
 ```
 
-- **Content** is mounted read-only and reviewed as diffs in PRs. NPC prompt
-  fragments belong to content, not to the prompts directory; they may move to
-  the database later, and nothing outside the content loader may assume a file.
+The content root is `backend/content/`, not a repository-root `content/`: the
+Dockerfile copies `backend/` and compose bind-mounts it, so the path is
+identical in the image, under the dev bind mount and on the host, with no
+configuration.
+
+- **Content** is read-only by convention — nothing writes it and the loader
+  only reads — and is reviewed as diffs in PRs. NPC prompt fragments belong to
+  content, not to the prompts directory; they may move to the database later,
+  and nothing outside the content loader may assume a file.
 - **Prompts** live in the module that uses them, versioned in git. The dev
   drawer selects known ids and may set a free-text override stored on the run;
   it never edits a file.

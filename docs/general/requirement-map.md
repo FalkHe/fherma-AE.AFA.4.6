@@ -11,7 +11,7 @@ system does, and nothing else. The design itself is
 |---|---|---|
 | 1 | Agent purpose, usefulness, target users | [app-vision.md](app-vision.md) — solo AI DM for rule-free entry into pen & paper |
 | 2 | Core functionality, primary tasks, user interactions | The game agent and its tools ([architecture.md](architecture.md)); `ask_player` every turn plus the character-generation dialogue |
-| 3 | User-friendly UI for **all** functionality | Web client ([architecture.md](architecture.md)); developer settings live in a separate drawer, not the player UI |
+| 3 | User-friendly UI for **all** functionality | Web client ([architecture.md](architecture.md)); developer settings live in a separate drawer, not the player UI. Read as every **player** capability having a surface — operator capabilities such as content validation are CLI-only by design, since putting developer machinery in the player UI is exactly what optional task Medium-8 penalises |
 | 4 | Appropriate tools, error handling, real-world usage | Invalid dice expressions, unknown content ids, state validation, LLM and tool timeouts, checkpoint resume |
 | 5 | Documentation: usage, examples, technical decisions | `docs/` — [glossary.md](glossary.md), the adventure authoring guide, the tool reference, and the decision records in [architecture.md](architecture.md) / [model.md](model.md) |
 
