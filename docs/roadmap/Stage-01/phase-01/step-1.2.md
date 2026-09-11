@@ -24,7 +24,7 @@ touches only `docs/`. Neither may edit the other's files.
 
 ## 1. Scope
 
-In scope: one new document, one index row, seven corrections across three
+In scope: one new document, one index row, eight corrections across three
 general documents, and three rows added to the stage README — two to its §9
 doc-correction register, one to its §7 open-decisions register.
 
@@ -46,13 +46,27 @@ Out of scope, and a deviation if it appears:
 - The Docker stack is **down**; nothing in this step needs it running.
 - `.env` exists, copied from `.env.dist`; `.env.dist` is owner-only and must
   not be edited. This step runs no command that reads either.
-- `docs/modules/` **does not exist** — create the directory.
-- `docs/README.md` currently says, under *Modules*:
-  `*None yet — the first module doc lands with the first subsystem.*`
-- `backend/app/modules/content/` may or may not exist yet depending on step
-  1.1's progress. **Do not read it and do not wait for it.** The guide is written
-  from the phase contract, which is complete; if the guide were written from the
-  implementation, step 1.3 could not falsify it.
+- **This step is a rework of landed documentation, not a first pass.** All of
+  phase 1 landed in commits `e53e59b`, `61d6e7b` and `66efee6`;
+  `shared-knowledge.md` was then amended by **P1-D20** (an adventure is one
+  file, its scenes inline) and **P1-D21** (the term `Definition` stands), and
+  the documents below still describe the pre-amendment shape.
+- `docs/modules/content.md` **exists** and is the pre-amendment guide — the
+  `scenes/` directory, eighteen rules, a five-file worked example. Rewrite the
+  affected sections in place; do not start a new file and do not leave a
+  paragraph describing the old layout anywhere in it.
+- `docs/modules/` **exists** and contains only `content.md`.
+- `docs/README.md`'s *Modules* section is **already a table with the
+  `modules/content.md` row**, and "None yet" is already gone. §5 is therefore
+  satisfied as it stands — verify it, change nothing.
+- `docs/general/model.md`, `architecture.md` and `requirement-map.md` **already
+  carry corrections C1–C7**. Only **C2a** is new, and C4 gains one clause; apply
+  those two and leave the rest alone.
+- `docs/roadmap/Stage-01/README.md` **already carries all three rows** of §7.
+  Only the §7.1 `general/model.md` row's wording changes. See §7.
+- `backend/app/modules/content/` exists and is being re-worked concurrently by
+  step 1.1. **Do not read it and do not wait for it.** The guide is written from
+  the phase contract, which is complete and amended.
 
 ## 3. Files this step creates or edits
 
@@ -60,12 +74,12 @@ All owned by **backend-dev**.
 
 | File | Change |
 |---|---|
-| `docs/modules/content.md` | **New.** The authoring guide (§4). |
-| `docs/README.md` | One row under *Modules* (§5). |
-| `docs/general/model.md` | Five corrections (§6). |
-| `docs/general/architecture.md` | One correction (§6). |
-| `docs/general/requirement-map.md` | One correction (§6). |
-| `docs/roadmap/Stage-01/README.md` | Two rows added to §9's register and one to §7's (§7). |
+| `docs/modules/content.md` | **Exists.** Rewrite it to the amended contract (§4). |
+| `docs/README.md` | Already correct (§5). Verify only; expect no diff. |
+| `docs/general/model.md` | C2a, and the added clause in C4 (§6). C1, C2, C3, C5 already landed. |
+| `docs/general/architecture.md` | Already correct (C6). Verify only; expect no diff. |
+| `docs/general/requirement-map.md` | Already correct (C7). Verify only; expect no diff. |
+| `docs/roadmap/Stage-01/README.md` | One row amended in §9's register (§7). |
 
 `docs/roadmap/Stage-01/README.md` is the **only** other plan document phase 1
 edits. Add rows to the §9 and §7 tables — replacing one existing row, per §7.1 —
@@ -84,9 +98,12 @@ It must contain, and in a form an author can act on:
    campaign id plus a pinned version. Not a database, not a script, not
    generated.
 2. **The directory layout** — phase contract §4, with real example paths.
-   Include that content lives at `backend/content/`, that only `*.json` files
-   are considered, and that a missing `adventures/` / `scenes/` / `definitions/`
-   directory is treated as empty.
+   Include that content lives at `backend/content/`; that a campaign version is
+   three kinds of file — `campaign.json`, `adventures/<id>.json` carrying the
+   adventure **and its scenes**, and `definitions/<id>.json`; **why** the
+   granularity is what it is (a scene belongs to one adventure, a definition is
+   shared between adventures); that only `*.json` files are considered; and that
+   a missing `adventures/` or `definitions/` directory is treated as empty.
 3. **Versioning** — a version is a `v<n>` directory; content is extended by
    copying the tree to `v2` and editing there, never by editing a published
    version in place, because a run pinned to `v1` must stay reproducible.
@@ -103,14 +120,16 @@ It must contain, and in a form an author can act on:
    be non-empty, so `"   "` is rejected; every `min_length`, `ge` and `le` bound
    given in phase contract §3.
 7. **The rule list** — phase contract §11 reproduced in full, with the `[R<n>]`
-   tags, so an author who sees `scenes/x.json: [R11] …` can look up what R11
-   requires. State which rule is checked by the CLI rather than the loader (R3).
+   tags, so an author who sees `adventures/x.json: [R9] …` can look up what R9
+   requires. State which rule is checked by the CLI rather than the loader (R3),
+   and that a rule failing inside a scene names the **adventure** file and puts
+   the scene id in the detail.
 8. **The message grammar an author will see** —
-   `<path>: [<TAG>] <detail>`, with `READ`, `SCHEMA` and `R2`…`R18` explained
+   `<path>: [<TAG>] <detail>`, with `READ`, `SCHEMA` and `R2`…`R16` explained
    (R1 carries no tag of its own — it is reported as `[READ]` or `[SCHEMA]`),
    and the `app content validate` exit codes.
 9. **The complete worked example** — phase contract §4.1, **reproduced
-   verbatim**, all five files. This is the part an author copies from, so it
+   verbatim**, all three files. This is the part an author copies from, so it
    must be byte-faithful; a divergence here is a defect.
 10. **The two rules a generator gets wrong by default**, stated in these words
     and given their own heading:
@@ -122,12 +141,25 @@ It must contain, and in a form an author can act on:
       a comparison.** There is no flag store in this system, so there is nothing
       to compare against. Write `"the bar has been broken, forced, or lifted
       from outside"`, never `"alarm_raised == false"`.
-11. **What the schema deliberately does not carry**, so an author does not try
+11. **What a `Definition` is**, in one sentence, in the template/instance terms
+    of phase contract §3.4: a definition is the campaign-scoped template, and
+    what appears in a scene during a run is an instance of it. This is what the
+    directory name means and it is why `Scene.creatures` entries point at a
+    `definition`.
+12. **What the schema deliberately does not carry**, so an author does not try
     to add it: no items and no fixtures (creatures only); no level, no
     proficiency bonus, no skills, no player attacks — a monster's `to_hit` is
     the complete bonus and every other check resolves on the raw ability
     modifier; no portrait; no speed and no challenge rating.
-12. **A short authoring checklist** an author can run down before validating:
+13. **What one broken adventure does to the rest of the report**, in the terms
+    of phase contract §11's drop block: an adventure that fails `[R6]`,
+    `[READ]` or `[SCHEMA]` is dropped whole, so it produces no `[R7]`–`[R12]`
+    findings, **and a definition only it referenced then shows up as `[R14]`
+    unreferenced.** An author who fixes the adventure sees that `[R14]` go away
+    on its own. The pre-amendment guide's troubleshooting paragraph around the
+    old `[R8]` cluster describes rules that no longer exist and must be
+    rewritten around this answer, not patched.
+14. **A short authoring checklist** an author can run down before validating:
     every scene reachable from `entry_scene`; at least one scene with no exits;
     every definition referenced by at least one scene; no definition placed
     twice in one scene; definition names unique.
@@ -154,13 +186,15 @@ the correction requires.
 |---|---|---|---|
 | C1 | `docs/general/model.md` | *Static files* | The content root is `backend/content/`, not `content/`. Give the reason in one clause: the Dockerfile copies `backend/` and compose bind-mounts it, so the path is identical in the image, under the dev bind mount and on the host, with no configuration. **In the same pass, strike "mounted read-only" from the *Content* bullet**: the landed mount is `./backend:/app`, read-write; content is read-only by convention — nothing writes it and the loader only reads — and is reviewed as diffs in PRs. |
 | C2 | `docs/general/model.md` | *Static files* | `npcs/` and `monsters/` become one `definitions/` directory holding one `Definition` entity, which **always** carries a stat block. The same document already rules there is no npc/monster split; this is that ruling applied. |
+| C2a | `docs/general/model.md` | *Static files* | **There is no `scenes/` directory.** The tree is `campaign.json`, `adventures/<id>.json` — the adventure **and its scenes** — and `definitions/<id>.json`. Give the reason in one clause: a scene belongs to exactly one adventure, a definition is campaign-scoped and shared between them. |
 | C3 | `docs/general/model.md` | *Static files* | The scene-field line becomes the pinned set: `truth[]`, `npc_intent?`, `consequences[]`, `hidden[]`, `creatures[]`, `exits[]` — **a list, not a map** — and `pressure?`. |
-| C4 | `docs/general/model.md` | *Static files* | `campaign.json` also carries the **seed player character**, and each adventure file carries a prose **`intro`** and an **`entry_scene`**. |
+| C4 | `docs/general/model.md` | *Static files* | `campaign.json` also carries the **seed player character**, and each adventure file carries a prose **`intro`**, an **`entry_scene`** and its **scenes inline**. |
 | C5 | `docs/general/model.md` | *Content lives in git, runs pin a version* | State the mechanism: a version is a `v<n>` directory under the campaign, served whole by the loader, never edited in place. |
 | C6 | `docs/general/architecture.md` | *System components* → **Adventure content** | Strike "Authored by an LLM once through a `generate_adventure` CLI that prompts with the SRD and enforces the schema". Content is **hand-authored**, validated by `app content validate`, and reviewed as a diff. Leave the rest of the bullet intact. |
 | C7 | `docs/general/requirement-map.md` | *Task requirements*, row 3 | State the player-capability reading of stage README §8: every **player** capability has a surface; operator capabilities such as content validation are CLI-only by design, because putting developer machinery in the player UI is exactly what optional task Medium-8 penalises. One sentence in the row or immediately beneath the table — phase 11 makes the full argument. |
 
-C1–C5 land in one edit of the *Static files* section; do not fragment it.
+C1–C5 (including C2a) land in one edit of the *Static files* section; do not
+fragment it.
 
 ## 7. The two stage-register rows
 
@@ -172,15 +206,16 @@ else in that document.
 
 Stage README §9 declares itself the single home for doc corrections, and phase 1
 found more of them against `general/model.md` than its existing row names. **Do
-not add a second `general/model.md` phase-1 row**: §9 already carries one
-("The content shape describes neither the per-adventure `intro` nor the seed
-player character"), and two rows for one contradiction set is the duplication
-this register exists to prevent. **Replace that existing row** with the
-enumerated one below, and **add** the `general/architecture.md` row:
+not add a second `general/model.md` phase-1 row**: §9 already carries one, and
+two rows for one contradiction set is the duplication this register exists to
+prevent. **Replace that existing row** with the enumerated one below — which now
+also names the `scenes/` directory removed by P1-D20 — and **add** the
+`general/architecture.md` row. If a previous pass already landed the enumerated
+row, amend it in place rather than adding another:
 
 | Contradiction | File | Owning phase |
 |---|---|---|
-| The static-file tree's content root, the `npcs/` + `monsters/` split, the scene-field line, the missing `intro` / `entry_scene` / seed character, and the unstated version mechanism — enumerated in `roadmap/Stage-01/phase-01/shared-knowledge.md` §9.2 | `general/model.md` | 1 |
+| The static-file tree's content root, its `scenes/` directory, the `npcs/` + `monsters/` split, the scene-field line, the missing `intro` / `entry_scene` / seed character, and the unstated version mechanism — enumerated in `roadmap/Stage-01/phase-01/shared-knowledge.md` §9.2 | `general/model.md` | 1 |
 | The tool table's `get_monster(name)` row — with one `Definition` entity the binding is id- or name-addressed over `definitions`, and its final name and argument are phase 8's to pin | `general/architecture.md` | 8 |
 
 ### 7.2 One row for §7
@@ -217,10 +252,13 @@ Numbered, each provable or refutable by a QA agent without reading
    `armor_class`) as explicit rules, and the string `"\"class\":"` appears
    nowhere in it. **`armor_class` is not a forbidden string** — the rule itself
    has to quote the spelling it rejects, and §4 item 4 requires exactly that.
-7. The guide reproduces phase contract §11's rule table with all eighteen
-   `[R<n>]` tags, and marks R3 as the CLI-level check.
+7. The guide reproduces phase contract §11's rule table — **all sixteen rules,
+   carrying fifteen `[R<n>]` tags**, because R1 has no tag of its own and is
+   reported as `[READ]` or `[SCHEMA]`. The tags present are `[R2]` and
+   `[R3]`…`[R16]`. The guide marks R3 as the CLI-level check, and the strings
+   `[R17]` and `[R18]` appear nowhere in it.
 8. The guide reproduces the worked example of phase contract §4.1 in full — all
-   five files — and every JSON block in it is parseable JSON.
+   three files — and every JSON block in it is parseable JSON.
 9. The guide states the message grammar `<path>: [<TAG>] <detail>`, explains
    `READ`, `SCHEMA` and `R<n>` (and that R1 carries no tag of its own), and
     gives the `app content validate` exit codes
@@ -229,43 +267,57 @@ Numbered, each provable or refutable by a QA agent without reading
     intentions and consequences, never a script."** and the sentence **"An exit
     condition is prose the agent judges, never a flag, a variable or a
     comparison."**
-11. The guide states that content declares no items and no fixtures, and that
+11. The guide states, in one sentence, that a `Definition` is the
+    campaign-scoped template and that what appears in a scene during a run is an
+    instance of it.
+12. The guide states that an adventure file carries its scenes inline, that
+    there is no `scenes/` directory, and why.
+13. The guide states that content declares no items and no fixtures, and that
     there is no level, proficiency bonus, skill list or authored player attack.
-12. The guide contains an authoring checklist covering: reachability from
+14. The guide contains an authoring checklist covering: reachability from
     `entry_scene`, at least one scene with no exits, every definition referenced,
     no duplicate placement in a scene, unique definition names.
-13. `docs/general/model.md`'s *Static files* section shows the content root as
-    `backend/content/`, shows a single `definitions/` directory, shows no
-    `npcs/` or `monsters/` directory, and shows the scene-field set of C3.
-14. `docs/general/model.md` states that `campaign.json` carries the seed player
+15. `docs/general/model.md`'s *Static files* section shows the content root as
+    `backend/content/`, shows a single `definitions/` directory, shows **no
+    `scenes/` directory** and no `npcs/` or `monsters/` directory, and shows the
+    scene-field set of C3 as the content of an adventure file.
+16. `docs/general/model.md` states that `campaign.json` carries the seed player
     character and that an adventure carries `intro` and `entry_scene`.
-15. `docs/general/model.md`'s *Content lives in git, runs pin a version* section
+17. `docs/general/model.md`'s *Content lives in git, runs pin a version* section
     states the `v<n>` directory mechanism.
-16. `docs/general/architecture.md` no longer contains the string
+18. `docs/general/architecture.md` no longer contains the string
     `generate_adventure`, and its *Adventure content* bullet says the content is
     hand-authored and validated by `app content validate`.
-17. `docs/general/requirement-map.md`'s requirement-3 entry states the
+19. `docs/general/requirement-map.md`'s requirement-3 entry states the
     player-capability reading and names content validation as an operator
     capability.
-18. `docs/roadmap/Stage-01/README.md` §9's table carries the enumerated
-    `general/model.md` row of §7.1 **in place of** the previous phase-1
-    `general/model.md` row — which no longer appears — plus §7.1's
-    `general/architecture.md` row; §7's table carries the row of §7.2; and
-    `git diff -- docs/roadmap/Stage-01/README.md` shows only those added rows
-    and that one replacement, and nothing else.
-19. `docs/general/glossary.md` is unchanged.
-20. No file under `backend/` appears among the files this step's agent edited,
+20. `docs/roadmap/Stage-01/README.md` §9's table carries the enumerated
+    `general/model.md` row of §7.1 in its **amended** wording — the one that
+    also names the `scenes/` directory — and carries no second phase-1
+    `general/model.md` row. §7.1's `general/architecture.md` row and §7.2's
+    open-decision row are **already present from the previous pass and are
+    unchanged**, so `git diff -- docs/roadmap/Stage-01/README.md` shows
+    **exactly one changed row and nothing else**. A diff showing those two rows
+    added again is a defect: they would then be duplicated.
+21. `docs/general/glossary.md` is unchanged.
+22. No file under `backend/` appears among the files this step's agent edited,
     as listed in its own report, and no `docs/` file outside §3's table was
     touched. **`backend/` paths in the working tree are not evidence**: step 1.1
     runs concurrently in the same tree and legitimately produces them.
-21. **The falsifiable criterion.** Step 1.3's author works from
+23. **The falsifiable criterion — closed in the previous pass, not re-measured
+    in the P1-D20 rework.** The criterion is: step 1.3's author works from
     `docs/modules/content.md` alone, without opening
     `backend/app/modules/content/`, and the campaign they produce passes
-    `app content validate` on the first run after the owner's prose review. Any
+    `app content validate` on the first run after the owner's prose review; any
     field name, constraint or rule the author had to guess at is a defect in
     this guide and is fixed in the guide, not worked around in the content.
+    **It was measured and passed when the guide first landed.** Step 1.3 is now
+    a mechanical migration of already-accepted prose (step-1.3 §3), so there is
+    no fresh authoring to measure and this criterion is **not re-run**. It
+    stands for the next campaign authored from this guide.
 
-Criterion 21 is verified in step 1.3 and is the reason this step exists.
+Criterion 23 was verified in step 1.3's first pass and is the reason this step
+exists; it is carried, not re-measured (see the criterion).
 
 ## 9. Static checks the dev agent runs
 
@@ -298,7 +350,7 @@ not by accident.
 | Agent | Owns |
 |---|---|
 | backend-dev | `docs/modules/content.md`, `docs/README.md`, the three `docs/general/*` corrections, and the three rows in `docs/roadmap/Stage-01/README.md` (§7). Nothing else. |
-| qa-backend | Verification of criteria 1–20 against the landed documents. Criterion 21 is verified in step 1.3. |
+| qa-backend | Verification of criteria 1–22 against the landed documents. Criterion 23 is carried from the previous pass and is not re-measured. |
 
 **This step must not touch `backend/app/modules/content/` — step 1.1 owns it and
 is editing it concurrently.**

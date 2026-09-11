@@ -28,8 +28,10 @@ touches only `backend/`. Neither may edit the other's files.
 In scope:
 
 - `backend/app/modules/content/` — `__init__.py`, `schemas.py`, `errors.py`,
-  `service.py`, `commands.py`, `README.md`.
-- Two added lines in `backend/app/cli.py`.
+  `service.py`, `commands.py`, `README.md`. All six exist; `schemas.py` and
+  `service.py` carry the substance of this rework.
+- `backend/app/cli.py` — **already registers `content_app` and needs no edit.**
+  Expect no diff there.
 
 Out of scope, and a deviation if it appears:
 
@@ -52,12 +54,25 @@ Out of scope, and a deviation if it appears:
   `get_settings()`, and `Settings.database_url` has no default — and because
   `compose.yaml` declares `env_file: .env` on `app-cli`, so no `make` target can
   start a container without it. If it is missing, run `cp .env.dist .env`.
+- **This step is a rework of landed code, not a greenfield build.** The whole
+  of phase 1 landed in commits `e53e59b`, `61d6e7b` and `66efee6`, and
+  `shared-knowledge.md` was then amended by **P1-D20** (an adventure is one
+  file, its scenes inline) and **P1-D21** (the term `Definition` stands). This
+  step re-shapes the module to the amended contract.
+- `backend/app/modules/content/` **exists**, with `__init__.py`, `schemas.py`,
+  `errors.py`, `service.py`, `commands.py` and `README.md`, and
+  `app/cli.py` already registers `content_app`. The two `cli.py` lines of §5.5
+  are **already present** — do not add them a second time.
+- `backend/content/campaigns/greenhollow/v1/` **exists**, in the *pre-amendment*
+  layout: a `scenes/` directory and an adventure file whose `scenes` is a list
+  of ids. **Do not touch it** — step 1.3 migrates it (§7).
+- `backend/tests/content/` **exists** and is green against the pre-amendment
+  contract. qa-backend re-authors it against the amended one; backend-dev still
+  must not open it.
+- `docs/modules/content.md` **exists**, describing the pre-amendment layout.
+  Step 1.2 rewrites it. Do not read it and do not edit it.
 - Alembic head is `0001` (`backend/alembic/versions/0001_baseline.py`). **This
   step adds no migration.** Content is static JSON in git, never rows.
-- `backend/app/modules/content/` does not exist.
-- `backend/content/` does not exist, and will not until step 1.3. That is
-  expected — see §7.
-- `docs/modules/` does not exist; step 1.2 creates it.
 
 ## 3. Conventions this step must satisfy
 
@@ -100,7 +115,7 @@ All owned by **backend-dev**.
 | `backend/app/modules/content/service.py` | `CONTENT_ROOT`, `VERSION_PATTERN`, and the five public functions of phase contract §5, plus whatever private helpers the rule set needs. |
 | `backend/app/modules/content/commands.py` | `content_app = typer.Typer()` and the `validate` command of phase contract §7. |
 | `backend/app/modules/content/README.md` | Short module doc — Owns / Surface / Notes — in the shape of `backend/app/modules/users/README.md`. |
-| `backend/app/cli.py` | Exactly two added lines (§5.5). |
+| `backend/app/cli.py` | **No change.** The two lines of §5.5 are already present; verify and move on. |
 
 ## 5. The work
 
@@ -123,6 +138,16 @@ Points that are easy to get wrong and are contract:
 - Every id field is `ContentId`.
 - `Scene.truth` and `Adventure.scenes` and `Campaign.adventures` carry
   `Field(min_length=1)`; every other list defaults to empty.
+- **`Adventure.scenes` is `list[Scene]`, not `list[ContentId]`** — the scenes
+  are inline in the adventure file (phase contract §3.9, P1-D20). `Scene` must
+  therefore be declared before `Adventure` in the file. This is the one field
+  the rework changes, and re-landing the old shape is the likeliest regression
+  (criteria 9 and 10).
+- **`Definition` carries a one-line class docstring** saying that a definition
+  is the campaign-scoped **template**, and that what exists in a scene during a
+  run is an **instance** of it (P1-D21). One line, no more; it is there because
+  a reader of `schemas.py` is the other audience for the question the directory
+  name raises. No other model gets a docstring.
 
 ### 5.2 `errors.py`
 
@@ -164,25 +189,30 @@ The walk:
 1. Read and validate `campaign.json`. If it is missing, unreadable, not valid
    JSON or schema-invalid, raise `ContentInvalidError` with that **one** entry
    and stop — nothing else can be located without its adventure list.
-2. Read every `*.json` under `adventures/`, `scenes/` and `definitions/` by
-   **globbing** (`(base / "scenes").glob("*.json")`), which yields nothing for a
+2. Read every `*.json` under `adventures/` and `definitions/` by **globbing**
+   (`(base / "adventures").glob("*.json")`), which yields nothing for a
    directory that does not exist. Never `iterdir()`, never `os.listdir`, never
-   a bare `Path.exists()` branch — a missing directory must surface as R4/R7's
-   referential failure, not as an `OSError`.
+   a bare `Path.exists()` branch — a missing directory must surface as R4's
+   referential failure, not as an `OSError`. **There is no `scenes/` directory**:
+   a scene arrives inside its adventure, already schema-validated with it.
 3. Non-`.json` files are ignored entirely: never read, never reported, never an
    orphan.
 4. Any read, parse or schema failure on any of those files is **one `errors[]`
    entry and the walk continues** (phase contract §6.3).
 5. De-duplicate `campaign.adventures` before evaluating anything downstream of
-   it: a duplicate entry produces its `[R4]` entry and must not also produce a
-   spurious `[R8]` double-claim.
+   it: a duplicate entry produces its `[R4]` entry and nothing else.
 6. Apply every rule of phase contract §11 marked `load` over whatever validated
    objects survived step 4. A rule that cannot be evaluated because its subject
    failed to load is simply not evaluated; its file already has an entry. Rules
-   are also scoped to what is claimed: R6–R13 only for adventures listed in
-   `campaign.adventures`, R9 and R11 only for scenes claimed by such an
-   adventure — so one stray file produces one problem, not a cascade.
-7. If `errors` is non-empty, sort it and raise
+   are also scoped to what is claimed: R6–R12 only for adventures listed in
+   `campaign.adventures` — so one stray file produces one problem, not a
+   cascade. An adventure dropped by R6, `[READ]` or `[SCHEMA]` takes its scenes
+   with it and yields no further findings about itself.
+7. Build `LoadedCampaign.scenes` by flattening every surviving adventure's
+   `scenes` list, keyed by scene id. R8 is what makes that key unambiguous;
+   when R8 fails, the first occurrence in `campaign.adventures` order wins the
+   key and every later one is reported.
+8. If `errors` is non-empty, sort it and raise
    `ContentInvalidError(campaign_id, version, errors)`. Otherwise return
    `LoadedCampaign`, with `adventures` keyed in `campaign.adventures` order.
 
@@ -193,7 +223,7 @@ tests against:
 <path relative to the version directory>: [<TAG>] <detail>
 ```
 
-with `TAG` one of `READ`, `SCHEMA`, `R2`, or `R4`…`R18`. R1 has no tag of its
+with `TAG` one of `READ`, `SCHEMA`, `R2`, or `R4`…`R16`. R1 has no tag of its
 own — it is the readability and schema-validity of `campaign.json`, reported as
 `[READ]` or `[SCHEMA]` — and **`[R3]` never appears in `errors[]`**, because R3
 is a CLI check. For `SCHEMA`, the detail is
@@ -202,10 +232,15 @@ is a CLI check. For `SCHEMA`, the detail is
 is never a `": : "` in any message. Paths use forward slashes and no leading
 slash.
 
-R8 and R17 must name deterministic files when a conflict involves several:
-R8's double-claim names the **second** adventure in `campaign.adventures` order,
-and R17 names **every colliding definition after the first** in sorted-id
-order — for the two-definition case, the second.
+R8 and R15 must name deterministic files when a conflict involves several:
+R8's duplicate scene id names the adventure file holding the **later**
+occurrence, in `campaign.adventures` order and then `scenes` list order, and
+R15 names **every colliding definition after the first** in sorted-id order —
+for the two-definition case, the second.
+
+**A rule that fails inside a scene names its adventure file and puts the scene
+id in the detail** (R8, R9, R12, R16; phase contract §6.2). QA asserts on the
+path and the tag, so the wording is yours — the scene id being present is not.
 
 ### 5.4 `commands.py`
 
@@ -251,7 +286,8 @@ Behaviour, from phase contract §7:
 
 ### 5.5 `cli.py`
 
-Append below the existing `openapi` block, and change nothing else in the file:
+**Already landed — verify, do not re-apply.** The file must contain, below the
+existing `openapi` block and nowhere else:
 
 ```python
 from app.modules.content.commands import content_app
@@ -259,8 +295,9 @@ from app.modules.content.commands import content_app
 cli.add_typer(content_app, name="content")
 ```
 
-The import goes with the other imports at the top; the `add_typer` call goes at
-the end of the file. The `openapi` sub-app stays first and stays inline.
+The import sits with the other imports at the top and the `add_typer` call at
+the end of the file, with the `openapi` sub-app first and inline. If that is what
+you find, this sub-section is done. A second registration is a defect.
 
 ### 5.6 `README.md`
 
@@ -292,32 +329,39 @@ implementation. Unless stated otherwise, "a tree" means a content tree built in
 7. `Abilities` rejects a payload missing any one of the six scores, and rejects
    `0` and `31`.
 8. A `ContentModel` instance rejects attribute assignment (`frozen=True`).
+9. **`Adventure` rejects the pre-amendment shape.** A payload whose `scenes` is
+   a list of id strings (`["mill-approach", "mill-floor"]`) is rejected, and a
+   payload carrying both `scenes` (objects) and any extra key such as
+   `scene_ids` is rejected. This is the one field the rework changes and the
+   likeliest regression.
+10. `Adventure` rejects `scenes: []`, and `Campaign` rejects `adventures: []`.
 
 ### Loading
 
-9. `load_campaign` over the §4.1 worked example returns a `LoadedCampaign` whose
+11. `load_campaign` over the §4.1 worked example returns a `LoadedCampaign` whose
    `version` is the version string passed in, whose `adventures` keys are
    `campaign.adventures` in that order, whose `scenes` holds every scene of every
    adventure, and whose `definitions` holds every definition file.
-10. `load_scene(campaign_id, version, "mill-floor")` over the valid tree returns
+12. `load_scene(campaign_id, version, "mill-floor")` over the valid tree returns
     that `Scene`; `load_definition(..., "bog-lurker")` returns that `Definition`.
-11. `list_campaign_ids()` returns the campaign directory names sorted, and
+13. `list_campaign_ids()` returns the campaign directory names sorted, and
     returns `[]` when `campaigns/` does not exist, raising nothing.
-12. `list_versions()` returns conformant version names sorted by numeric suffix
+14. `list_versions()` returns conformant version names sorted by numeric suffix
     ascending (`v2` before `v10`), omits non-conformant names, and raises
     `ContentNotFoundError` for an unknown campaign with
     `relative_path == "campaigns/<campaign_id>"`.
-13. `load_campaign` for a missing version directory raises `ContentNotFoundError`
+15. `load_campaign` for a missing version directory raises `ContentNotFoundError`
     with `relative_path == "campaigns/<campaign_id>/<version>"`.
-14. `load_scene` for an unknown scene id over an otherwise valid tree raises
+16. `load_scene` for an unknown scene id over an otherwise valid tree raises
     `ContentNotFoundError` with
-    `relative_path == "campaigns/<campaign_id>/<version>/scenes/<scene_id>.json"`;
+    `relative_path == "campaigns/<campaign_id>/<version>/scene/<scene_id>"` —
+    singular `scene`, no `.json`, because scenes are not files;
     `load_definition` likewise with `.../definitions/<definition_id>.json`.
-15. A non-`.json` file placed in `scenes/` (e.g. `notes.md`) changes nothing:
-    the valid tree still loads and no error mentions it.
-16. Deleting the `definitions/` directory from a tree that references a
-    definition produces an `[R14]` entry, not an `OSError` or a traceback.
-17. **No id argument reaches the filesystem unvalidated** (phase contract §5.1).
+17. A non-`.json` file placed in `adventures/` (e.g. `notes.md`) changes
+    nothing: the valid tree still loads and no error mentions it.
+18. Deleting the `definitions/` directory from a tree that references a
+    definition produces an `[R12]` entry, not an `OSError` or a traceback.
+19. **No id argument reaches the filesystem unvalidated** (phase contract §5.1).
     `load_campaign("../x", "v1")`, `load_campaign("hollow-reach", "../v1")` and
     `load_scene("hollow-reach", "v1", "../campaign")` each raise
     `ContentNotFoundError` carrying §6.1's pinned `relative_path`, and nothing
@@ -327,22 +371,27 @@ implementation. Unless stated otherwise, "a tree" means a content tree built in
 
 ### Error reporting
 
-18. Every entry of `ContentInvalidError.errors` matches
-    `^[^:]+(/[^:]+)*: \[(READ|SCHEMA|R2|R([4-9]|1[0-8]))\] .+$` — a
+20. Every entry of `ContentInvalidError.errors` matches
+    `^[^:]+(/[^:]+)*: \[(READ|SCHEMA|R2|R([4-9]|1[0-6]))\] .+$` — a
     version-directory-relative path, a bracketed tag, a non-empty detail.
-19. `errors` is sorted ascending as strings, and two loads of the same broken
+21. `errors` is sorted ascending as strings, and two loads of the same broken
     tree produce identical lists.
-20. A tree with a broken scene **and** a broken definition produces **both**
-    entries from one call — the walk does not abort on the first.
-21. A tree whose `campaign.json` is malformed JSON produces exactly **one**
+22. A tree with a broken adventure file **and** a broken definition file
+    produces **both** entries from one call — the walk does not abort on the
+    first.
+23. A tree whose `campaign.json` is malformed JSON produces exactly **one**
     entry, tagged `[READ]`, naming `campaign.json`, and no entry for any other
     file.
-22. A tree whose `campaign.json` is schema-invalid produces exactly one entry,
+24. A tree whose `campaign.json` is schema-invalid produces exactly one entry,
     tagged `[SCHEMA]`.
-23. A model-level Pydantic failure (e.g. a scene file containing a JSON array
-    rather than an object) yields a `[SCHEMA]` message containing no `": : "`
-    and no empty location segment.
-24. `ContentInvalidError`'s `str()` contains the campaign id, the version and
+25. A model-level Pydantic failure (e.g. an adventure file containing a JSON
+    array rather than an object) yields a `[SCHEMA]` message containing no
+    `": : "` and no empty location segment.
+26. A scene that fails schema validation — e.g. `scenes[1].truth` set to `[]` —
+    is reported as one `[SCHEMA]` entry naming the **adventure** file, whose
+    detail carries Pydantic's `loc` path (which contains `scenes` and the
+    index).
+27. `ContentInvalidError`'s `str()` contains the campaign id, the version and
     the problem count, and constructing one with `errors=[]` does not raise.
 
 ### The referential rules — one criterion per rule
@@ -350,108 +399,135 @@ implementation. Unless stated otherwise, "a tree" means a content tree built in
 Each is proved by mutating the §4.1 worked example in exactly the way named,
 loading, and asserting that `errors` contains an entry whose tag is the rule's
 and whose path is the file phase contract §11 says it names. **The assertion is
-on the path and the tag, never on the detail wording.**
+on the path and the tag, never on the detail wording** — except where a rule
+fails inside a scene (R8, R9, R12, R16), where the scene id must also appear
+somewhere in the detail, since the file alone no longer locates the problem.
 
-25. **R1** — delete `campaign.json` → `campaign.json: [READ] …` and nothing else.
-26. **R2** — set `campaign.id` to `"wrong-id"` → `campaign.json: [R2] …`.
-27. **R4** — add `"no-such-adventure"` to `campaign.adventures` →
+28. **R1** — delete `campaign.json` → `campaign.json: [READ] …` and nothing else.
+29. **R2** — set `campaign.id` to `"wrong-id"` → `campaign.json: [R2] …`.
+30. **R4** — add `"no-such-adventure"` to `campaign.adventures` →
     `campaign.json: [R4] …`; and listing `"the-sunken-mill"` twice produces an
-    `[R4]` entry **and no `[R8]` entry**, because the list is de-duplicated
-    before any later rule runs.
-28. **R5** — add `adventures/orphan.json` (schema-valid, unlisted) →
+    `[R4]` entry and no other entry, because the list is de-duplicated before
+    any later rule runs.
+31. **R5** — add `adventures/orphan.json` (schema-valid, unlisted) →
     `adventures/orphan.json: [R5] …`.
-29. **R6** — set the adventure file's `id` to `"other"` →
-    `adventures/the-sunken-mill.json: [R6] …`.
-30. **R7** — add `"no-such-scene"` to the adventure's `scenes` →
-    `adventures/the-sunken-mill.json: [R7] …`; a duplicate entry in `scenes`
+32. **R6** — set the adventure file's `id` to `"other"` → exactly two entries:
+    `adventures/the-sunken-mill.json: [R6] …`, and
+    `definitions/bog-lurker.json: [R14] …` because the dropped adventure
+    contributes no scenes and nothing else referenced that definition (phase
+    contract §11). **No third entry**, and none naming a scene of that
+    adventure — the adventure is dropped from R7–R12.
+33. **R7** — set `entry_scene` to an id no scene in the adventure has →
+    `adventures/the-sunken-mill.json: [R7] …`.
+34. **R8** — give both scenes of the adventure the id `"mill-floor"` →
+    **exactly one entry whose tag is `[R8]`**, naming the adventure file, its
+    detail containing `mill-floor`. This mutation also loses `mill-approach`,
+    so `[R7]` and `[R11]` entries appear too; they are expected and are not
+    asserted on — the assertion is `exactly one [R8]`, not `len(errors) == 1`.
+    With a second adventure whose scene reuses an id from the first, the `[R8]`
+    entry names the **later** adventure file in `campaign.adventures` order.
+35. **R9** — point `mill-approach`'s exit at `"under-whee"` →
+    `adventures/the-sunken-mill.json: [R9] …` with `mill-approach` in the
+    detail; an exit whose `to` is `"mill-approach"` itself likewise; an exit
+    pointing at a scene that exists but belongs to a **different** adventure
     likewise.
-31. **R8** — add `scenes/orphan.json` unclaimed by any adventure →
-    `scenes/orphan.json: [R8] …`. With two adventures both claiming
-    `mill-floor`, the entry names the **second** adventure file in
-    `campaign.adventures` order.
-32. **R9** — set `scenes/mill-floor.json`'s `id` to `"other"` →
-    `scenes/mill-floor.json: [R9] …`.
-33. **R10** — set `entry_scene` to a scene id not in the adventure's `scenes` →
-    `adventures/the-sunken-mill.json: [R10] …`.
-34. **R11** — point `mill-approach`'s exit at `"under-whee"` →
-    `scenes/mill-approach.json: [R11] …`; an exit whose `to` is
-    `"mill-approach"` itself likewise; an exit pointing at a scene that exists
-    but belongs to a different adventure likewise.
-35. **R12** — give `mill-floor` an exit back to `mill-approach`, so no scene is
-    terminal → `adventures/the-sunken-mill.json: [R12] …`.
-36. **R13** — add a third scene listed in the adventure but reachable from no
-    exit → `adventures/the-sunken-mill.json: [R13] …`. A scene reachable only
-    through an exit carrying a `condition` **is** reachable and produces no
-    entry. An adventure of exactly one scene, which is its `entry_scene` and has
-    no exits, produces no `[R13]` entry — the entry scene counts as reached with
-    no exits traversed.
-37. **R14** — set `mill-floor`'s placement `definition` to `"no-such-thing"` →
-    `scenes/mill-floor.json: [R14] …`.
-38. **R15** — set `definitions/bog-lurker.json`'s `id` to `"other"` →
-    `definitions/bog-lurker.json: [R15] …`.
-39. **R16** — add `definitions/unused.json` referenced by no scene →
-    `definitions/unused.json: [R16] …`.
-40. **R17** — add a second definition whose `name` is also `"Bog Lurker"` → an
-    `[R17]` entry naming the second definition file in sorted-id order. A second
-    definition named `"bog lurker"` produces the same entry: the comparison is
-    case-insensitive, after stripping. A *third* colliding definition produces a
-    third entry — every colliding definition after the first is reported.
-41. **R18** — give `mill-floor` two `creatures` entries for `bog-lurker` →
-    `scenes/mill-floor.json: [R18] …`.
+36. **R10** — give `mill-floor` an exit back to `mill-approach`, so no scene is
+    terminal → `adventures/the-sunken-mill.json: [R10] …`.
+37. **R11** — add a third scene to the adventure that no exit reaches →
+    `adventures/the-sunken-mill.json: [R11] …`. A scene reachable only through
+    an exit carrying a `condition` **is** reachable and produces no entry. An
+    adventure of exactly one scene, which is its `entry_scene` and has no exits,
+    produces no `[R11]` entry — the entry scene counts as reached with no exits
+    traversed.
+38. **R12** — set `mill-floor`'s placement `definition` to `"no-such-thing"` →
+    `adventures/the-sunken-mill.json: [R12] …` with `mill-floor` in the detail.
+39. **R13** — set `definitions/bog-lurker.json`'s `id` to `"other"` →
+    `definitions/bog-lurker.json: [R13] …`. **R13 reports and continues**: in
+    the same tree, add `definitions/mire-lurker.json` whose `name` is also
+    `"Bog Lurker"` and place it in `mill-floor`'s `creatures`, and an `[R15]`
+    entry appears as well — proving the id-mismatched definition stayed in the
+    loaded map and was still compared for name uniqueness.
+40. **R14** — add `definitions/unused.json` referenced by no scene →
+    `definitions/unused.json: [R14] …`.
+41. **R15** — add a second definition whose `name` is also `"Bog Lurker"`
+    **and place it in `mill-floor`'s `creatures` list** → an `[R15]` entry
+    naming the second definition file in sorted-id order. **The placement is
+    part of the mutation, not an extra**: an unreferenced definition is reported
+    `[R14]` and never loaded, so without it the criterion proves R14 and not
+    R15. A second definition named `"bog lurker"` produces the same entry: the
+    comparison is case-insensitive, after stripping. A *third* colliding
+    definition, likewise placed, produces a third entry — every colliding
+    definition after the first is reported.
+42. **R16** — give `mill-floor` two `creatures` entries for `bog-lurker` →
+    `adventures/the-sunken-mill.json: [R16] …` with `mill-floor` in the detail.
+43. **No rule polices the file layout any more.** There is no criterion for an
+    orphan scene file or a scene claimed by two adventures: a scene cannot be
+    either. A `scenes/` directory placed in a valid tree is ignored entirely —
+    it is not read, not reported and not an orphan — and the tree still loads.
 
 ### The CLI
 
-**Which app each assertion drives is contract.** Criteria 42–48 are asserted via
+**Which app each assertion drives is contract.** Criteria 44–50 are asserted via
 `CliRunner().invoke(content_app, [])` — **with an empty argument list, carrying
 no `"validate"`**, because Typer collapses a single-command app, so
 `content_app` *is* the command and the name `validate` exists only through the
 `cli` group (passing it yields Click's `UsageError` and exit code 2).
-**Criterion 49 is asserted via `CliRunner().invoke(cli, ["content",
+**Criterion 51 is asserted via `CliRunner().invoke(cli, ["content",
 "validate"])`** — `content_app` has no callback, so `configure_logging()` runs
 on that path only, and an assertion made against `content_app` would pass for
-any implementation. Criterion 50 drives `cli` by nature.
+any implementation. Criterion 52 drives `cli` by nature.
 
-42. `app content validate` over a tree containing only the §4.1 worked example
+44. `app content validate` over a tree containing only the §4.1 worked example
     exits `0`, writes `hollow-reach/v1: ok` to stdout and nothing to stderr.
     **Stdout is compared after `.strip()`** — a trailing newline is not part of
     the contract; the line content is.
-43. Over a tree with one broken campaign version it exits `1`, writes nothing
+45. Over a tree with one broken campaign version it exits `1`, writes nothing
     to stdout for that version, and writes one stderr line per
     `ContentInvalidError.errors` entry, each prefixed `<campaign_id>/<version>: `.
-44. With two campaign versions, one valid and one broken, it exits `1`, the
+46. With two campaign versions, one valid and one broken, it exits `1`, the
     valid one still appears on stdout, and the broken one's problems appear on
     stderr.
-45. Over a `CONTENT_ROOT` with no `campaigns/` directory, or with an empty one,
+47. Over a `CONTENT_ROOT` with no `campaigns/` directory, or with an empty one,
     it exits `1` and writes `no campaigns found under <CONTENT_ROOT>` to stderr.
-46. A campaign directory containing a version directory named `v1.0` (alongside
+48. A campaign directory containing a version directory named `v1.0` (alongside
     a valid `v1`) makes the command exit `1` and write
     `<campaign_id>/v1.0: [R3] version directory name must match ^v[0-9]+$` to
     stderr, while `<campaign_id>/v1: ok` still reaches stdout.
-47. A campaign directory holding no version directory at all, or only
+49. A campaign directory holding no version directory at all, or only
     non-conformant ones, makes the command exit `1` and write
     `<campaign_id>: no version directory found` to stderr.
-48. `monkeypatch.setattr(service, "CONTENT_ROOT", tmp_path)` changes what the
+50. `monkeypatch.setattr(service, "CONTENT_ROOT", tmp_path)` changes what the
     **CLI** validates — i.e. the command reads the attribute at call time, not
     at import.
-49. Driven as `CliRunner().invoke(cli, ["content", "validate"])` over a broken
+51. Driven as `CliRunner().invoke(cli, ["content", "validate"])` over a broken
     tree: no line the command writes to **stderr** carries a structlog timestamp
     or level prefix at the default log level, and **stdout** carries no log
     record at all — an unconfigured structlog `PrintLogger` writes to stdout,
-    which criterion 42's stream split would otherwise fail on silently.
-50. `app --help` lists a `content` command group, and `app content --help` lists
+    which criterion 44's stream split would otherwise fail on silently.
+52. `app --help` lists a `content` command group, and `app content --help` lists
     `validate`. `app openapi export` still prints parseable JSON and only JSON
     to stdout.
 
 ## 7. What this step does **not** have to satisfy
 
-`backend/content/` does not exist while this step is being built. Therefore:
+The shipped tree is still in the pre-amendment layout while this step is being
+built, and step 1.3 migrates it. Therefore:
 
 - Every test in this step repoints `CONTENT_ROOT` at a `tmp_path` tree.
 - **No criterion above concerns the real `backend/content/` tree.** The unmocked
   shipped-tree test, and the assertion that `app content validate` exits `0`
   against the repository as checked out, belong to **step 1.3**.
-- Running `app content validate` by hand in this step will exit `1` with
-  `no campaigns found` — that is criterion 45 passing, not a defect.
+- **`app content validate` is expected to FAIL at the end of this step**, with a
+  `[SCHEMA]` entry on `adventures/goblins-of-greenhollow.json`: the shipped
+  adventure still carries `"scenes": [<ids>]` and the amended `Adventure` model
+  wants scene objects. That failure is this step landing correctly. **It is not
+  a deviation, it is not to be reported as a blocker, and it is not to be fixed
+  from this step** — do not edit `backend/content/`, do not keep a compatibility
+  branch for the id-list shape, and do not relax `extra="forbid"`. It clears in
+  step 1.3 and only there.
+- Likewise, the landed `backend/tests/content/` suite will go red against this
+  step's code. qa-backend re-authors it; backend-dev does not touch it and does
+  not run it.
 
 ## 8. Static checks the dev agent runs
 
@@ -467,9 +543,13 @@ docker compose run --rm --no-deps app-cli app content validate; echo "exit=$?"
 docker compose run --rm --no-deps app-cli app openapi export > /dev/null
 ```
 
-Expected: ruff clean; the app constructs; `app content validate` exits `1` with
-`no campaigns found under /app/content` on stderr and nothing on stdout;
-`app openapi export` still succeeds. The host ruff equivalents (`cd backend &&
+Expected: ruff clean; the app constructs; `app openapi export` still succeeds;
+and **`app content validate` exits `1`**, writing nothing to stdout and a
+`greenhollow/v1: adventures/goblins-of-greenhollow.json: [SCHEMA] …` line to
+stderr. **That failure is the expected result of this step, not a defect**
+(§7): the shipped campaign is still in the pre-amendment layout and step 1.3
+re-shapes it. Run the check to see *that* message — a different message, a
+traceback, or an exit `0`, is what would be worth reporting. The host ruff equivalents (`cd backend &&
 uv run ruff check .`, `uv run ruff format --check .`) are acceptable if uv is
 installed. **There is no host fallback for `app content validate`**: `Settings`
 pins `env_file=".env"` relative to the working directory and `backend/.env` does

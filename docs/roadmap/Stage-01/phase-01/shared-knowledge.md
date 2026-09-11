@@ -230,12 +230,24 @@ balance encounters at runtime), level, proficiency bonus, skills and saves
 One entity for NPCs and monsters alike — `model.md` rules that "a monster *is*
 an NPC" and that there is no npc/monster split. Campaign-scoped (`model.md`:
 the villain of adventure 1 returns in adventure 3). File:
-`definitions/<id>.json`.
+`definitions/<id>.json` — **the one thing in the tree that is neither campaign
+metadata nor an adventure, because it belongs to no single adventure.**
+
+**Why the word is `Definition` and not `npc` or `creature` (P1-D21).** A
+definition is a **template**: the campaign-scoped description of a kind of
+creature. The thing that exists in a scene during a run is an **instance** of
+it — a creature object with current hit points, an aliveness flag and a
+disposition blob, created by phase 5. The two are different objects with
+different lifetimes, and *creature* is already the instance's word, so using it
+for both would put a homonym at exactly the seam where phase 5 and phase 8 have
+to tell them apart. `npcs/` names one of the two populations the entity covers
+and reopens the question P1-D3 closes. `docs/general/glossary.md` already
+defines *Definition* in these terms and its terms bind code, content and UI.
 
 ```python
 class Definition(ContentModel):
     id: ContentId
-    name: ProseText                              # player-facing; unique within the campaign (R17)
+    name: ProseText                              # player-facing; unique within the campaign (R15)
     description: ProseText                       # who they are, what they look like
     disposition: ProseText                       # what they want, how they treat the player
     stat_block: StatBlock                        # required — every creature has HP and AC
@@ -282,7 +294,7 @@ it says how many object rows to create, and lets phase 5 derive a deterministic
 instance key per placement. One placement list covers named NPCs (`count: 1`)
 and monster groups alike, mirroring the one-`Definition` decision.
 
-**A definition appears at most once in a scene's `creatures` list** (R18). Two
+**A definition appears at most once in a scene's `creatures` list** (R16). Two
 entries for the same definition would make phase 5's instance key depend on list
 position, turning an authoring convenience into an ordering contract; `count` is
 what expresses "three goblins".
@@ -312,11 +324,15 @@ broken"`. A condition **must never** name a variable, a flag or a comparison;
 
 **A scene with `exits: []` is terminal** — reaching it ends the adventure. That
 is the only way an adventure ends, and every adventure must contain at least one
-(R12).
+(R10).
 
 ### 3.8 `Scene`
 
-File: `scenes/<id>.json`. Facts, intentions and consequences — never a script.
+**A scene is not a file.** It is an element of its adventure's `scenes` list
+(§3.9), so a scene physically belongs to exactly one adventure and cannot be
+orphaned or shared. It keeps its `id`, which is how exits, runs and
+`LoadedCampaign.scenes` address it. Facts, intentions and consequences — never a
+script.
 
 ```python
 class Scene(ContentModel):
@@ -344,21 +360,26 @@ eager instantiation and phase 8's scene tool; `exits` — phase 5's scene advanc
 
 ### 3.9 `Adventure`
 
-File: `adventures/<id>.json`.
+File: `adventures/<id>.json` — **the whole adventure, its scenes included**
+(P1-D20).
 
 ```python
 class Adventure(ContentModel):
     id: ContentId
     title: ProseText                             # player-facing
     intro: ProseText                             # prose read when the adventure starts
-    entry_scene: ContentId                       # must be in `scenes`
-    scenes: list[ContentId] = Field(min_length=1)
+    entry_scene: ContentId                       # must be the id of a scene below
+    scenes: list[Scene] = Field(min_length=1)    # the scenes themselves, inline
 ```
 
 `intro` is mandated by `model.md`'s correction and is consumed by phase 8's
-opening narration and phase 9's display. `scenes` is a **set** semantically —
-the scene ids belonging to this adventure; its order is authoring convenience
-and carries no meaning, because traversal is defined by exits.
+opening narration and phase 9's display.
+
+`scenes` carries **`Scene` objects, not ids**. Containment is the model: a scene
+belongs to one adventure and to no other, so the file layout states that
+directly instead of asserting it through a rule. Its order is authoring
+convenience and carries no meaning, because traversal is defined by exits and by
+`entry_scene`.
 
 ### 3.10 `SeedCharacter`
 
@@ -417,16 +438,21 @@ class LoadedCampaign(ContentModel):
     campaign: Campaign
     version: str
     adventures: dict[str, Adventure]     # keyed by id, in campaign.adventures order
-    scenes: dict[str, Scene]             # every scene of every adventure
+    scenes: dict[str, Scene]             # every scene of every adventure, flattened
     definitions: dict[str, Definition]   # every definition in the campaign
 ```
+
+`scenes` is **flat across adventures** and is keyed by scene id, which R8 makes
+unique across the whole campaign — so a run that pins a scene id needs no
+adventure id beside it, and this aggregate is unchanged by P1-D20. The file
+layout is an authoring concern and stops at the loader.
 
 Consumer: phase 5 walks `scenes.values()` for `creatures` placements and
 `definitions` for stat blocks, which is precisely "instantiate every object the
 pinned content declares, across all adventures", and reads `version` back rather
 than trusting what it asked for.
 
-Because R17 makes `Definition.name` unique within a campaign, **a lookup by
+Because R15 makes `Definition.name` unique within a campaign, **a lookup by
 display name over `definitions.values()` is well defined** — it returns at most
 one definition. That is the content-side precondition phase 8 needs if it keeps
 a name-addressed creature tool; the tool's own name and argument remain phase
@@ -441,20 +467,26 @@ backend/content/
 └── campaigns/
     └── <campaign_id>/
         └── <version>/
-            ├── campaign.json
-            ├── adventures/<adventure_id>.json
-            ├── scenes/<scene_id>.json
-            └── definitions/<definition_id>.json
+            ├── campaign.json                      # metadata + the seed player character
+            ├── adventures/<adventure_id>.json     # the adventure *and its scenes*
+            └── definitions/<definition_id>.json   # campaign-scoped, shared between adventures
 ```
 
-**Only `*.json` files are considered.** A `README.md`, a `.DS_Store` or an
-editor swap file inside `adventures/`, `scenes/` or `definitions/` is ignored
-entirely — it is never read and never reported as an orphan.
+**Three kinds of file, and the granularity of each follows its scope** (P1-D20).
+A scene belongs to exactly one adventure, so it lives inside that adventure's
+file. A definition is campaign-scoped by P1-D3 — the villain of adventure 1
+returns in adventure 3 — so it cannot live inside an adventure and stays its own
+file. The campaign's own metadata and its seed character are neither, and stay
+in `campaign.json`.
 
-**A missing `adventures/`, `scenes/` or `definitions/` directory is an empty
-directory, not an exception.** The loader globs (`(base / "scenes").glob("*.json")`,
-which yields nothing for a path that does not exist) rather than iterating, so
-the absence surfaces as the referential failure it actually is — R4 reporting an
+**Only `*.json` files are considered.** A `README.md`, a `.DS_Store` or an
+editor swap file inside `adventures/` or `definitions/` is ignored entirely — it
+is never read and never reported as an orphan.
+
+**A missing `adventures/` or `definitions/` directory is an empty directory, not
+an exception.** The loader globs (`(base / "adventures").glob("*.json")`, which
+yields nothing for a path that does not exist) rather than iterating, so the
+absence surfaces as the referential failure it actually is — R4 reporting an
 adventure that cannot be found — instead of an `OSError`.
 
 **Versioning.** A version is a directory named `v<n>` — `VERSION_PATTERN =
@@ -472,7 +504,9 @@ everything the requirement needs.
 
 This is a minimal campaign that is valid against **every** rule in §11. It is
 the contract artefact backend-dev and qa-backend share: field names, casing and
-nesting are normative here, and `docs/modules/content.md` reproduces it.
+nesting are normative here, and `docs/modules/content.md` reproduces it. It is
+**three files** — the whole adventure, both its scenes included, is one of
+them.
 
 **It is illustrative only and is never committed to `backend/content/`.** The
 shipped campaign is `greenhollow/v1`, authored in step 1.3; `hollow-reach` exists
@@ -516,58 +550,49 @@ only in this document, in the authoring guide that reproduces it, and in
   "title": "The Sunken Mill",
   "intro": "The rain stopped three days ago and the water has not gone down. The mill at the bend has not turned since, and nobody who went to look has come back to say why.",
   "entry_scene": "mill-approach",
-  "scenes": ["mill-approach", "mill-floor"]
-}
-```
-
-`backend/content/campaigns/hollow-reach/v1/scenes/mill-approach.json`
-
-```json
-{
-  "id": "mill-approach",
-  "title": "The Mill Approach",
-  "truth": [
-    "The mill leans into the flooded race; its wheel is jammed with black debris.",
-    "The door is barred from the inside."
-  ],
-  "consequences": [
-    "Breaking the bar is loud, and anything inside the mill hears it."
-  ],
-  "hidden": [
+  "scenes": [
     {
-      "fact": "Fresh bootprints lead into the mill and none lead out.",
-      "dc": 12,
-      "discovered_by": "a Wisdom (Perception) check on the mud, or searching the bank"
-    }
-  ],
-  "exits": [
+      "id": "mill-approach",
+      "title": "The Mill Approach",
+      "truth": [
+        "The mill leans into the flooded race; its wheel is jammed with black debris.",
+        "The door is barred from the inside."
+      ],
+      "consequences": [
+        "Breaking the bar is loud, and anything inside the mill hears it."
+      ],
+      "hidden": [
+        {
+          "fact": "Fresh bootprints lead into the mill and none lead out.",
+          "dc": 12,
+          "discovered_by": "a Wisdom (Perception) check on the mud, or searching the bank"
+        }
+      ],
+      "exits": [
+        {
+          "to": "mill-floor",
+          "description": "The mill door, barred from within.",
+          "condition": "the bar has been broken, forced, or lifted from outside"
+        }
+      ]
+    },
     {
-      "to": "mill-floor",
-      "description": "The mill door, barred from within.",
-      "condition": "the bar has been broken, forced, or lifted from outside"
+      "id": "mill-floor",
+      "title": "The Milling Floor",
+      "truth": [
+        "Knee-deep water covers the floor; the grain chute above is dry.",
+        "Two bog lurkers have made the flooded floor their nest."
+      ],
+      "npc_intent": "The lurkers want to drag anything warm under the water and wait.",
+      "consequences": [
+        "Climbing to the dry grain chute puts the player out of the lurkers' reach."
+      ],
+      "creatures": [
+        { "definition": "bog-lurker", "count": 2 }
+      ],
+      "pressure": "The water is still rising; the chute will be the only dry footing within the hour."
     }
   ]
-}
-```
-
-`backend/content/campaigns/hollow-reach/v1/scenes/mill-floor.json`
-
-```json
-{
-  "id": "mill-floor",
-  "title": "The Milling Floor",
-  "truth": [
-    "Knee-deep water covers the floor; the grain chute above is dry.",
-    "Two bog lurkers have made the flooded floor their nest."
-  ],
-  "npc_intent": "The lurkers want to drag anything warm under the water and wait.",
-  "consequences": [
-    "Climbing to the dry grain chute puts the player out of the lurkers' reach."
-  ],
-  "creatures": [
-    { "definition": "bog-lurker", "count": 2 }
-  ],
-  "pressure": "The water is still rising; the chute will be the only dry footing within the hour."
 }
 ```
 
@@ -598,9 +623,10 @@ only in this document, in the authoring guide that reproduces it, and in
 }
 ```
 
-Why it is valid: `mill-floor` is reachable from `mill-approach` (R13) and has no
-`exits`, so it is terminal (R12); `bog-lurker` is referenced by a scene (R16) and
-its name is unique (R17); no scene places a definition twice (R18); the omitted
+Why it is valid: the two scene ids are unique across the campaign (R8);
+`mill-floor` is reachable from `mill-approach` (R11) and has no `exits`, so it is
+terminal (R10); `bog-lurker` is referenced by a scene (R14) and its name is
+unique (R15); no scene places a definition twice (R16); the omitted
 optional fields — `npc_intent`, `creatures`, `pressure` on `mill-approach`, and
 `exits` on `mill-floor` — take their defaults, which is legal and is how absence
 is expressed.
@@ -737,12 +763,24 @@ Always relative to `CONTENT_ROOT`, forward slashes, no leading slash.
 |---|---|---|
 | `list_versions` | the campaign directory does not exist | `campaigns/<campaign_id>` |
 | `load_campaign` | the version directory does not exist | `campaigns/<campaign_id>/<version>` |
-| `load_scene` | the scene id is not among the campaign's scenes | `campaigns/<campaign_id>/<version>/scenes/<scene_id>.json` |
+| `load_scene` | the scene id is not among the campaign's scenes | `campaigns/<campaign_id>/<version>/scene/<scene_id>` |
 | `load_definition` | the definition id is not among the campaign's definitions | `campaigns/<campaign_id>/<version>/definitions/<definition_id>.json` |
 
-The last two name a file the loader never opened — the lookup is against the
-loaded campaign, not the filesystem. Pinned anyway, because it is the string QA
-asserts on and it is the path an author needs to see.
+The last two name nothing the loader opened — the lookup is against the loaded
+campaign, not the filesystem. Pinned anyway, because it is the string QA asserts
+on and it is what an author needs to see.
+
+**Which `relative_path` a non-conforming id argument raises.** In `load_scene`
+and `load_definition`, a bad `campaign_id` or a bad `version` raises
+**`load_campaign`'s** row — `campaigns/<campaign_id>/<version>` — because the
+campaign version is what could not be located; only a bad *entity* id raises the
+entity row. The guard clauses therefore run in that order: campaign and version
+first, entity id second (§5.1).
+
+**`scene/<scene_id>` is a logical address, not a path** (P1-D20): scenes live
+inside their adventure file, so there is no `scenes/` directory and no
+`<scene_id>.json` to name. The singular `scene/` and the absent `.json` are
+deliberate — they cannot be mistaken for a file that ought to exist.
 
 ### 6.2 The `errors[]` message grammar
 
@@ -756,7 +794,7 @@ Every entry of `ContentInvalidError.errors` is:
 |---|---|
 | `[READ]` | the file could not be read or is not valid JSON |
 | `[SCHEMA]` | the file parsed but failed Pydantic validation |
-| `[R2]`, `[R4]` … `[R18]` | the numbered referential rule of §11 that failed |
+| `[R2]`, `[R4]` … `[R16]` | the numbered referential rule of §11 that failed |
 
 **`[R3]` never appears in `errors[]`**: R3 is a CLI check (§7.1), not a
 load-time rule.
@@ -767,13 +805,21 @@ R1 has no tag of its own: it *is* the readability and schema-validity of
 Examples:
 
 ```
-scenes/mill-floor.json: [R11] exit 2 targets unknown scene 'under-whee'
-scenes/mill-floor.json: [SCHEMA] truth.0: String should have at least 1 character
+adventures/the-sunken-mill.json: [R9] scene 'mill-approach': exit targets unknown scene 'under-whee'
+adventures/the-sunken-mill.json: [SCHEMA] scenes.1.truth.0: String should have at least 1 character
 campaign.json: [SCHEMA] Input should be a valid dictionary
 definitions/bog-lurker.json: [READ] Expecting ',' delimiter: line 8 column 3 (char 214)
 ```
 
-- The `[SCHEMA]` detail is `".".join(str(p) for p in error["loc"])` + `": "` +
+**A rule that fails inside a scene names its adventure file and puts the scene
+id in the detail** (R8, R9, R12, R16). The path segment is the file an author
+opens; the scene id is how they find the place in it. QA asserts on the path and
+the tag, so the detail wording stays free — but the scene id must be in it.
+
+- The `[SCHEMA]` detail is built from **`ValidationError.errors()[0]` and that
+  error only** — one file that fails validation is one `errors[]` entry, never
+  one per Pydantic complaint, so the list stays readable and the sort stays
+  stable. The detail is `".".join(str(p) for p in error["loc"])` + `": "` +
   `error["msg"]`. **When `loc` is empty** — a model-level error — the location
   segment and its colon are omitted entirely; there is never a `": : "` in a
   message.
@@ -790,11 +836,19 @@ definitions/bog-lurker.json: [READ] Expecting ',' delimiter: line 8 column 3 (ch
 `errors[]` entry, and the walk continues.** There is no branch table: an
 unreadable file, malformed JSON and a schema violation are all one entry each,
 and the load as a whole fails once at the end with all of them. **Under
-`adventures/`, `scenes/` and `definitions/` a *missing* file is never a read
-failure** — under the glob model nothing tries to open it, and its absence
-surfaces as `[R4]`, `[R7]` or `[R14]`. `campaign.json` is the exception: it is
-opened by name, so a missing one *is* reported, tagged `[READ]` or `[SCHEMA]`
-per R1, and reported alone (below).
+`adventures/` and `definitions/` a *missing* file is never a read failure** —
+under the glob model nothing tries to open it, and its absence surfaces as
+`[R4]` or `[R12]`. `campaign.json` is the exception: it is opened by name, so a
+missing one *is* reported, tagged `[READ]` or `[SCHEMA]` per R1, and reported
+alone (below).
+
+**Only three kinds of file are ever opened**, so a malformed scene is a
+`[SCHEMA]` entry on its **adventure** file, located by Pydantic's own `loc` —
+`scenes.2.truth.0`. An adventure that fails `[READ]` or `[SCHEMA]` takes its
+scenes with it: it is excluded from every later rule exactly as an R6 failure
+is, and it produces no further findings about itself. One broken adventure is
+one entry, not one per scene — the honest cost of P1-D20, and the reason the
+`loc` path is part of the message.
 
 The single exception: **if `campaign.json` itself is missing, unreadable or
 schema-invalid, that is the only reported problem**, because nothing else in the
@@ -836,9 +890,11 @@ configures a logger, it does not write one.
 | `1` | Any campaign version failed validation, any version directory name is non-conformant, any campaign has no conformant version directory, or no campaign was found at all |
 
 A silent pass over an empty content tree is a trap, so an empty tree is a
-failure with `no campaigns found under <CONTENT_ROOT>` on stderr. Before step
-1.3 lands the authored campaign, `backend/content/campaigns/` does not exist and
-this command therefore exits 1 — that is correct behaviour, not a defect (§8).
+failure with `no campaigns found under <CONTENT_ROOT>` on stderr. **The command
+exiting 1 between steps 1.1 and 1.3 is correct behaviour, not a defect** (§8) —
+originally because `backend/content/campaigns/` did not exist yet, and in the
+P1-D20 rework because the shipped campaign is still in the pre-amendment layout
+until 1.3 migrates it.
 
 Neither `ContentNotFoundError` raiser can fire inside the command's own walk —
 it only ever names campaigns and versions it has just listed — so the command
@@ -942,17 +998,21 @@ A test that needs a broken tree writes JSON files into `tmp_path` and does
 would be a second thing to keep in sync with the schema. The worked example of
 §4.1 is the shape fixtures should be built from.
 
-**The shipped-tree test belongs to step 1.3, not to step 1.1.** Step 1.1 lands
-the module while `backend/content/` does not yet exist, so:
+**The shipped-tree test belongs to step 1.3, not to step 1.1.** Every step-1.1
+test repoints `CONTENT_ROOT` at a `tmp_path` tree and no step-1.1 criterion
+concerns the real `backend/content/`; the unmocked test that loads the shipped
+campaign, and the CLI assertion that a non-empty tree exits 0, belong to
+**step 1.3**.
 
-- every step-1.1 test repoints `CONTENT_ROOT` at a `tmp_path` tree;
-- no step-1.1 test asserts anything about the real `backend/content/`;
-- the unmocked test that loads the shipped campaign, and the CLI assertion that
-  a non-empty tree exits 0, are authored in **step 1.3**.
-
-A red suite between 1.1 and 1.3 for that reason would be a spec violation, not a
-defect — the tests simply are not written yet. Two agents will otherwise burn a
-cycle reporting it.
+**In the P1-D20 rework, the suite is expected to be red between 1.1 and 1.3, and
+for a different reason than when this phase was first built.** Those shipped-tree
+tests already exist and already pass against the old layout. The moment step 1.1
+lands `Adventure.scenes: list[Scene]`, the shipped campaign — which still carries
+`"scenes": ["village-green", …]` — stops validating, so
+`tests/content/test_shipped_tree.py` and the `app content validate` check go red
+until **step 1.3** re-shapes the campaign. **That red is the rework working, not
+a defect**, and no agent is to repair it by touching `backend/content/` from step
+1.1 or by relaxing the schema. It clears in 1.3 and only in 1.3.
 
 That unmocked step-1.3 test is both the phase's "prove the authored set is valid
 and readable" evidence and the standing guard on §2's path resolution: it fails
@@ -996,7 +1056,13 @@ campaign from it **alone**, without reading `backend/app/modules/content/`:
   `min_length` / `ge` / `le` bound;
 - the full rule list of §11, with its `[R<n>]` tags, so an author can map a
   reported problem back to a rule;
-- the complete worked example of §4.1, reproduced verbatim;
+- the complete worked example of §4.1, reproduced verbatim — **three files**;
+- **why the layout has the granularity it has**: an adventure is one file
+  because its scenes belong to it alone, and a definition is its own file
+  because it is campaign-scoped and shared between adventures (§4, P1-D20);
+- **one sentence on what a `Definition` is**, in the template/instance terms of
+  §3.4: a definition is the campaign-scoped template, and what appears in a
+  scene during a run is an instance of it (P1-D21);
 - the two rules a generator gets wrong by default, stated in these words:
   **a scene is facts, intentions and consequences, never a script**, and
   **an exit condition is prose the agent judges, never a flag, a variable or a
@@ -1013,9 +1079,10 @@ than copying the field reference.
 
 | File | Section | Correction |
 |---|---|---|
-| `docs/README.md` | *Modules* | Replace "*None yet — the first module doc lands with the first subsystem.*" with a table carrying the row `[modules/content.md](modules/content.md) \| The adventure-content schema, its directory layout and versioning, and the authoring guide` |
+| `docs/README.md` | *Modules* | **Applied in the first pass; verify only.** Replace "*None yet — the first module doc lands with the first subsystem.*" with a table carrying the row `[modules/content.md](modules/content.md) \| The adventure-content schema, its directory layout and versioning, and the authoring guide` |
 | `docs/general/model.md` | *Static files* | The content root is `backend/content/`, not `content/` — with the one-clause reason from §2. |
 | `docs/general/model.md` | *Static files* | `npcs/` and `monsters/` become one `definitions/` directory holding one `Definition` entity, which always carries a stat block — the same doc already rules there is no npc/monster split. |
+| `docs/general/model.md` | *Static files* | **There is no `scenes/` directory.** A campaign version is `campaign.json`, `adventures/<id>.json` — the adventure *and its scenes* — and `definitions/<id>.json`. State the reason in one clause: a scene belongs to one adventure, a definition is shared between them (P1-D20). |
 | `docs/general/model.md` | *Static files* | The scene-field line becomes the pinned set: `truth[]`, `npc_intent?`, `consequences[]`, `hidden[]`, `creatures[]`, `exits[]` (a **list**, not a map), `pressure?`. |
 | `docs/general/model.md` | *Static files* | `campaign.json` also carries the **seed player character**, and each adventure carries a prose **`intro`** and an `entry_scene`. |
 | `docs/general/model.md` | *Content lives in git, runs pin a version* | State the mechanism: a version is a `v<n>` directory under the campaign, served whole, never edited in place. |
@@ -1036,7 +1103,7 @@ corrections and does not list these:
 
 | Contradiction | File | Owning phase |
 |---|---|---|
-| The static-file tree's content root, the `npcs/` + `monsters/` split, the scene-field line, the missing `intro` / `entry_scene` / seed character, and the unstated version mechanism — enumerated in `roadmap/Stage-01/phase-01/shared-knowledge.md` §9.2 | `general/model.md` | 1 |
+| The static-file tree's content root, its `scenes/` directory, the `npcs/` + `monsters/` split, the scene-field line, the missing `intro` / `entry_scene` / seed character, and the unstated version mechanism — enumerated in `roadmap/Stage-01/phase-01/shared-knowledge.md` §9.2 | `general/model.md` | 1 |
 | The tool table's `get_monster(name)` row — with one `Definition` entity the binding is id- or name-addressed over `definitions`, and its final name and argument are phase 8's to pin | `general/architecture.md` | 8 |
 
 One goes to §7's open-decisions register, because §10.3 below is a note and not
@@ -1118,7 +1185,7 @@ block.
 ### P1-D4 — A scene's occupants are one `creatures[]` list of placements
 
 `{definition, count}`, covering a named NPC (`count: 1`) and a monster group
-identically, and a definition appears at most once per scene (R18). Reason:
+identically, and a definition appears at most once per scene (R16). Reason:
 phase 5's eager instantiation is then one uniform walk, `count` is the one fact
 it cannot invent, and forbidding duplicates keeps the instance key out of list
 order.
@@ -1133,7 +1200,7 @@ routes to one place, and only an object can carry `description` and `condition`.
 
 There is no condition language and no flag reference, because `model.md` rules
 that situational facts have no flag store. A scene with `exits: []` ends the
-adventure, and every adventure must contain one (R12).
+adventure, and every adventure must contain one (R10).
 
 ### P1-D7 — Content declares no items and no fixtures in Stage-01
 
@@ -1162,7 +1229,7 @@ invalidation question and a `cache_clear()` trap in every test that repoints
 ### P1-D9 — `load_campaign` collects every problem and raises once
 
 `ContentInvalidError` carries `errors: list[str]`, sorted, each
-`"<path>: [<TAG>] <problem>"` with `TAG` ∈ {`READ`, `SCHEMA`, `R2`…`R18`}. Any
+`"<path>: [<TAG>] <problem>"` with `TAG` ∈ {`READ`, `SCHEMA`, `R2`…`R16`}. Any
 read, parse, schema or referential failure is one entry and the walk continues;
 only an unusable `campaign.json` is reported alone. Reason: one validation path
 serves both the loader and the CLI (DRY), an author fixes a tree in one pass,
@@ -1201,7 +1268,9 @@ cross-cutting change into the very file this convention exists to keep quiet.
 Tests repoint `CONTENT_ROOT` with `monkeypatch.setattr`; no fixture content is
 committed. The unmocked test over the real `backend/content/` tree — the
 authored-set evidence and the standing guard on P1-D1 — is authored in step 1.3,
-because `backend/content/` does not exist while step 1.1 is being built.
+because `backend/content/` did not exist while step 1.1 was first built — and,
+in the P1-D20 rework, because the shipped tree stays in the pre-amendment layout
+until 1.3 migrates it.
 
 ### P1-D14 — The backend project stays installed in editable mode
 
@@ -1225,7 +1294,7 @@ progression rules and no consumer is speculative surface, and `135.md` grades
 agent knowledge, not 5e fidelity. Recorded as §10.4 so phase 8 does not discover
 it mid-prompt.
 
-### P1-D17 — `Definition.name` is unique within a campaign (R17)
+### P1-D17 — `Definition.name` is unique within a campaign (R15, was R17)
 
 Reason: it is the content-side precondition that makes a display-name lookup
 over `LoadedCampaign.definitions` return at most one result — without it,
@@ -1245,17 +1314,94 @@ the existing functions — not a new module, a helper or a dependency.
 
 ### P1-D19 — An id mismatch never changes an entity's identity; only R6 drops the entity
 
-Every rule identifies an adventure, scene or definition by its **filename
-stem**, so an `id` field that disagrees is reported and otherwise ignored. An
-adventure failing **R6** is dropped from every later rule (R7, R10, R11, R12,
-R13, and it claims nothing for R8), so it yields no further findings about
-itself — consistent with R4's "the list is de-duplicated before any later rule
-is evaluated". A scene failing **R9** and a definition failing **R15** are *not*
-dropped: they remain in the loaded maps under their filename stem and are still
-evaluated by R11–R14, R18 and R17 respectively. **The original contract was
-silent on all three; this is pinned to match the landed behaviour, read off
-`backend/app/modules/content/service.py`** (the suite asserts only that the
-`[R6]` / `[R9]` / `[R15]` entry is present, so it constrains none of this).
+**Amended by P1-D20, which removed the old R9 and renumbered the rest; the
+paragraph below is the current statement.**
+
+Every rule identifies an adventure or a definition by its **filename stem**, so
+an `id` field that disagrees is reported and otherwise ignored. An adventure
+failing **R6** — or failing `[READ]` or `[SCHEMA]` — is dropped from every later
+rule (R7–R12), so it yields no further findings about itself, consistent with
+R4's "the list is de-duplicated before any later rule is evaluated". Its scenes
+go with it and are reported by nothing, because a scene is not a file and cannot
+be an orphan. A definition failing **R13** is *not* dropped: it remains in the
+loaded map under its filename stem and is still evaluated by R15. A scene has no
+filename, so its identity is its `id` field and **R8** is what keeps that
+identity unambiguous.
+
+### P1-D20 — An adventure is one file, scenes included; definitions stay their own files
+
+**Owner decision, taken after phase 1 first landed, and the shape phase 1 is
+re-worked to.** A campaign version is exactly three kinds of file:
+
+```
+campaign.json                    campaign metadata + the seed player character
+adventures/<adventure_id>.json   the adventure and its scenes, inline
+definitions/<definition_id>.json campaign-scoped, shared between adventures
+```
+
+`Adventure.scenes` carries `Scene` objects, not ids. **Granularity follows
+scope:** a scene belongs to exactly one adventure, so it lives inside it; a
+definition is campaign-scoped by P1-D3 — the villain of adventure 1 returns in
+adventure 3 — so it cannot.
+
+Reasons, in the order they carry weight:
+
+1. **It makes three rules unnecessary instead of enforcing them.** The old R7
+   (a listed scene id has a file), R8 (a scene file is claimed by exactly one
+   adventure, with its two-owner determinism clause) and R9 (a scene id equals
+   its filename stem) existed only to police the multi-file layout. Containment
+   states the same thing structurally, and a rule that exists only to police a
+   layout is not a reason to keep that layout. One rule replaces all three:
+   R8's scene-id uniqueness, which is needed because `LoadedCampaign.scenes` is
+   flat and a run pins a scene id.
+2. **An adventure is the unit an author and a reviewer actually work on.**
+   Entry scene, exits and reachability are properties of the whole adventure;
+   in the old layout they could only be checked by opening four files at once.
+3. **A later stage that generates an adventure writes one file.** One model
+   output, one atomic write, one diff to review — instead of N files that can
+   half-land.
+4. **The runtime is indifferent.** `LoadedCampaign`, every §5 signature and
+   every phase-5/7/8 consumer read entities by id and are unchanged. The file
+   layout is purely an authoring concern and stops at the loader — which is
+   precisely why the owner's authoring preference decides it.
+
+Accepted costs, stated rather than hidden: a malformed scene is one `[SCHEMA]`
+entry on its adventure file rather than one on its own file (located by
+Pydantic's `loc`, §6.3); an adventure file for a long adventure is long; and
+`load_scene`'s not-found locator becomes the logical `scene/<id>` (§6.1).
+
+The rule list is **renumbered to R1–R16** (§11 carries the old→new map).
+P1-D19's drop semantics are amended there and in §11.
+
+### P1-D21 — The term stays `Definition`; `npcs` and `creatures` are declined
+
+**Owner question, ruled after review.** A `Definition` is a **template**: the
+campaign-scoped description of a kind of creature, in `definitions/<id>.json`.
+What exists in a scene during a run is an **instance** of it — the creature
+object phase 5 creates `count` times, carrying current hit points, aliveness and
+a disposition blob. The two have different lifetimes and different storage, and
+phase 5 and phase 8 both have to tell them apart in one sentence.
+
+- **`creatures/` is declined** because *creature* is already the instance's
+  word — `model.md`'s object kinds, the player's creature object, phase 5's
+  rows. Using it for both puts a homonym at the exact seam where the
+  distinction is load-bearing.
+- **`npcs/` is declined** because it names one of the two populations the single
+  entity covers and reopens the question P1-D3 closes: a monster *is* an NPC
+  here, and a directory called `npcs/` invites every author to ask whether a
+  goblin belongs in it.
+- **`docs/general/glossary.md` already commits to the term** — "*Definition* — a
+  campaign-scoped NPC or monster stat block that scenes reference by id" — and
+  its terms bind code, content and UI.
+
+**The `definitions/` versus `creatures[]` tension is intentional and is not a
+naming inconsistency.** `Scene.creatures` names *what is present in the scene*;
+each entry's `definition` key names *the template it is cut from*. The same word
+`definition` appears in the directory name and in the reference key, so an
+author follows one word from the placement to the file. What §3.4 owed the
+reader was the sentence explaining the pair, and §9.1 now requires the authoring
+guide to carry it.
+
 
 ---
 
@@ -1271,41 +1417,58 @@ with the tag each failure carries in `errors[]` (§6.2).
 | R2 | load | `campaign.id` equals the campaign directory name | `campaign.json` |
 | R3 | **CLI** | The version directory name matches `^v[0-9]+$` (§7.1) | the offending directory |
 | R4 | load | Every id in `campaign.adventures` has an `adventures/<id>.json`, with no duplicates in the list. **The list is de-duplicated before any later rule is evaluated**, so a duplicate produces an `[R4]` entry and nothing else | `campaign.json` |
-| R5 | load | Every `*.json` in `adventures/` is listed in `campaign.adventures` | the orphan file |
+| R5 | load | Every `*.json` in `adventures/` is listed in `campaign.adventures` | the orphan adventure file |
 | R6 | load | Each adventure's `id` equals its filename stem | the adventure file |
-| R7 | load | Every id in an adventure's `scenes` has a `scenes/<id>.json`, with no duplicates in the list | the adventure file |
-| R8 | load | Every `*.json` in `scenes/` is claimed by exactly one adventure — no orphans, no sharing | an orphan names **the scene file**; a scene claimed by two adventures names **the second adventure file in `campaign.adventures` order**, so the message is deterministic |
-| R9 | load | Each scene's `id` equals its filename stem | the scene file |
-| R10 | load | `adventure.entry_scene` is in `adventure.scenes` | the adventure file |
-| R11 | load | Every `exit.to` names a scene **in the same adventure**, and never the scene's own id | the scene file |
-| R12 | load | Each adventure has at least one scene with `exits == []` | the adventure file |
-| R13 | load | Every scene of an adventure is reachable from `entry_scene` by following exits, ignoring conditions. **The entry scene counts as reached, with no exits traversed**, so a one-scene adventure passes | the adventure file |
-| R14 | load | Every `creatures[].definition` resolves to a `definitions/<id>.json` | the scene file |
-| R15 | load | Each definition's `id` equals its filename stem | the definition file |
-| R16 | load | Every `*.json` in `definitions/` is referenced by at least one scene (no dead content) | the orphan file |
-| R17 | load | `Definition.name` is unique across the campaign's definitions, compared **case-insensitively** after `ProseText` stripping — `"Bog Lurker"` and `"bog lurker"` collide, because they are exactly the pair phase 8's name lookup cannot disambiguate | **every colliding definition after the first**, in sorted-id order, so the message set is deterministic |
-| R18 | load | A definition appears at most once in a scene's `creatures` list | the scene file |
+| R7 | load | `adventure.entry_scene` is the `id` of one of that adventure's own scenes | the adventure file |
+| R8 | load | A scene `id` appears **at most once in the whole campaign** — twice in one adventure and once each in two adventures are the same failure | the adventure file holding the **later** occurrence, in `campaign.adventures` order and then `scenes` list order, so the message set is deterministic; the detail names the scene id |
+| R9 | load | Every `exit.to` names a scene **in the same adventure**, and never the scene's own id | the adventure file; the detail names the scene id |
+| R10 | load | Each adventure has at least one scene with `exits == []` | the adventure file |
+| R11 | load | Every scene of an adventure is reachable from `entry_scene` by following exits, ignoring conditions. **The entry scene counts as reached, with no exits traversed**, so a one-scene adventure passes | the adventure file |
+| R12 | load | Every `creatures[].definition` resolves to a `definitions/<id>.json` | the adventure file; the detail names the scene id |
+| R13 | load | Each definition's `id` equals its filename stem | the definition file |
+| R14 | load | Every `*.json` in `definitions/` is referenced by at least one scene (no dead content) | the orphan definition file |
+| R15 | load | `Definition.name` is unique across the campaign's definitions, compared **case-insensitively** after `ProseText` stripping — `"Bog Lurker"` and `"bog lurker"` collide, because they are exactly the pair phase 8's name lookup cannot disambiguate | **every colliding definition after the first**, in sorted-id order, so the message set is deterministic |
+| R16 | load | A definition appears at most once in a scene's `creatures` list | the adventure file; the detail names the scene id |
 
-**Rules are scoped to what is actually claimed.** R6–R13 are evaluated only for
-adventures listed in `campaign.adventures`, and R9 and R11 only for scenes
-claimed by such an adventure. An unlisted `adventures/*.json` gets `[R5]` and
-nothing else; an unclaimed `scenes/*.json` gets `[R8]` and nothing else; an
-unreferenced `definitions/*.json` gets `[R16]` and nothing else. One stray file
-produces one problem.
+**Sixteen rules, renumbered by P1-D20.** The old R7 (a scene id resolves to a
+scene file), R8 (a scene file is claimed by exactly one adventure) and R9 (a
+scene id equals its filename stem) are **gone, not renumbered**: with scenes
+inside their adventure file, all three state something the file layout now makes
+true by construction. One new rule replaces them — R8, scene-id uniqueness
+across the campaign — because `LoadedCampaign.scenes` is flat and a run pins a
+scene id. The old→new map, for anyone holding the previous numbering:
+R10→R7, R11→R9, R12→R10, R13→R11, R14→R12, R15→R13, R16→R14, R17→R15, R18→R16;
+R1–R6 unchanged.
 
-**What happens to an id-mismatched entity (P1-D19).** The identity every rule
-uses is the **filename stem**, never the `id` field inside the file, so a
-mismatch never shifts an entity's identity. Beyond that:
+**Rules are scoped to what is actually claimed.** R6–R12 are evaluated only for
+adventures listed in `campaign.adventures`. An unlisted `adventures/*.json` gets
+`[R5]` and nothing else; an unreferenced `definitions/*.json` gets `[R14]` and
+nothing else. One stray file produces one problem.
+
+**What happens to an id-mismatched or unusable entity (P1-D19, as amended by
+P1-D20).** The identity every rule uses for a file is its **filename stem**,
+never the `id` field inside it, so a mismatch never shifts an entity's identity.
+Beyond that:
 
 - **R6 — an adventure whose `id` does not match its filename is dropped.** It
-  gets the `[R6]` entry and is then excluded from R7, R10, R11, R12 and R13, and
-  it claims no scenes for R8, so it produces no further findings *about itself*.
-  Its scenes become unclaimed and are reported by R8 like any other orphan.
-- **R9 and R15 report and continue.** A scene failing R9 is still evaluated by
-  R11, R12, R13, R14 and R18, and a definition failing R15 is still evaluated by
-  R17, in both cases under the filename-derived identity they already had. Only
-  a file that cannot be read or cannot be schema-validated drops out at that
-  point (§6.3).
+  gets the `[R6]` entry and is then excluded from R7–R12, so it produces no
+  further findings about itself. Its scenes go with it and are reported by
+  nothing, because they are not files and cannot be orphans.
+- **An adventure that fails `[READ]` or `[SCHEMA]` is dropped the same way**
+  (§6.3).
+- **A dropped adventure contributes no scenes to R14**, so a definition that
+  only that adventure referenced is reported `[R14]` as unreferenced. This is
+  the deliberate answer and not an oversight: the alternative — remembering
+  which definitions a dropped adventure would have referenced, in order to
+  suppress an `[R14]` — is suppression machinery for a tree that is already
+  broken. A dropped adventure therefore yields exactly two kinds of finding: its
+  own `[R6]` / `[READ]` / `[SCHEMA]` entry, and an `[R14]` for each definition
+  left with no other referrer.
+- **R13 reports and continues.** A definition whose `id` does not match its
+  filename is still evaluated by R15, under the filename-derived identity it
+  already had.
+- **A scene has no filename, so its identity is its `id` field**, and R8 is what
+  keeps that identity unambiguous.
 
 `seed_character` has no referential rule: it references nothing (§3.10).
 
