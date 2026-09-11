@@ -11,10 +11,10 @@ configures logging.
 
 import json
 
-from app.modules.content.commands import content_app
 from typer.testing import CliRunner
 
 from app.cli import cli
+from app.modules.content.commands import content_app
 from tests.content.conftest import build_version_dir, campaign
 
 runner = CliRunner()
@@ -23,7 +23,7 @@ runner = CliRunner()
 def test_valid_tree_exits_0_stdout_ok_stderr_empty_c42(content_root):
     build_version_dir(content_root)
 
-    result = runner.invoke(content_app, ["validate"])
+    result = runner.invoke(content_app, [])
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "hollow-reach/v1: ok"
@@ -33,7 +33,7 @@ def test_valid_tree_exits_0_stdout_ok_stderr_empty_c42(content_root):
 def test_one_broken_version_exits_1_and_reports_every_error_entry_c43(content_root):
     build_version_dir(content_root, campaign=campaign(id="wrong-id"))
 
-    result = runner.invoke(content_app, ["validate"])
+    result = runner.invoke(content_app, [])
 
     assert result.exit_code == 1
     assert "hollow-reach/v1: ok" not in result.stdout
@@ -46,7 +46,7 @@ def test_one_valid_and_one_broken_version_c44(content_root):
     build_version_dir(content_root, version="v1")
     build_version_dir(content_root, version="v2", campaign=campaign(id="wrong-id"))
 
-    result = runner.invoke(content_app, ["validate"])
+    result = runner.invoke(content_app, [])
 
     assert result.exit_code == 1
     assert "hollow-reach/v1: ok" in result.stdout
@@ -54,7 +54,7 @@ def test_one_valid_and_one_broken_version_c44(content_root):
 
 
 def test_no_campaigns_directory_c45(content_root):
-    result = runner.invoke(content_app, ["validate"])
+    result = runner.invoke(content_app, [])
 
     assert result.exit_code == 1
     assert f"no campaigns found under {content_root}" in result.stderr
@@ -63,7 +63,7 @@ def test_no_campaigns_directory_c45(content_root):
 def test_empty_campaigns_directory_c45(content_root):
     (content_root / "campaigns").mkdir()
 
-    result = runner.invoke(content_app, ["validate"])
+    result = runner.invoke(content_app, [])
 
     assert result.exit_code == 1
     assert f"no campaigns found under {content_root}" in result.stderr
@@ -73,7 +73,7 @@ def test_nonconformant_version_directory_reported_alongside_valid_one_c46(conten
     build_version_dir(content_root, version="v1")
     (content_root / "campaigns" / "hollow-reach" / "v1.0").mkdir()
 
-    result = runner.invoke(content_app, ["validate"])
+    result = runner.invoke(content_app, [])
 
     assert result.exit_code == 1
     assert "hollow-reach/v1.0: [R3] version directory name must match ^v[0-9]+$" in result.stderr
@@ -83,7 +83,7 @@ def test_nonconformant_version_directory_reported_alongside_valid_one_c46(conten
 def test_campaign_with_no_conformant_version_directory_c47(content_root):
     (content_root / "campaigns" / "hollow-reach" / "not-a-version").mkdir(parents=True)
 
-    result = runner.invoke(content_app, ["validate"])
+    result = runner.invoke(content_app, [])
 
     assert result.exit_code == 1
     assert "hollow-reach: no version directory found" in result.stderr
@@ -92,7 +92,7 @@ def test_campaign_with_no_conformant_version_directory_c47(content_root):
 def test_cli_reads_content_root_at_call_time_not_import_time_c48(content_root):
     build_version_dir(content_root)
 
-    result = runner.invoke(content_app, ["validate"])
+    result = runner.invoke(content_app, [])
 
     assert result.exit_code == 0
     assert "hollow-reach/v1: ok" in result.stdout

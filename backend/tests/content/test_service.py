@@ -7,10 +7,12 @@ reporting" 18-24, "The referential rules" 25-41).
 
 import re
 import shutil
+import unittest.mock
+from pathlib import Path
 
 import pytest
-from app.modules.content import errors, service
 
+from app.modules.content import errors, service
 from tests.content.conftest import (
     CAMPAIGN_ID,
     VERSION,
@@ -128,22 +130,47 @@ def test_missing_definitions_directory_is_r14_not_oserror_c16(content_root):
 
 
 @pytest.mark.parametrize(
-    "call",
+    ("call", "expected_relative_path"),
     [
-        lambda: service.load_campaign("../x", "v1"),
-        lambda: service.load_campaign(CAMPAIGN_ID, "../v1"),
-        lambda: service.load_scene(CAMPAIGN_ID, VERSION, "../campaign"),
+        (lambda: service.load_campaign("../x", "v1"), "campaigns/../x/v1"),
+        (
+            lambda: service.load_campaign(CAMPAIGN_ID, "../v1"),
+            f"campaigns/{CAMPAIGN_ID}/../v1",
+        ),
+        (
+            lambda: service.load_scene(CAMPAIGN_ID, VERSION, "../campaign"),
+            f"campaigns/{CAMPAIGN_ID}/{VERSION}/scenes/../campaign.json",
+        ),
     ],
 )
-def test_id_arguments_never_reach_the_filesystem_c17(content_root, call):
-    # A readable file sits just outside CONTENT_ROOT. If any of these calls
-    # built a path before validating, it could read this file instead of
-    # raising ContentNotFoundError.
-    (content_root.parent / "secret.json").write_text('{"leak": true}')
-    build_version_dir(content_root)
+def test_id_arguments_never_reach_the_filesystem_c17(content_root, call, expected_relative_path):
+    # A readable, parseable file sits just outside CONTENT_ROOT. If any of
+    # these calls built a path before validating the id/version pattern, a
+    # naive ".." join could resolve onto this file instead of raising
+    # ContentNotFoundError -- so this is a stronger proof than "raises the
+    # right exception type": the sentinel's presence and content are what
+    # a leak would expose.
+    sentinel = content_root.parent / "secret.json"
+    sentinel.write_text('{"leak": true}')
 
-    with pytest.raises(errors.ContentNotFoundError):
-        call()
+    original_read_text = Path.read_text
+
+    def guarded_read_text(self, *args, **kwargs):
+        assert content_root in self.parents, (
+            f"content module attempted to read {self} outside CONTENT_ROOT"
+        )
+        return original_read_text(self, *args, **kwargs)
+
+    with unittest.mock.patch.object(Path, "read_text", guarded_read_text):
+        build_version_dir(content_root)
+
+        with pytest.raises(errors.ContentNotFoundError) as exc_info:
+            call()
+
+    assert exc_info.value.relative_path == expected_relative_path
+    # The sentinel was never touched: content is still exactly what we wrote,
+    # never re-serialised through a Pydantic model that would drop the key.
+    assert sentinel.read_text() == '{"leak": true}'
 
 
 # --- Error reporting (criteria 18-24) ---------------------------------------
@@ -182,7 +209,12 @@ def test_broken_scene_and_broken_definition_both_reported_c20(content_root):
         content_root,
         scenes={
             "mill-approach": scene_approach(),
-            "mill-floor": scene_floor(creatures=[{"definition": "no-such-thing", "count": 1}]),
+            "mill-floor": scene_floor(
+                creatures=[
+                    {"definition": "no-such-thing", "count": 1},
+                    {"definition": "bog-lurker", "count": 1},
+                ]
+            ),
         },
         definitions={"bog-lurker": definition(id="other")},
     )
