@@ -62,3 +62,15 @@ Mutable state in Postgres. See [model.md](model.md).
   whenever a decision is theirs (`ask_player`).
 - **Developer drawer** — the part of the UI holding model, temperature,
   system prompt and DM personality, kept out of the player experience.
+
+## Planning terms
+
+- **Stage** — a release. Stage-01 is the MVP.
+- **Phase** — one unit of a stage. A phase ships exactly one **milestone**, and
+  its completion *is* that milestone.
+- **Milestone** — a finished, self-contained capability, falsifiable by
+  evidence a reviewer can produce. Never half a capability parked for later.
+- **Step** — one unit of a phase, with its own step spec and its own phase
+  directory. Steps are defined when the phase is planned, not before.
+- **Roadmap** — the stage's phase plan. It says what and in what order, never
+  how: no tables, routes, payload shapes or file layout.
