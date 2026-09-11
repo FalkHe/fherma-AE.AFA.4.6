@@ -272,6 +272,22 @@ number up here.
 | R17 | loader | `Definition.name` is unique across the campaign, compared case-insensitively after stripping — `"Bog Lurker"` and `"bog lurker"` collide |
 | R18 | loader | A definition appears at most once in a single scene's `creatures` list |
 
+**What an id/filename mismatch gets you.** An entity is always identified by
+its **filename**, never by the `id` field inside the file, so a mismatch never
+changes what the entity is called elsewhere in the tree — it only earns a
+report:
+
+- An **adventure** whose `id` disagrees with its filename (`[R6]`) is dropped:
+  it produces no other findings about itself, and every scene it would have
+  claimed is reported as an orphan (`[R8]`) instead. One renamed adventure file
+  therefore shows up as a cluster of `[R8]` lines, not as one obvious `[R6]`
+  line — if several scenes suddenly look orphaned, check the adventure's `id`
+  first.
+- A **scene** or **definition** whose `id` disagrees with its filename
+  (`[R9]` / `[R15]`) is reported but not dropped: it is still checked against
+  every other rule under its filename, so fixing the `id` alone is enough —
+  there is nothing else to redo.
+
 `seed_character` has no referential rule — it references nothing else in
 content.
 

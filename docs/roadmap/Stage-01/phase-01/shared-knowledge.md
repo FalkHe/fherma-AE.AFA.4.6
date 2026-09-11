@@ -914,6 +914,10 @@ import and call:
 - `from app.modules.content import service, schemas, errors`
 - `from app.modules.content.commands import content_app` — driven with Typer's
   `CliRunner`, as `tests/test_cli.py` already does for `openapi export`.
+  **Invoked as `CliRunner().invoke(content_app, [])`, with no `"validate"` in
+  the argument list**: Typer collapses a single-command app, so `content_app`
+  *is* the command and the name `validate` exists only through the `cli` group
+  (`CliRunner().invoke(cli, ["content", "validate"])`, which is unaffected).
 
 **`backend/tests/content/__init__.py` is required**, as every landed test
 package has one: `backend/tests/users/test_service.py` already exists, so an
@@ -922,11 +926,12 @@ the same basename and an import collision.
 
 **Which Typer app a CLI assertion drives is contract.** `content_app` has no
 callback, so `configure_logging()` never runs under it; every CLI behaviour
-assertion therefore runs against `content_app`, **except the "no log record"
-assertion, which must run against `cli` from `app.cli`** — the only path on
-which the callback configures logging — and must check *stdout* as well as
-stderr, because an unconfigured structlog `PrintLogger` writes to stdout and
-would otherwise corrupt the result data unnoticed. Pinned per criterion in
+assertion therefore runs against `content_app` with an empty argument list,
+**except the "no log record" assertion, which must run against `cli` from
+`app.cli`** — the only path on which the callback configures logging — and must
+check *stdout* as well as stderr, because an unconfigured structlog
+`PrintLogger` writes to stdout and would otherwise corrupt the result data
+unnoticed. Pinned per criterion in
 `step-1.1.md` §6.
 
 **Fixture content is built in `tmp_path` per test and is never committed.**
@@ -1238,6 +1243,20 @@ feed these from client requests, so `load_campaign("../../app", "v1")` must be a
 not-found error and not a read outside the content root. It is a guard clause in
 the existing functions — not a new module, a helper or a dependency.
 
+### P1-D19 — An id mismatch never changes an entity's identity; only R6 drops the entity
+
+Every rule identifies an adventure, scene or definition by its **filename
+stem**, so an `id` field that disagrees is reported and otherwise ignored. An
+adventure failing **R6** is dropped from every later rule (R7, R10, R11, R12,
+R13, and it claims nothing for R8), so it yields no further findings about
+itself — consistent with R4's "the list is de-duplicated before any later rule
+is evaluated". A scene failing **R9** and a definition failing **R15** are *not*
+dropped: they remain in the loaded maps under their filename stem and are still
+evaluated by R11–R14, R18 and R17 respectively. **The original contract was
+silent on all three; this is pinned to match the landed behaviour, read off
+`backend/app/modules/content/service.py`** (the suite asserts only that the
+`[R6]` / `[R9]` / `[R15]` entry is present, so it constrains none of this).
+
 ---
 
 ## 11. The referential rule list
@@ -1273,6 +1292,20 @@ claimed by such an adventure. An unlisted `adventures/*.json` gets `[R5]` and
 nothing else; an unclaimed `scenes/*.json` gets `[R8]` and nothing else; an
 unreferenced `definitions/*.json` gets `[R16]` and nothing else. One stray file
 produces one problem.
+
+**What happens to an id-mismatched entity (P1-D19).** The identity every rule
+uses is the **filename stem**, never the `id` field inside the file, so a
+mismatch never shifts an entity's identity. Beyond that:
+
+- **R6 — an adventure whose `id` does not match its filename is dropped.** It
+  gets the `[R6]` entry and is then excluded from R7, R10, R11, R12 and R13, and
+  it claims no scenes for R8, so it produces no further findings *about itself*.
+  Its scenes become unclaimed and are reported by R8 like any other orphan.
+- **R9 and R15 report and continue.** A scene failing R9 is still evaluated by
+  R11, R12, R13, R14 and R18, and a definition failing R15 is still evaluated by
+  R17, in both cases under the filename-derived identity they already had. Only
+  a file that cannot be read or cannot be schema-validated drops out at that
+  point (§6.3).
 
 `seed_character` has no referential rule: it references nothing (§3.10).
 

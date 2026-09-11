@@ -1,0 +1,28 @@
+{
+  "id": "thornway",
+  "title": "The Thornway",
+  "truth": [
+    "The cart track narrows to a deer path within sight of the village and runs on into close-grown thorn and birch.",
+    "Wool tufts snagged on the thorns mark the flock's route north in a line no shepherd would have chosen.",
+    "The path forks: the wider way continues along the old drove road, and a narrower cut breaks off through the thorn towards higher ground."
+  ],
+  "npc_intent": null,
+  "consequences": [
+    "Following the wool tufts rather than the drove road adds an hour to the walk but keeps the true trail; losing it means backtracking to the fork."
+  ],
+  "hidden": [
+    {
+      "fact": "The narrower cut has been deliberately widened at ankle height, as if something has dragged heavy loads through it more than once.",
+      "dc": 12,
+      "discovered_by": "a Wisdom (Perception) check while walking the narrower cut, or crouching to examine the broken thorn at ground level"
+    }
+  ],
+  "creatures": [],
+  "exits": [
+    {
+      "to": "lair-maw",
+      "description": "The narrow cut, climbing towards a rocky outcrop where the thorn finally gives way to bare stone.",
+      "condition": "the player has followed the wool-marked trail rather than the open drove road"
+    }
+  ]
+}

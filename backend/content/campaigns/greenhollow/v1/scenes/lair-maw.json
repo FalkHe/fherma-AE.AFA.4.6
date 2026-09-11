@@ -1,0 +1,31 @@
+{
+  "id": "lair-maw",
+  "title": "The Lair Maw",
+  "truth": [
+    "A cave mouth opens in the rock, screened by a lattice of dragged thornbrush that has been dead long enough to go grey.",
+    "Bones, both animal and otherwise, are scattered outside the entrance where they were thrown rather than buried.",
+    "Three goblins keep watch from the rocks above the entrance, bored and inattentive rather than alert."
+  ],
+  "npc_intent": "The goblins want to be left alone to finish their watch shift without their boss noticing they slacked; they will fight only once they realise they have been seen, and will otherwise shout a warning down into the lair.",
+  "consequences": [
+    "A loud approach — shouting, a fight in the open, a fall on the loose scree — is heard inside the lair, and whatever is below has time to arm itself before the player arrives.",
+    "A goblin allowed to flee downward reaches the boss first, and the boss is ready rather than surprised."
+  ],
+  "hidden": [
+    {
+      "fact": "A second, smaller gap in the rock to the side of the main entrance is not watched at all and leads to the same chamber below.",
+      "dc": 14,
+      "discovered_by": "a Wisdom (Perception) check on the rock face, or deliberately searching the outcrop for another way in before approaching the main entrance"
+    }
+  ],
+  "creatures": [
+    { "definition": "goblin", "count": 3 }
+  ],
+  "exits": [
+    {
+      "to": "lair-hollow",
+      "description": "A downward scramble over loose scree into the dark of the cave.",
+      "condition": null
+    }
+  ]
+}

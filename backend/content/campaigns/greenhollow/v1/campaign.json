@@ -1,0 +1,24 @@
+{
+  "id": "greenhollow",
+  "title": "Greenhollow",
+  "summary": "A hedge-village at the edge of the Thornway woods has lost two flocks and a shepherd to something that came out of the trees. The village cannot pay for soldiers, only a hot meal, a warm bed, and whatever coin the collection plate holds.",
+  "adventures": ["goblins-of-greenhollow"],
+  "seed_character": {
+    "name": "Rosalind Thorn",
+    "race": "Human",
+    "character_class": "Fighter",
+    "background": "A farmhand turned militia spear-carrier after the second flock went missing; she knows the Thornway paths better than the woods deserve, and owes the innkeeper for two winters of unpaid board.",
+    "appearance": "Broad-shouldered and sun-browned, with a mended leather jerkin and a spear she carries like a walking stick until she does not.",
+    "abilities": {
+      "strength": 15,
+      "dexterity": 12,
+      "constitution": 14,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 9
+    },
+    "max_hp": 12,
+    "armour_class": 15,
+    "inventory": ["a spear", "a wooden shield", "a hooded lantern", "a coil of twine", "three days' rations"]
+  }
+}

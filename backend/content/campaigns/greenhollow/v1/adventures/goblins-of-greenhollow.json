@@ -1,0 +1,7 @@
+{
+  "id": "goblins-of-greenhollow",
+  "title": "Goblins of Greenhollow",
+  "intro": "Greenhollow has lost two flocks and a shepherd to raiders out of the Thornway woods. The innkeeper, Mira, has put together what coin the village can spare for anyone willing to follow the sign north to wherever it leads.",
+  "entry_scene": "village-green",
+  "scenes": ["village-green", "thornway", "lair-maw", "lair-hollow"]
+}

@@ -402,11 +402,14 @@ on the path and the tag, never on the detail wording.**
 ### The CLI
 
 **Which app each assertion drives is contract.** Criteria 42–48 are asserted via
-`CliRunner().invoke(content_app, [...])`. **Criterion 49 is asserted via
-`CliRunner().invoke(cli, ["content", "validate"])`** — `content_app` has no
-callback, so `configure_logging()` runs on that path only, and an assertion made
-against `content_app` would pass for any implementation. Criterion 50 drives
-`cli` by nature.
+`CliRunner().invoke(content_app, [])` — **with an empty argument list, carrying
+no `"validate"`**, because Typer collapses a single-command app, so
+`content_app` *is* the command and the name `validate` exists only through the
+`cli` group (passing it yields Click's `UsageError` and exit code 2).
+**Criterion 49 is asserted via `CliRunner().invoke(cli, ["content",
+"validate"])`** — `content_app` has no callback, so `configure_logging()` runs
+on that path only, and an assertion made against `content_app` would pass for
+any implementation. Criterion 50 drives `cli` by nature.
 
 42. `app content validate` over a tree containing only the §4.1 worked example
     exits `0`, writes `hollow-reach/v1: ok` to stdout and nothing to stderr.

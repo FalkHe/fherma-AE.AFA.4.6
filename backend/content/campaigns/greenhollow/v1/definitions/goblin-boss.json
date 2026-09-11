@@ -1,0 +1,23 @@
+{
+  "id": "goblin-boss",
+  "name": "Grettle",
+  "description": "A scarred, heavyset goblin wearing a stolen shepherd's cloak as a badge of rank, taller and steadier than the raiders she commands.",
+  "disposition": "Ruthless towards anyone weaker and quick to abandon anyone who is not; she rules the lair through fear and will preserve herself over any fight she is losing.",
+  "stat_block": {
+    "max_hp": 21,
+    "armour_class": 15,
+    "abilities": {
+      "strength": 13,
+      "dexterity": 15,
+      "constitution": 13,
+      "intelligence": 11,
+      "wisdom": 10,
+      "charisma": 12
+    },
+    "attacks": [
+      { "name": "Notched Cleaver", "to_hit": 6, "damage": "2d6+3" },
+      { "name": "Thrown Hand-Axe", "to_hit": 6, "damage": "1d6+3" }
+    ],
+    "traits": ["Knows the wall crack in the lair hollow by feel and can force it in the dark without slowing down."]
+  }
+}

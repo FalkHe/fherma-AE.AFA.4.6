@@ -1,0 +1,20 @@
+{
+  "id": "lair-hollow",
+  "title": "The Lair Hollow",
+  "truth": [
+    "The cave opens into a low hollow lit by a smoking fire, hung with stolen wool and a shepherd's crook driven upright into the dirt.",
+    "Grettle, the goblin boss, holds this chamber with a single bodyguard goblin at her side, and will not be taken by surprise twice.",
+    "A crack in the far wall, just wide enough for a goblin, is the only way out besides the scree slope the player came down."
+  ],
+  "npc_intent": "Grettle means to keep what she has taken and will fight for the hollow, but she values her own skin over the fight and will break for the wall crack the moment the fight turns against her.",
+  "consequences": [
+    "If the fight goes against Grettle, she abandons her bodyguard and forces the wall crack; she is too quick and the space too narrow for anyone in armour to follow, and she is not seen again this side of Greenhollow.",
+    "Killing or driving off both goblins without Grettle escaping ends the raiding on Greenhollow for good; if she escapes, the village is safe for now but the raids may begin again wherever she resurfaces."
+  ],
+  "hidden": [],
+  "creatures": [
+    { "definition": "goblin-boss", "count": 1 },
+    { "definition": "goblin", "count": 1 }
+  ],
+  "exits": []
+}

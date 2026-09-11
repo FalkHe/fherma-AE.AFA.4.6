@@ -345,6 +345,26 @@ def test_r6_adventure_id_does_not_match_filename_stem_c29(content_root):
     assert any(e.startswith("adventures/the-sunken-mill.json: [R6]") for e in exc_info.value.errors)
 
 
+def test_r6_dropped_adventure_yields_no_further_findings_about_itself_p1d19(content_root):
+    """P1-D19: an adventure failing R6 is dropped from R7/R10/R11/R12/R13 and
+    claims no scenes for R8 -- its scenes become unclaimed orphans instead."""
+    build_version_dir(content_root, adventures={"the-sunken-mill": adventure(id="other")})
+
+    with pytest.raises(errors.ContentInvalidError) as exc_info:
+        service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    path_tag_pairs = {(m.group(1), m.group(2)) for m in _entries(exc_info)}
+    assert ("adventures/the-sunken-mill.json", "R6") in path_tag_pairs
+    # dropped -- no R10/R12/R13 finding attributed to the same adventure file
+    assert not any(
+        path == "adventures/the-sunken-mill.json" and tag in {"R10", "R12", "R13"}
+        for path, tag in path_tag_pairs
+    )
+    # its scenes are unclaimed, reported as R8 orphans
+    assert ("scenes/mill-approach.json", "R8") in path_tag_pairs
+    assert ("scenes/mill-floor.json", "R8") in path_tag_pairs
+
+
 def test_r7_unknown_scene_id_in_adventure_c30(content_root):
     build_version_dir(
         content_root,
@@ -417,6 +437,30 @@ def test_r9_scene_id_does_not_match_filename_stem_c32(content_root):
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
     assert any(e.startswith("scenes/mill-floor.json: [R9]") for e in exc_info.value.errors)
+
+
+def test_r9_scene_report_and_continue_p1d19(content_root):
+    """P1-D19: a scene failing R9 is not dropped -- it remains under its
+    filename stem and is still evaluated by later rules, e.g. R14 for an
+    unresolved creature placement."""
+    build_version_dir(
+        content_root,
+        scenes={
+            "mill-approach": scene_approach(),
+            "mill-floor": scene_floor(
+                id="other",
+                creatures=[{"definition": "no-such-thing", "count": 1}],
+            ),
+        },
+        definitions={},
+    )
+
+    with pytest.raises(errors.ContentInvalidError) as exc_info:
+        service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    path_tag_pairs = {(m.group(1), m.group(2)) for m in _entries(exc_info)}
+    assert ("scenes/mill-floor.json", "R9") in path_tag_pairs
+    assert ("scenes/mill-floor.json", "R14") in path_tag_pairs
 
 
 def test_r10_entry_scene_not_in_adventure_scenes_c33(content_root):
@@ -575,6 +619,35 @@ def test_r15_definition_id_does_not_match_filename_stem_c38(content_root):
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
     assert any(e.startswith("definitions/bog-lurker.json: [R15]") for e in exc_info.value.errors)
+
+
+def test_r15_definition_report_and_continue_p1d19(content_root):
+    """P1-D19: a definition failing R15 is not dropped -- it remains under
+    its filename stem and is still evaluated by R17, e.g. a name collision
+    against another definition."""
+    build_version_dir(
+        content_root,
+        scenes={
+            "mill-approach": scene_approach(),
+            "mill-floor": scene_floor(
+                creatures=[
+                    {"definition": "bog-lurker", "count": 1},
+                    {"definition": "bog-lurker-2", "count": 1},
+                ]
+            ),
+        },
+        definitions={
+            "bog-lurker": definition(id="other"),
+            "bog-lurker-2": definition(id="bog-lurker-2", name="Bog Lurker"),
+        },
+    )
+
+    with pytest.raises(errors.ContentInvalidError) as exc_info:
+        service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    path_tag_pairs = {(m.group(1), m.group(2)) for m in _entries(exc_info)}
+    assert ("definitions/bog-lurker.json", "R15") in path_tag_pairs
+    assert ("definitions/bog-lurker-2.json", "R17") in path_tag_pairs
 
 
 def test_r16_unreferenced_definition_c39(content_root):
