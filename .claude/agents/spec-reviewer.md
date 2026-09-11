@@ -14,8 +14,8 @@ questions. Your job is to find the gap before four agents build around it.
 ## Read first
 
 The spec under review · the phase's `shared-knowledge.md` (`## Landed
-decisions`) · `docs/general/architecture.md` · `docs/general/decisions.md` ·
-`docs/general/security.md` · the relevant `docs/modules/*.md` · and the actual
+decisions`, which is binding) · `docs/general/architecture.md` ·
+`docs/general/model.md` · the relevant `docs/modules/*.md` · and the actual
 code the spec touches. **Where the docs and the code disagree, the code wins** —
 check the spec against the code, not against the docs.
 

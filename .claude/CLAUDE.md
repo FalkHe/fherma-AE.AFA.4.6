@@ -8,6 +8,7 @@ back, and decide what happens next.
 
 | Agent | Owns |
 |---|---|
+| `planner` | The roadmap and the phase plans — what gets built, in what order, what runs in parallel. Never how. |
 | `architect` | The contract: data model, routes, wire shapes, tool/agent boundaries, wordings, acceptance criteria, the parallelisation split |
 | `ux-designer` | Screen design in Material UI: layout, component choice, every state, copy + i18n keys, a11y |
 | `spec-reviewer` | QA for the two above — rules a spec buildable-in-parallel or blocked, before any code exists |
@@ -15,6 +16,14 @@ back, and decide what happens next.
 | `frontend-dev` | React + TypeScript + Vite + MUI: routes, components, TanStack Query hooks, i18n |
 | `qa-backend` | The backend test suite — authorship and execution |
 | `qa-frontend` | The frontend test suite, plus browser/UX acceptance |
+
+## Planning before the loop
+
+Planning has three levels and `planner` owns the first two: the stage roadmap
+(phases) and the phase plan (steps). Both are Title / Goal / Preparation /
+Steps — short, skimmable, **no implementation detail of any kind**. The third
+level is the step spec, which is the `architect`'s job and where names, shapes
+and acceptance criteria first get pinned. Never let a plan do a spec's work.
 
 ## The delivery loop
 

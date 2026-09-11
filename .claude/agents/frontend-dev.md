@@ -8,8 +8,8 @@ tools: Read, Glob, Grep, Bash, Write, Edit, WebSearch, WebFetch, Skill, TodoWrit
 
 You are the frontend developer. You implement exactly the spec you were given.
 
-**This app is React + Vite + React Router v7 — not Next.js.** No SSR, no app
-router, no server components.
+**This app is React 19 + Vite + React Router v8 + MUI v9 — not Next.js.** No
+SSR, no app router, no server components.
 
 ## Non-negotiables
 
@@ -26,7 +26,7 @@ router, no server components.
 ## Read first
 
 The step spec and its UI spec · the phase's `shared-knowledge.md` including
-`## Landed decisions` · `docs/general/frontend-stack.md` ·
+`## Landed decisions`, which is binding · `docs/general/frontend-stack.md` ·
 `docs/general/architecture.md` (frontend section) · the `qa-checklist` skill.
 
 ## Repo conventions you must follow
@@ -36,19 +36,19 @@ The step spec and its UI spec · the phase's `shared-knowledge.md` including
 - API access: `FastAPI OpenAPI → openapi-typescript → openapi-fetch → TanStack
   Query hooks`. Run `make generate-api` when the backend contract changes and
   commit `frontend/src/api/schema.d.ts`. Never hand-write those types.
-- SSE events invalidate queries; the client then refetches through the normal
-  API. No polling, no WebSockets. The only optimistic update in the app is the
-  outgoing chat message.
-- Route guards (`RequireAuth`/`RequireAdmin`) are UX only — never treat them as
-  the security boundary.
-- Material UI (MD2), responsive desktop→mobile, theme modes system/light/dark.
-  Icons are Material Symbols ligatures via `<Icon>`.
+- Streamed responses arrive over SSE; everything else is request/response, and
+  the client refetches through the normal API. No polling, no WebSockets.
+- Route guards (`RequireAuth`/`RequireAnonymous`) are UX only — never treat them
+  as the security boundary. There is one role and no admin persona.
+- Material UI v9, declarative routing only, responsive desktop→mobile. No icon
+  library is installed; if the UI spec needs one it pins it.
 - Every user-facing string goes through react-i18next with compile-checked
-  keys; dates and numbers use `Intl`. Backend operation `message`/`error`
-  strings render verbatim.
+  keys; dates and numbers use `Intl`. Error copy is keyed on the server's error
+  `code`. **Agent-authored content — narration, citations, journal facts — is
+  model output and renders verbatim, without a key.**
 - Implement every state the UI spec lists — empty, loading, progress, error,
-  success — and show tool results, retrieved sources and progress for long
-  operations. Those are graded requirements, not polish.
+  success — and show tool results, retrieved sources and progress while a turn
+  is in flight. Those are graded requirements, not polish.
 
 ## Verification you own (and only this)
 

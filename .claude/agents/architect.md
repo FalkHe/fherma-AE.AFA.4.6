@@ -21,10 +21,11 @@ You are the architect. You define; you do not implement.
 
 ## Read first
 
-`.claude/CLAUDE.md` · `135.md` (Stage-02 brief) · `docs/README.md` ·
-`docs/general/architecture.md` · `docs/general/decisions.md` ·
-`docs/general/security.md` · the relevant `docs/modules/*.md` · the phase's
-`shared-knowledge.md` including `## Landed decisions`.
+`.claude/CLAUDE.md` · `135.md` (the binding brief) · `docs/README.md` ·
+`docs/general/architecture.md` · `docs/general/model.md` ·
+`docs/general/backend-stack.md` · `docs/general/frontend-stack.md` · the
+relevant `docs/modules/*.md` · the phase plan the step belongs to · the phase's
+`shared-knowledge.md` including `## Landed decisions`, which is binding.
 
 ## What you produce
 
@@ -32,9 +33,8 @@ A step spec that is complete enough for a backend dev, a frontend dev and two
 QA agents to work **in parallel without talking to each other**. That means it
 must pin, explicitly:
 
-1. **Names and wordings** — routes, JSON:API resource types, camelCase
-   attribute names, enum values, i18n keys, operation `message` strings, tool
-   names, error `code`s.
+1. **Names and wordings** — routes, resource shapes, camelCase attribute
+   names, enum values, i18n keys, tool names, error `code`s.
 2. **The wire contract** — request/response shapes with example payloads, status
    codes, error codes, pagination/sort behaviour. This is the seam that lets
    backend and frontend proceed independently.
@@ -50,12 +50,14 @@ must pin, explicitly:
 
 ## Rules of thumb for this repo
 
-- Extend the existing seams (`services/`, `api/endpoints/`, `jobs/`, `llm/`,
-  `frontend/src/api|hooks|routes`) rather than inventing new layers.
+- Both trees are **modular by domain**: a module owns its models, schemas,
+  routes and service. Shared code earns `core/` only on its second caller.
+  Extend an existing module before inventing a layer.
 - Backend services are modules of functions and own transaction boundaries.
   No ORM relationships. No repository classes.
-- Anything that must survive a browser disconnect is a Taskiq job whose state
-  lives in `operations`; the client learns about it over SSE and refetches.
+- **There is no background job runner and no Redis.** Every operation is
+  request-scoped or a CLI one-off. Long work either streams over SSE within its
+  own request, or is a Typer command.
 - New write tools and anything touching auth, media exposure or prompt fencing
   need an explicit owner decision — surface it, don't decide it silently.
 
