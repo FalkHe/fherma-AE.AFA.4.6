@@ -3,7 +3,7 @@ title: "Phase 1 — Adventure Content — shared knowledge"
 stage: 1
 phase: 1
 created: 2026-09-11
-revised: 2026-09-11
+revised: 2026-09-12
 ---
 
 # Phase 1 — Adventure Content — shared knowledge
@@ -24,6 +24,25 @@ The stage contract is [`../README.md`](../README.md) — its §1 capability
 inventory, §2 dependency graph, §3 parallelism, §5 scope fence, §7
 open-decisions register and §9 doc-correction register bind this phase. The
 step cut is [`steps.md`](steps.md).
+
+## 0. Terminology — Story vs Definition
+
+**The word *content* means two different things and is never used bare where
+the two could be confused** (owner ruling, P1-D23). Every agent working in this
+phase uses the specific term:
+
+- **Story** / **Prose** — the narrative text inside a scene: `truth`,
+  `npc_intent`, `consequences`, descriptions, intros. Read by the DM and
+  retold; validated only for being non-empty.
+- **Campaign-Definition** / **Adventure-Definition** — the authored JSON
+  *structures* that Story lives in and references by id: `campaign.json` and
+  `adventures/<id>.json`, their ids, lists, stat blocks, placements and exits.
+  Machine-read and fully validated.
+
+"The content module", "`backend/content/`", "`app content validate`" and
+"content version" stay as they are: they name the authoring subsystem or are
+pinned jargon, and no sentence containing them can be read the other way.
+`docs/general/glossary.md` is the canonical statement of these terms.
 
 ## What this phase delivers
 
@@ -146,7 +165,8 @@ ProseText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
 - **`extra="forbid"`** — a mistyped key is a loud load error, not silence. This
   is the single most valuable property of the schema for a hand- or
   agent-authored tree.
-- **`frozen=True`** — content is read-only at runtime (`model.md`). Note it is
+- **`frozen=True`** — an authored file is read-only at runtime (`model.md`).
+  Note it is
   **shallow**: the `list` and `dict` values inside a frozen model are ordinary
   mutable containers, so "read-only" is a convention for callers, not a
   guarantee the type system enforces.
@@ -154,7 +174,7 @@ ProseText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
   paths and, in phase 5, in deterministic object instance keys.
 - **Every human-readable string field is `ProseText`**, which strips surrounding
   whitespace and then requires at least one character — so `" "` is rejected
-  rather than accepted as content. One alias, used everywhere; never
+  rather than accepted as Story. One alias, used everywhere; never
   `Field(min_length=1)` on a `str`.
 - **British spelling where the glossary pins a term.** `docs/general/glossary.md`
   says terms are "used exactly as defined here — in code, in content and in the
@@ -1208,6 +1228,10 @@ adventure, and every adventure must contain one (R10).
 
 ### P1-D7 — Content declares no items and no fixtures in Stage-01
 
+**Superseded in full by P1-D22 (owner ruling, after review). The text below is
+kept for history and no longer binds; only its closing paragraph on phase 5's
+creature-state fields still stands, as P1-D22 records.**
+
 Scene contents are creatures only; `model.md`'s `item` and `fixture` object
 kinds get no content-side declaration, so phase 5 instantiates creatures only.
 Reason: loot and scenery are narrated, and anything that must persist lands in a
@@ -1334,6 +1358,10 @@ identity unambiguous.
 
 ### P1-D20 — An adventure is one file, scenes included; definitions stay their own files
 
+**Partly superseded by P1-D24: object templates move into `campaign.json` and
+there is no `definitions/` directory. Everything this decision says about
+*scenes living inside their adventure file* is unchanged and still binds.**
+
 **Owner decision, taken after phase 1 first landed, and the shape phase 1 is
 re-worked to.** A campaign version is exactly three kinds of file:
 
@@ -1379,6 +1407,10 @@ P1-D19's drop semantics are amended there and in §11.
 
 ### P1-D21 — The term stays `Definition`; `npcs` and `creatures` are declined
 
+**Superseded by P1-D23: the term is `ObjectTemplate`. The template-versus-
+instance reasoning below is upheld and is why the blueprint gets a name of its
+own; only the chosen word changes.**
+
 **Owner question, ruled after review.** A `Definition` is a **template**: the
 campaign-scoped description of a kind of creature, in `definitions/<id>.json`.
 What exists in a scene during a run is an **instance** of it — the creature
@@ -1406,6 +1438,95 @@ author follows one word from the placement to the file. What §3.4 owed the
 reader was the sentence explaining the pair, and §9.1 now requires the authoring
 guide to carry it.
 
+
+### P1-D22 — Items and fixtures are declared; P1-D7 is reversed in full
+
+**Owner ruling, taken after review of the landed phase.** `model.md`'s three
+object kinds — `creature`, `item`, `fixture` — all get an authored template.
+P1-D7, which declared items and fixtures out of scope, is **superseded**.
+
+Reasons, as the owner gave them:
+
+1. **Actionable things need a hard specification.** For the game to create an
+   object reliably and to calculate interactions against it, the numbers must be
+   authored, not improvised: a sword's to-hit and damage, a locked door's DC.
+   Narrating loot leaves the mechanics layer inventing exactly the values it
+   exists not to invent.
+2. **This was never only a placement question.** P1-D7 was argued as "Story does
+   not declare items", but the real gap is that there is *no template shape at
+   all* for an item or a fixture. There needs to be one.
+3. **Validation stays as strict as it is today.** Each kind is its own Pydantic
+   model behind a `kind` discriminator, each with `extra="forbid"` and its own
+   required tail — the same guarantee `Definition` gives creatures now. Nothing
+   becomes a bag of optional fields.
+
+P1-D7's closing paragraph still stands: `SeedCharacter` carries `inventory` and
+a creature template does not, a creature template carries `disposition` and
+`SeedCharacter` does not, so phase 5's single creature-state model still needs
+an inventory defaulted to `[]` and a disposition defaulted to empty.
+
+### P1-D23 — The term is **Object Template** (`ObjectTemplate`), and *content* is disambiguated
+
+**Owner ruling.** Two naming decisions, taken together because they are the same
+problem.
+
+- **`ObjectTemplate`, not `Definition`, not `Template`, not `creatures` /
+  `species` / `npcs`.** The name must read as a direct reference to `model.md`'s
+  `objects` table, whose `kind` is `creature | item | fixture`: an
+  `ObjectTemplate` is the campaign-scoped blueprint that becomes **one `objects`
+  row per placement instance**. `Definition` said nothing about what the thing
+  defines, and stops making sense the moment the entity covers items and
+  fixtures (P1-D22). `Template` alone says nothing about *what* is templated.
+  This supersedes P1-D21's conclusion about the word; P1-D21's *reasoning* —
+  that template and instance are different things and *creature* is already the
+  instance's word — is upheld and is precisely why the blueprint gets a name of
+  its own.
+- **"Content" is retired as a bare term wherever it is ambiguous.** It was
+  standing in for two different things and cost real time in review. Use
+  **Story** / **Prose** for the narrative text, **Campaign-Definition** /
+  **Adventure-Definition** for the authored structures. The subsystem name
+  (`content` module, `backend/content/`, `app content validate`, "content
+  version") is unambiguous in context and stays. See §0 and
+  `docs/general/glossary.md`.
+
+### P1-D24 — Two kinds of file: `campaign.json` carries the object templates
+
+**Owner ruling, superseding the three-file layout of P1-D20.** A campaign
+version is:
+
+```
+campaign.json              campaign metadata + seed character + object_templates[]
+adventures/<id>.json       the adventure and its scenes, inline
+```
+
+The architect's proposal of a third sibling file (`definitions.json`, or the
+existing `definitions/<id>.json` directory) is **declined**. P1-D20's containment
+argument for scenes is unchanged and still holds; what changes is where the
+campaign-scoped templates live.
+
+Reasons, as the owner gave them:
+
+1. **Nothing ever re-reads the tree mid-playthrough.** Run state lives in the
+   adventure run, the `objects` rows and the LangGraph checkpointer — never in a
+   re-read of the JSON — so the "cost of re-reading a big campaign file" argument
+   has no case to apply to.
+2. **The campaign-picker parsing cost is explicitly accepted as a non-issue.**
+   Browsing campaigns before a playthrough starts parses `campaign.json` whole;
+   the owner has ruled that overhead irrelevant at this size.
+3. **Fewer kinds of file is fewer things an author can get wrong.** Templates are
+   campaign-scoped, and `campaign.json` is the campaign-scoped file — the
+   template list belongs with the thing whose scope it shares.
+
+### P1-D25 — Carried-at-start placement is in scope
+
+**Owner ruling.** A creature may own equipment at spawn: the boss holding the
+key, the goblin with the scimitar. Monster and NPC stat blocks in 5e carry
+equipment, so this is standard D&D and not an invented mechanic — it is
+designed in now rather than deferred. Structurally it is a second placement
+axis: an instance owned by another instance at creation time, expressed on the
+owning placement, not as a separate scene-level list. The exact shape is pinned
+by the object-template step spec; what this decision fixes is that it exists in
+Stage-01.
 
 ---
 

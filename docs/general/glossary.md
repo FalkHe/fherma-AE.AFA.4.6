@@ -21,14 +21,40 @@ defined here — in code, in content and in the UI.
 
 Authored material, static JSON in git. See [model.md](model.md).
 
-- **Campaign** — a series of adventures. The largest unit of content.
+**The word *content* covers two different things and is never used bare where
+the two could be confused.** *Story* / *Prose* is the narrative text; a
+*Campaign-Definition* / *Adventure-Definition* is the authored structure that
+carries it and that Story references by id. "The content module", "the content
+tree" and "content version" remain the names of the authoring subsystem as a
+whole, where no ambiguity is possible.
+
+- **Campaign** — a series of adventures. The largest authored unit.
+- **Campaign-Definition** — the authored JSON structure of a campaign:
+  `campaign.json` — its metadata, its ordered adventure list, its object
+  templates and its seed character. Structure, never narrative.
 - **Adventure** — one story within a campaign, three or more scenes.
+- **Adventure-Definition** — the authored JSON structure of one adventure:
+  `adventures/<id>.json` — its entry scene and its scenes.
 - **Scene** — one place or situation, written as facts, intentions and
   consequences rather than as a script.
-- **Definition** — a campaign-scoped NPC or monster stat block that scenes
-  reference by id.
-- **Content version** — the revision of a campaign a playthrough is pinned to.
-  Content is extended by publishing a new version, never by editing in place.
+- **Story** / **Prose** — the narrative text inside a scene and its adventure:
+  `truth`, `npc_intent`, `consequences`, descriptions, intros. What the DM reads
+  and retells; never a structure a rule resolves against.
+- **Object template** (`ObjectTemplate`) — the campaign-scoped blueprint of one
+  creature, item or fixture, which a scene references by id; each placement of
+  it becomes one `objects` row when a run starts. It is discriminated by
+  `kind` — `CreatureTemplate`, `ItemTemplate`, `FixtureTemplate` — so each kind
+  carries exactly the fields the mechanics need to resolve interactions against
+  it. Template and instance are different things with different lifetimes:
+  *creature* is the instance's word, *object template* is the blueprint's.
+  (The shipped schema still spells the creature-only ancestor of this entity
+  `Definition`; the rename and the item/fixture kinds are pinned by P1-D22 and
+  P1-D23 in
+  [phase-01/shared-knowledge.md](../roadmap/Stage-01/phase-01/shared-knowledge.md)
+  and land with the schema change.)
+- **Content version** — pinned-revision jargon: the revision of a campaign a
+  playthrough is pinned to. A campaign is extended by publishing a new version,
+  never by editing one in place.
 
 ## Run terms
 

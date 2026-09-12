@@ -6,14 +6,23 @@ that `app content validate` accepts on the first run: every field, every
 constraint that rejects a file, and every referential rule is stated here, not
 merely implied.
 
-## 1. What content is and what it is not
+## 1. What you are authoring, and what it is not
 
-Content is **hand-authored, version-pinned, static JSON checked into git**,
+Two different things live in these files and this guide never confuses them:
+
+- the **Campaign-Definition** and the **Adventure-Definitions** — the authored
+  JSON *structures*: ids, lists, stat blocks, placements, exits. Machine-read,
+  validated, referenced by id.
+- the **Story** (**Prose**) they carry — `truth`, `npc_intent`, `consequences`,
+  descriptions, intros. Read by the Dungeon Master and retold to the player;
+  validated only for being non-empty.
+
+Both are **hand-authored, version-pinned, static JSON checked into git**,
 read-only at runtime. A run references a campaign by its id and a pinned
 version and never sees any other version, even after the campaign is extended.
-Content is **not** a database, **not** a script that decides what the player
-does, and **not** generated at runtime — there is no content-generation CLI in
-this stage; this document is the only authoring aid.
+They are **not** a database, **not** a script that decides what the player
+does, and **not** generated at runtime — there is no generation CLI in this
+stage; this document is the only authoring aid.
 
 ## 2. Directory layout
 
@@ -57,7 +66,7 @@ neither, and stay in `campaign.json`.
 
 A version is a directory literally named `v<n>` — `v1`, `v2`, and so on — a
 digit sequence with no leading `v` missing and no decimal point. A version is
-never edited in place once it exists: content is extended by **copying the
+never edited in place once it exists: a campaign is extended by **copying the
 whole tree to `v2` and editing there**, so a run pinned to `v1` stays
 reproducible forever. There is no manifest, no semantic version and no
 `published` flag — the directory name is the only version record there is.
@@ -68,14 +77,15 @@ These are the mistakes an author (or a generator) makes by default. Each is a
 rule, not a suggestion:
 
 - **JSON keys are `snake_case`** and identical, letter for letter, to the field
-  names in this document. There is no camelCase anywhere in content.
+  names in this document. There is no camelCase anywhere in these files.
 - **Every id is lowercase kebab-case**: `^[a-z0-9]+(-[a-z0-9]+)*$` — lowercase
   letters, digits and single hyphens between segments. `Bog-Lurker`, `bog_lurker`
   and `bog--lurker` are all rejected.
 - **The player-class field's JSON key is `character_class`, not `class`.**
   `class` is a Python reserved word; the schema never uses it.
 - **The armour-class field's JSON key is `armour_class`, not `armor_class`.**
-  The project's glossary pins the British spelling and content uses it exactly.
+  The project's glossary pins the British spelling and every authored file uses
+  it exactly.
 
 ## 5. Every model and every field
 
@@ -239,8 +249,8 @@ agent exists — it is not a player-facing option.
 | `inventory` | list of prose strings | no | `[]` | Starting items, as free text |
 
 No `portrait` field, no `level`, no proficiency, no authored attacks — see §9.
-The seed character references nothing else in content, so there is no
-referential rule for it.
+The seed character references nothing else in the Campaign-Definition, so there
+is no referential rule for it.
 
 ### 5.11 `Campaign`
 
@@ -294,7 +304,7 @@ own.**
 | R11 | loader | Every scene of an adventure is reachable from `entry_scene` by following exits (conditions ignored for this check); the entry scene itself counts as reached |
 | R12 | loader | Every `creatures[].definition` resolves to a `definitions/<id>.json` |
 | R13 | loader | Each definition's `id` equals its own filename stem |
-| R14 | loader | Every `*.json` file in `definitions/` is referenced by at least one scene — no dead content |
+| R14 | loader | Every `*.json` file in `definitions/` is referenced by at least one scene — no unreferenced templates |
 | R15 | loader | `Definition.name` is unique across the campaign, compared case-insensitively after stripping — `"Bog Lurker"` and `"bog lurker"` collide |
 | R16 | loader | A definition appears at most once in a single scene's `creatures` list |
 
@@ -322,8 +332,8 @@ unreferenced — this is the deliberate answer, not an oversight. Fix the
 adventure and the `[R14]` disappears on its own; there is nothing else to do
 about it.
 
-`seed_character` has no referential rule — it references nothing else in
-content.
+`seed_character` has no referential rule — it references nothing else in the
+Campaign-Definition.
 
 ## 8. The message grammar and exit codes
 
@@ -365,8 +375,11 @@ under the content root:
 
 Do not try to add these — they have no field:
 
-- **No items and no fixtures as content entities.** A scene's occupants are
-  creatures only (`creatures[]`); loot and scenery are narrated, not declared.
+- **No items and no fixtures as declared entities.** A scene's occupants are
+  creatures only (`creatures[]`); loot and scenery are Story, narrated rather
+  than declared. *(Superseded in design by P1-D22 — object templates for items
+  and fixtures are ruled in scope — but the shipped schema has not changed yet,
+  so this remains true of the tree you are authoring today.)*
 - **No level, no proficiency bonus, no skill list, no authored player
   attacks.** A monster's `to_hit` is already the complete bonus its author
   intends; every other check resolves on the raw ability modifier.
@@ -526,7 +539,7 @@ Run down this list before validating:
 - [ ] Every id (`campaign.id`, adventure/scene/definition ids) matches its own
       filename stem (or, for a scene, is unique campaign-wide) and is
       lowercase kebab-case.
-- [ ] Every prose field has real content — no accidental whitespace-only
+- [ ] Every prose field carries real text — no accidental whitespace-only
       string.
 - [ ] The player-class key is `character_class`, and the armour key is
       `armour_class`.
