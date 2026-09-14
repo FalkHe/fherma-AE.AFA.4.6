@@ -25,6 +25,29 @@ inventory, §2 dependency graph, §3 parallelism, §5 scope fence, §7
 open-decisions register and §9 doc-correction register bind this phase. The
 step cut is [`steps.md`](steps.md).
 
+## 0.0 What step 1.4 supersedes in this document
+
+**[`step-1.4.md`](step-1.4.md) is the object-template rework and is the
+authority wherever it and this document differ.** Until its doc pass lands, read
+the following sections of this document as history:
+
+| Section here | Superseded by | In what |
+|---|---|---|
+| §3.4 `Definition` | step-1.4 §3.1 | `ObjectTemplate`, a `kind`-discriminated union of `CreatureTemplate`, `ItemTemplate`, `FixtureTemplate` |
+| §3.6 `CreaturePlacement` | step-1.4 §3.2 | `Placement` — `{template, count, carries[]}` — and `Carried` |
+| §3.8 `Scene.creatures` | step-1.4 §3.3 | `Scene.placements` |
+| §3.11 `Campaign` | step-1.4 §3.4 | `object_templates[]` moves into `campaign.json` (P1-D24) |
+| §3.12 `LoadedCampaign.definitions` | step-1.4 §3.5 | `LoadedCampaign.object_templates` |
+| §4 the content tree, §4.1 the worked example | step-1.4 §4, §5 | Two kinds of file; no `definitions/` directory |
+| §5 `load_definition` | step-1.4 §6 | `load_object_template` |
+| §6.1 the `relative_path` table, §6.2 the tag set, §6.3 "three kinds of file" | step-1.4 §6.1–§6.3 | The template locator, tags `R2`–`R18`, two kinds of file |
+| §11 the referential rule list | step-1.4 §7 | R1–R18 |
+| §1's human-in-the-loop paragraph ("no prose change", "byte-identical scene bodies") | step-1.4 §5, §12 | **Step 1.4 is not a prose-preserving migration.** Greenhollow's Story is freely reworked so the new object templates are narratively motivated (P1-D27). The owner's acceptance is the approval of step-1.4's §5, which prints every new and reworded line verbatim |
+
+Everything else in this document — §0, §1, §2, §3.0–§3.3, §3.5, §3.7, §3.9,
+§3.10, §6's error classes, §7 the CLI, §8 the test-facing surface, §10 and every
+landed decision — is **unchanged and still binds**.
+
 ## 0. Terminology — Story vs Definition
 
 **The word *content* means two different things and is never used bare where
@@ -96,7 +119,9 @@ quality. **This was satisfied in the first pass and does not recur in the
 P1-D20 rework**, which moves already-accepted prose between files without
 changing a character of it: `step-1.3.md` §3 and §9 close the owner out of that
 pass, and its criterion 24 — byte-identical scene bodies — is what stands in for
-the acceptance.
+the acceptance. **This does not carry over to step 1.4**, which reworks Story
+rather than preserving it (P1-D27); the owner is in the loop there on
+`step-1.4.md` §5, which prints every new and reworded line in full.
 
 There is **no** `models.py` (no table) and **no** `routes.py` (no route) in this
 module. Do not create empty ones.
@@ -1525,8 +1550,93 @@ equipment, so this is standard D&D and not an invented mechanic — it is
 designed in now rather than deferred. Structurally it is a second placement
 axis: an instance owned by another instance at creation time, expressed on the
 owning placement, not as a separate scene-level list. The exact shape is pinned
-by the object-template step spec; what this decision fixes is that it exists in
-Stage-01.
+by the object-template step spec ([step-1.4.md](step-1.4.md) §3.3); what this
+decision fixes is that it exists in Stage-01.
+
+**Eligibility, confirmed by the owner after this decision was first written:
+both `creature` and `fixture` placements may carry.** A chest, a barrel or a
+sack holding loot is the same mechanic as a boss holding a key, and both are
+standard D&D. The one restriction is the other way round: **a placement whose
+template kind is `item` has empty `carries`** — an item does not itself carry
+anything, and allowing it would open a recursive containment model nothing in
+Stage-01 needs. Carrying is **one level deep and never recursive**: a carried
+entry names a template and a count, and carries nothing of its own. Pinned as
+R18 and as the `Carried` model in step 1.4.
+
+### P1-D26 — `SeedCharacter` stays prose, and is required because Stage-01 has no character creation
+
+**Owner ruling, taken with P1-D22–P1-D25 and recorded here because the
+object-template rework invites the opposite conclusion.** Now that items have a
+template with real mechanics, `SeedCharacter.inventory` looks like the obvious
+next thing to convert from `list[ProseText]` into a list of item-template
+references. It is **explicitly deferred, not reworked**: the field stays prose
+in this phase, and nothing in Stage-01 resolves it against a template.
+
+**Why `campaign.json` carries a seed character at all.** Stage-01 ships **no
+in-app character-creation flow**, so every campaign pins one pregenerated
+starting character in its own definition and a playthrough can begin the moment
+a player picks the campaign. This is an **MVP scope simplification, not a rules
+requirement** — 5e has character creation and this project has chosen not to
+build it yet. Phase 7's generation agent is what eventually replaces the
+fixture; until it lands, the seed character is the only way phase 5 has a player
+creature to instantiate.
+
+Why the inventory stays prose while an item template exists: the seed
+character's gear is narration for the DM's opening, it is referenced by no rule
+(§11: `seed_character` has no referential rule), and converting it would make
+every campaign declare an item template per starting possession before anything
+reads one. The conversion is a phase-5/phase-7 decision, taken when a consumer
+exists.
+
+### P1-D27 — Step 1.4 reworks Greenhollow's Story; no mechanism ships unexercised
+
+**Owner ruling, taken during the review of `step-1.4.md`.** Two parts:
+
+1. **The "byte-identical prose" fence is lifted for step 1.4.** The architect had
+   fenced the object-template rework as a mechanical migration that changed no
+   Story. The owner ruled otherwise: the campaign definition — `campaign.json`
+   and every scene's `truth`, `npc_intent`, `consequences`, titles and intro —
+   may be rewritten as needed, provided the story still makes sense and fits the
+   new schema. The constraint that survives is procedural, not textual: prose is
+   still never judged by an agent, so every new or reworded line is printed in
+   `step-1.4.md` §5 and the owner's approval of that spec is the acceptance.
+   Implementing agents copy it and write none of their own.
+2. **Completeness bar: every schema mechanism must appear at least once in the
+   shipped tree.** A mechanism that is only theoretically supported is not
+   proven. Concretely, for the object-template schema: all three template kinds;
+   a `creature` placement that carries; a `fixture` placement that carries; a
+   bare `item` placement carrying nothing; a `checks[].bypassed_by` pointing at
+   an item template that is actually reachable in play. `step-1.4.md` §5.0 is
+   the table of which shipped id proves which mechanism, and its criterion 27a
+   is how QA checks it.
+
+This bar is about **exercising** what is already pinned, not extending it: no
+field, rule or file kind is added to satisfy it. Later phases inherit part 2 —
+a schema mechanism with no shipped example is an open gap, not a finished one.
+
+### P1-D28 — A fixture check is bypassed by an explicit **list** of items, any one of which suffices
+
+**Owner ruling, taken during the final review of `step-1.4.md`.**
+`FixtureCheck.bypassed_by` is **`list[ContentId]`, defaulting to `[]`** — not an
+optional single id. Three parts, all binding on every later phase:
+
+1. **Any one entry suffices.** The list is disjunctive: a character holding *any*
+   listed item bypasses that check with no roll. "Cut the lashings" should accept
+   a knife, a sword or a shard of glass, and one authored id cannot say that.
+2. **The list is explicit, never inferred.** Which items satisfy a check is
+   authored per check. The DM never decides at runtime that some item is "sharp
+   enough" from its name, description or `attacks` — that would be the reasoning
+   layer inventing a mechanic, which the project's content/reasoning/mechanics
+   separation forbids. The bookkeeping cost — a newly authored item must be added
+   by hand to every check it should satisfy — is **accepted**, and is a
+   content-authoring and story-generation concern, not a schema defect.
+3. **`[]` is the sole representation of "no shortcut".** There is no `None` and
+   no nullable form, so there is no second way to say it and no null check
+   downstream. An absent key takes the default.
+
+Pinned in [`step-1.4.md`](step-1.4.md) §3.1, enforced by R12, R14 and R17 **per
+list entry**, and exercised by the shipped tree both ways: `thorn-screen`'s cut
+check lists two blades, `wool-sack`'s lists one.
 
 ---
 
@@ -1608,5 +1718,7 @@ Cut by the `planner` in [steps.md](steps.md).
 | 1.1 | [step-1.1.md](step-1.1.md) | The content module — schema, loader, referential rules, the command-line check |
 | 1.2 | [step-1.2.md](step-1.2.md) | The authoring guide, the docs index row, and the corrections this phase owns |
 | 1.3 | [step-1.3.md](step-1.3.md) | The first campaign, authored from the guide and proven valid (human in the loop) |
+| 1.4 | [step-1.4.md](step-1.4.md) | The object-template rework: `ObjectTemplate` in `campaign.json`, `Scene.placements`, carried instances, R1–R18 (human in the loop) |
 
-1.1 and 1.2 run in parallel; 1.3 depends on both.
+1.1 and 1.2 run in parallel; 1.3 depends on both. **1.4 is a rework of all
+three, taken after the phase first landed, and depends on the whole of it.**

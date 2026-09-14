@@ -130,12 +130,31 @@ character-sheet specifics (class, background, portrait) are a section of that
 model, not a fourth kind. Hit points, maximum hit points, armour class and
 aliveness are promoted out of the state blob into real columns, because they are
 read on every turn and are the only fields a database constraint can actually
-guard. Abilities, inventory, disposition, injuries and improvised traits stay in
-the blob.
+guard. **Those four columns are nullable and are populated for `creature` rows
+only** — an item and a fixture carry no hit points and no armour class in the
+authored template, so there is nothing to promote and nothing for the mechanics
+layer to invent. Abilities, inventory, disposition, injuries and improvised
+traits stay in the blob.
 
 Objects are instantiated **eagerly when the run starts**: everything the pinned
 content version's templates and placements declare, across all its adventures.
 No lazy creation during play, no half-populated scenes.
+
+### A carried object is its own row, pointing at its owner
+
+An object template placement may declare that the instance it creates **carries**
+other instances at spawn — the boss holding the key, the sack holding the fleeces.
+Each carried instance is **its own `objects` row** with a nullable
+self-referencing `owner_object_id` naming the row that holds it; `NULL` means the
+object stands free in its scene. The reference cascades with the owner's
+deletion, and one level of ownership is all the authored content can express.
+
+A carried instance is not folded into the owner's inventory blob. It is a real
+object with the same identity, the same state blob and the same
+`update_object` path as any other, so it can be taken, dropped, broken or
+targeted without a second mechanism — which is exactly what the one generic
+table exists to buy. The authored side of this is `Placement.carries[]`, pinned
+in [modules/content.md](../modules/content.md).
 
 ### Position
 
@@ -216,13 +235,13 @@ stray autogenerate will try to drop it.
 
 ```
 backend/content/campaigns/<campaign_id>/<version>/
-    campaign.json          # metadata + ordered adventure list + seed player character
+    campaign.json          # metadata + ordered adventure list + seed player
+                           # character + object_templates[]: the campaign-scoped
+                           # creature / item / fixture blueprints
     adventures/<id>.json   # the adventure and its scenes inline: a prose intro,
                            # an entry_scene, and scenes[] carrying truth[],
-                           # npc_intent?, consequences[], hidden[], creatures[],
+                           # npc_intent?, consequences[], hidden[], placements[],
                            # exits[] (a list, not a map), pressure?
-    definitions/<id>.json  # one entity for NPCs and monsters alike; always
-                           # carries a stat block
 backend/content/srd/        # SRD 5.1 source for the ingest CLI
 
 backend/app/modules/game/prompts/
@@ -239,9 +258,10 @@ Dockerfile copies `backend/` and compose bind-mounts it, so the path is
 identical in the image, under the dev bind mount and on the host, with no
 configuration.
 
-**There is no `scenes/` directory.** A scene belongs to exactly one adventure,
-so it lives inside that adventure's file; a definition is campaign-scoped and
-shared between adventures, so it stays its own file.
+**There are exactly two kinds of file, and no `scenes/` or `definitions/`
+directory.** A scene belongs to exactly one adventure, so it lives inside that
+adventure's file; an object template is campaign-scoped and shared between
+adventures, so it lives in the campaign-scoped file.
 
 - **Campaign- and Adventure-Definitions** are read-only by convention —
   nothing writes them and the loader only reads — and are reviewed as diffs in
