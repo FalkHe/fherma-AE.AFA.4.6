@@ -1,6 +1,11 @@
 """Tests for `app content validate` -- phase contract §7, step-1.1.md §5.4.
 
-Criterion numbers refer to `step-1.1.md` §6 ("The CLI", 44-52).
+Unchanged by step-1.4.md (§9: `commands.py` -- "no change expected"; the
+CLI contract of `shared-knowledge.md` §7 is untouched). Kept here, running
+against the reworked fixture builders in `conftest.py`, as the standing
+regression check that the two-file layout still validates through the CLI
+exactly as the three-file layout did. Criterion numbers still refer to
+`step-1.1.md` §6 ("The CLI", 44-52).
 
 Which Typer app drives which assertion is contract (phase contract §8):
 criteria 44-50 run against `content_app` directly (no callback, so

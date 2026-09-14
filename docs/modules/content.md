@@ -11,8 +11,8 @@ merely implied.
 Two different things live in these files and this guide never confuses them:
 
 - the **Campaign-Definition** and the **Adventure-Definitions** — the authored
-  JSON *structures*: ids, lists, stat blocks, placements, exits. Machine-read,
-  validated, referenced by id.
+  JSON *structures*: ids, lists, object templates, placements, exits.
+  Machine-read, validated, referenced by id.
 - the **Story** (**Prose**) they carry — `truth`, `npc_intent`, `consequences`,
   descriptions, intros. Read by the Dungeon Master and retold to the player;
   validated only for being non-empty.
@@ -31,36 +31,34 @@ backend/content/
 └── campaigns/
     └── <campaign_id>/
         └── <version>/
-            ├── campaign.json
-            ├── adventures/<adventure_id>.json
-            └── definitions/<definition_id>.json
+            ├── campaign.json                   # metadata + seed_character + object_templates[]
+            └── adventures/<adventure_id>.json  # the adventure and its scenes, inline
 ```
 
 Example: `backend/content/campaigns/hollow-reach/v1/campaign.json`.
 
-A campaign version is exactly **three kinds of file**:
+A campaign version is exactly **two kinds of file**:
 
-- `campaign.json` — the campaign's metadata and its seed player character.
+- `campaign.json` — the campaign's metadata, its seed player character, and
+  every `object_templates[]` entry the campaign declares.
 - `adventures/<adventure_id>.json` — **the whole adventure, its scenes
   included, inline.** There is no `scenes/` directory and no separate scene
   file.
-- `definitions/<definition_id>.json` — one file per campaign-scoped NPC or
-  monster template.
 
 **Why the granularity is what it is.** A scene belongs to exactly one
 adventure and cannot be shared or orphaned, so it lives inside that
-adventure's file. A definition is campaign-scoped — the villain of adventure 1
-can return in adventure 3 — so it cannot live inside any one adventure and
-stays its own file. The campaign's own metadata and its seed character are
-neither, and stay in `campaign.json`.
+adventure's file. An object template is campaign-scoped — the villain of
+adventure 1 can return in adventure 3, and an item found in one adventure can
+be carried into another — so it cannot live inside any one adventure and
+stays in the campaign-scoped file. There is no `definitions/` directory: a
+template has no filename of its own, only an `id` field.
 
 - **Only `*.json` files are considered.** A `README.md`, a `.DS_Store` or an
-  editor swap file sitting inside `adventures/` or `definitions/` is ignored
-  entirely — never read, never reported as an orphan.
-- **A missing `adventures/` or `definitions/` directory is treated as an
-  empty directory**, not an error by itself — but an adventure or definition
-  that `campaign.json` or a scene expects and does not find still fails the
-  referential rules below (§7).
+  editor swap file sitting inside `adventures/` is ignored entirely — never
+  read, never reported as an orphan.
+- **A missing `adventures/` directory is treated as an empty directory**, not
+  an error by itself — but an adventure that `campaign.json` expects and does
+  not find still fails the referential rules below (§7).
 
 ## 3. Versioning
 
@@ -108,7 +106,7 @@ meaningful.
 
 ### 5.2 `Attack`
 
-One attack a stat block can make.
+One attack a stat block, or an item, can make.
 
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
@@ -118,8 +116,8 @@ One attack a stat block can make.
 
 ### 5.3 `StatBlock`
 
-Carried by **every** `Definition` and by the `SeedCharacter`'s inline fields
-(§5.10). It is what makes an entity able to exist as a mechanical creature.
+Carried by every `CreatureTemplate` and by the `SeedCharacter`'s inline fields
+(§5.11). It is what makes an entity able to exist as a mechanical creature.
 
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
@@ -136,30 +134,71 @@ a merchant — still has hit points and an armour class, and simply has an empty
 Deliberately absent (§9): speed, challenge rating, level, proficiency bonus,
 skills, saves.
 
-### 5.4 `Definition`
+### 5.4 `ObjectTemplate` — a `kind`-discriminated union
 
-One entity used for both NPCs and monsters — there is no npc/monster split.
-Campaign-scoped: a definition may recur across every adventure of the
-campaign. File: `definitions/<id>.json` — the one file in the tree that
-belongs to no single adventure.
+The campaign-scoped blueprint of one thing a scene can contain: a creature, an
+item or a fixture. Each placement of it becomes one object during a run. One
+shared head, three tails.
 
-**What a `Definition` is, and why the word is `Definition`.** A definition is
-a **template**: the campaign-scoped description of a kind of creature. What
-appears in a scene during a run is an **instance** of it — a creature with
-current hit points, an aliveness flag and its own disposition, created fresh
-each time the scene is populated. `Scene.creatures` entries point at a
-`definition` by id; the directory that holds the templates is `definitions/`.
-Follow that one word — `definition` — from the placement to the file.
+**The shared head — every kind carries these:**
 
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
-| `id` | content id | yes | — | Must equal the filename stem |
-| `name` | prose string | yes | — | Player-facing name; **must be unique within the campaign, case-insensitively** (R15) |
-| `description` | prose string | yes | — | Who they are, what they look like |
-| `disposition` | prose string | yes | — | What they want, how they treat the player |
-| `stat_block` | `StatBlock` | yes | — | **Required on every definition** — a definition with no stat block does not exist in this schema |
+| `id` | content id | yes | — | How a placement, a carry and a `bypassed_by` entry name it. Unique within the campaign (R13) |
+| `kind` | `"creature"` \| `"item"` \| `"fixture"` | yes | — | The discriminator |
+| `name` | prose string | yes | — | Player-facing; unique within the campaign, case-insensitively, across all three kinds (R15) |
+| `description` | prose string | yes | — | What it is and what it looks like; DM-prompt material |
 
-### 5.5 `Secret`
+**`CreatureTemplate`** — one entity used for both NPCs and monsters; there is
+no npc/monster split.
+
+| JSON key | Type | Required | Default | Purpose |
+|---|---|---|---|---|
+| `disposition` | prose string | yes | — | What it wants and how it treats the player |
+| `stat_block` | `StatBlock` | yes | — | Required on every creature — `attacks: []` is what "cannot fight" means |
+
+**`ItemTemplate`**
+
+| JSON key | Type | Required | Default | Purpose |
+|---|---|---|---|---|
+| `attacks` | list of `Attack` | no | `[]` | What the item offers whoever wields it; `[]` is an ordinary object with no combat use |
+
+**`FixtureTemplate`**
+
+| JSON key | Type | Required | Default | Purpose |
+|---|---|---|---|---|
+| `checks` | list of `FixtureCheck`, min length 1 | yes | — | Every authored way to act on the fixture, each with the DC the DM must not invent |
+
+A fixture with no checks is scenery, and scenery belongs in `truth` rather than
+being declared — that is what separates the two. An item may legitimately have
+no attacks, so its list defaults to empty; a fixture may not legitimately have
+no checks, so its list has no default at all.
+
+**Rejecting a wrong-kind field is the point.** An `ItemTemplate` carrying
+`stat_block`, a `CreatureTemplate` carrying `checks` and a `FixtureTemplate`
+carrying `attacks` are all loud `[SCHEMA]` failures, and a template with an
+unknown or missing `kind` fails on the discriminator.
+
+### 5.5 `FixtureCheck`
+
+One entry of a `FixtureTemplate.checks` list.
+
+| JSON key | Type | Required | Default | Purpose |
+|---|---|---|---|---|
+| `action` | prose string | yes | — | What a character *does*, in plain prose — not a skill enum |
+| `dc` | integer, 1–30 | yes | — | The authored target number |
+| `success` | prose string | yes | — | What is true afterwards — a fact, never narration to be recited |
+| `bypassed_by` | list of content ids | no | `[]` | The ids of the **item**-kind templates that make this check succeed with no roll. Holding any one of them is enough. `[]` means nothing bypasses it |
+
+`bypassed_by` is the key-for-the-lock and the blade-for-the-rope: each entry
+names a template, never an instance and never a condition. **It is a list, and
+`[]` is the only way to say "nothing bypasses this."** It is **disjunctive** —
+an *any-of*, never an all-of — and **explicit**: the eligible items are
+enumerated by the author, never inferred by the DM from an item's description
+or name. There is no bare-string form and no `null`: an absent key, an
+explicit `[]` and "no shortcut" are one value and one representation.
+
+### 5.6 `Secret`
 
 One entry of a scene's `hidden` list — a fact the DM knows and the player must
 earn.
@@ -172,20 +211,38 @@ earn.
 
 `hidden` and `dc` are DM-only and must never be shown to the player.
 
-### 5.6 `CreaturePlacement`
+### 5.7 `Placement` and `Carried`
 
-One entry of a scene's `creatures` list.
+One entry of a scene's `placements` list, and one entry of a placement's
+`carries` list.
 
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
-| `definition` | content id | yes | — | The id of a `Definition` this scene places |
-| `count` | integer, ≥1 | no | `1` | How many instances of that definition appear |
+| `Placement.template` | content id | yes | — | The `ObjectTemplate` id this placement instantiates |
+| `Placement.count` | integer, ≥1 | no | `1` | How many instances this placement creates |
+| `Placement.carries` | list of `Carried` | no | `[]` | What **each** instance this placement creates owns from the start |
+| `Carried.template` | content id | yes | — | An **item**-kind template id |
+| `Carried.count` | integer, ≥1 | no | `1` | How many of it each owning instance holds |
 
-**A definition may appear at most once in a scene's `creatures` list** (R16):
-write `{"definition": "goblin", "count": 3}` for three goblins, never three
-separate entries.
+**`carries` is per created instance, not per placement.**
+`{"template": "goblin", "count": 3, "carries": [{"template": "sling"}]}` is
+three goblins with one sling each — three goblins sharing one sling is not
+expressible, and does not need to be.
 
-### 5.7 `Exit`
+**Who may carry.** A `creature` placement and a `fixture` placement may both
+carry — a boss holding a key and a sack holding fleeces are the same
+mechanic. **A placement whose template kind is `item` has empty `carries`**
+(R18) — an item does not itself carry anything.
+
+**One level deep, never recursive.** A `Carried` entry has no `carries` of its
+own; carrying does not nest.
+
+**A template may appear at most once in a scene's `placements` list, and at
+most once in any single placement's `carries` list** (R16) — write
+`{"template": "goblin", "count": 3}` for three goblins, never three separate
+entries.
+
+### 5.8 `Exit`
 
 One entry of a scene's `exits` list — **a list, not a map**.
 
@@ -198,10 +255,10 @@ One entry of a scene's `exits` list — **a list, not a map**.
 **A scene with `exits: []` is terminal** — reaching it ends the adventure.
 Every adventure must have at least one terminal scene (R10).
 
-### 5.8 `Scene`
+### 5.9 `Scene`
 
 **A scene is not a file.** It is an element of its adventure's `scenes` list
-(§5.9), so a scene belongs to exactly one adventure and cannot be orphaned or
+(§5.10), so a scene belongs to exactly one adventure and cannot be orphaned or
 shared between adventures. It keeps its own `id`, which is how exits, runs and
 the loaded campaign's flat scene map address it. Facts, intentions and
 consequences — never a script (see §10).
@@ -211,14 +268,14 @@ consequences — never a script (see §10).
 | `id` | content id | yes | — | Unique across the **whole campaign** (R8), not just the adventure |
 | `title` | prose string | yes | — | Short location label, shown to the player |
 | `truth` | list of prose strings, min length 1 | yes | — | What is true here — at least one fact is required |
-| `npc_intent` | prose string or `null` | no | `null` | What the creatures present want; `null` when the scene has no creatures |
+| `npc_intent` | prose string or `null` | no | `null` | What the creatures present want; `null` when the scene has no creature placements |
 | `consequences` | list of prose strings | no | `[]` | What follows from plausible player action — never what the player does |
 | `hidden` | list of `Secret` | no | `[]` | DM-only secrets |
-| `creatures` | list of `CreaturePlacement` | no | `[]` | Who is here |
+| `placements` | list of `Placement` | no | `[]` | What is here: creatures, items and fixtures alike |
 | `exits` | list of `Exit` | no | `[]` | Ways out of the scene; empty means terminal |
 | `pressure` | prose string or `null` | no | `null` | What forces the scene forward |
 
-### 5.9 `Adventure`
+### 5.10 `Adventure`
 
 File: `adventures/<id>.json` — **the whole adventure, its scenes included.**
 
@@ -230,7 +287,7 @@ File: `adventures/<id>.json` — **the whole adventure, its scenes included.**
 | `entry_scene` | content id | yes | — | Must be the id of one of this adventure's own `scenes` |
 | `scenes` | list of `Scene`, min length 1 | yes | — | The scenes themselves, inline — not ids. Order is authoring convenience only; traversal is defined by exits and `entry_scene` |
 
-### 5.10 `SeedCharacter`
+### 5.11 `SeedCharacter`
 
 The starting player character, carried inline in `campaign.json`. It is a
 **fixture** so a run has a character before the (later) character-generation
@@ -246,13 +303,13 @@ agent exists — it is not a player-facing option.
 | `abilities` | `Abilities` | yes | — | The six ability scores |
 | `max_hp` | integer, ≥1 | yes | — | Starting/maximum hit points |
 | `armour_class` | integer, ≥1 | yes | — | Armour class |
-| `inventory` | list of prose strings | no | `[]` | Starting items, as free text |
+| `inventory` | list of prose strings | no | `[]` | Starting items, as free text — not `ItemTemplate` references |
 
 No `portrait` field, no `level`, no proficiency, no authored attacks — see §9.
-The seed character references nothing else in the Campaign-Definition, so there
-is no referential rule for it.
+The seed character references nothing else in the Campaign-Definition, so
+there is no referential rule for it.
 
-### 5.11 `Campaign`
+### 5.12 `Campaign`
 
 File: `campaign.json`.
 
@@ -263,6 +320,10 @@ File: `campaign.json`.
 | `summary` | prose string | yes | — | The pitch, shown when a run starts |
 | `adventures` | list of content ids, min length 1 | yes | — | **Ordered** — the play order |
 | `seed_character` | `SeedCharacter` | yes | — | The starting player character |
+| `object_templates` | list of `ObjectTemplate`, min length 1 | yes | — | Every creature, item and fixture template the campaign declares |
+
+`object_templates` is a **list**, not a map — the id is already on each
+element. Its order is authoring convenience and carries no meaning.
 
 There is no `version` field: the version is the directory name and nothing
 else, so the two can never disagree.
@@ -275,9 +336,14 @@ else, so the two can never disagree.
 - **Every prose string is stripped of surrounding whitespace and must then be
   non-empty.** `"   "` is rejected — it strips to the empty string.
 - **Numeric bounds**: every ability score is 1–30; every `dc` is 1–30; `max_hp`
-  and `armour_class` are ≥1; `CreaturePlacement.count` is ≥1.
-- **List minimums**: `Scene.truth` needs at least one entry; `Adventure.scenes`
-  and `Campaign.adventures` need at least one entry each.
+  and `armour_class` are ≥1; `Placement.count` and `Carried.count` are ≥1.
+- **List minimums**: `Scene.truth` needs at least one entry; `Adventure.scenes`,
+  `Campaign.adventures` and `Campaign.object_templates` need at least one
+  entry each; `FixtureTemplate.checks` needs at least one entry.
+- **`bypassed_by` is a list, and only a list.** A bare string, `null`, or an
+  entry that is not a valid content id are all rejected.
+- **Carrying does not nest.** A `Carried` entry carrying a `carries` key of
+  its own is rejected.
 - No string and no list has an upper bound — nothing here rejects a file for
   being long.
 
@@ -286,8 +352,8 @@ else, so the two can never disagree.
 Applied after every file in the tree has already passed the field checks
 above. Each rule's tag is what appears in a validation error, in the form
 `<path>: [<TAG>] <detail>` (§8) — an author who sees `[R11]` can look the
-number up here. **Sixteen rules, `R1` through `R16`; R1 carries no tag of its
-own.**
+number up here. **Eighteen rules, `R1` through `R18`; `R1` and `R3` carry no
+tag of their own in `errors[]`.**
 
 | # | Where checked | Rule |
 |---|---|---|
@@ -302,35 +368,37 @@ own.**
 | R9 | loader | Every `exit.to` names a scene in the **same** adventure, and is never the scene's own id |
 | R10 | loader | Each adventure has at least one scene whose `exits` is `[]` |
 | R11 | loader | Every scene of an adventure is reachable from `entry_scene` by following exits (conditions ignored for this check); the entry scene itself counts as reached |
-| R12 | loader | Every `creatures[].definition` resolves to a `definitions/<id>.json` |
-| R13 | loader | Each definition's `id` equals its own filename stem |
-| R14 | loader | Every `*.json` file in `definitions/` is referenced by at least one scene — no unreferenced templates |
-| R15 | loader | `Definition.name` is unique across the campaign, compared case-insensitively after stripping — `"Bog Lurker"` and `"bog lurker"` collide |
-| R16 | loader | A definition appears at most once in a single scene's `creatures` list |
+| R12 | loader | Every object-template reference resolves to a declared template — `placements[].template`, `carries[].template` and every entry of every `checks[].bypassed_by` list alike |
+| R13 | loader | An object template `id` appears at most once in `campaign.object_templates`; the first occurrence keeps the id, every later one is excluded from the loaded campaign |
+| R14 | loader | Every declared object template is referenced at least once — by a placement, a carry, or an entry of any `bypassed_by` list |
+| R15 | loader | An object template `name` is unique across the campaign, compared case-insensitively after stripping, **across all three kinds** |
+| R16 | loader | A template appears at most once in a scene's `placements` list, and at most once in any single placement's `carries` list |
+| R17 | loader | Every `carries[].template` and every entry of every `checks[].bypassed_by` list resolves to a template whose `kind` is `item` |
+| R18 | loader | A placement whose template `kind` is `item` has `carries == []` |
 
-**What an id/filename mismatch gets you.** An entity is always identified by
-its **filename**, never by the `id` field inside the file, so a mismatch never
-changes what the entity is called elsewhere in the tree — it only earns a
-report:
+**Ordering between R12 and R17.** R17 is evaluated only for a reference R12
+already resolved — an unknown id yields `[R12]` and nothing else, so one
+mistake never produces two findings. This is judged per reference: in a
+`bypassed_by` list holding an unknown id, an item and a creature, the unknown
+one yields `[R12]`, the creature yields `[R17]`, and the item yields nothing.
+
+**What an id/filename mismatch gets you.** An adventure is always identified
+by its **filename**, never by the `id` field inside the file:
 
 - An **adventure** whose `id` disagrees with its filename (`[R6]`) is dropped:
   it produces no other findings about itself, and its scenes are reported by
   nothing — they are not files and cannot be orphans.
-- A **definition** whose `id` disagrees with its filename (`[R13]`) is
-  reported but not dropped: it is still checked against every other rule under
-  its filename, so fixing the `id` alone is enough — there is nothing else to
-  redo.
 - A **scene** has no filename, so its identity is its `id` field; `R8` is
   what keeps that identity unambiguous across the whole campaign.
+- An **object template** has no filename either, so its identity is its `id`
+  field; `R13` is what keeps that identity unambiguous.
 
 **What one broken adventure does to the rest of the report.** An adventure
 that fails `[R6]`, `[READ]` or `[SCHEMA]` is dropped whole: it is excluded from
 every later rule and produces no further findings about itself, and its scenes
-go with it. **A dropped adventure contributes no scenes to R14**, so a
-definition that only that adventure referenced is reported `[R14]` as
-unreferenced — this is the deliberate answer, not an oversight. Fix the
-adventure and the `[R14]` disappears on its own; there is nothing else to do
-about it.
+go with it. **A dropped adventure contributes no references to R14**, so a
+template that only that adventure referenced is reported `[R14]` as
+unreferenced — this is the deliberate answer, not an oversight.
 
 `seed_character` has no referential rule — it references nothing else in the
 Campaign-Definition.
@@ -345,22 +413,28 @@ Every reported problem has the shape:
 
 - `[READ]` — the file could not be read, or is not valid JSON.
 - `[SCHEMA]` — the file parsed as JSON but failed a field check (§6).
-- `[R2]` … `[R16]` — the numbered referential rule that failed (§7). **R1 has
+- `[R2]` … `[R18]` — the numbered referential rule that failed (§7). **R1 has
   no tag of its own** — its failure is always reported as `[READ]` or
   `[SCHEMA]` against `campaign.json`. **R3 never appears here** — it is a
   CLI-level check, not a loader rule.
 
-**A rule that fails inside a scene names its adventure file** — a scene is not
-its own file, so the message is against `adventures/<id>.json` — and puts the
-scene id in the detail so the place in it can still be found.
+**Every rule about a template names `campaign.json`**, and puts the template
+id in the detail. **Every rule about a placement or a carry names the
+adventure file**, and puts the scene id in the detail.
 
 Example messages:
 
 ```
-adventures/the-sunken-mill.json: [R9] scene 'mill-approach': exit targets unknown scene 'under-whee'
-adventures/the-sunken-mill.json: [SCHEMA] scenes.1.truth.0: String should have at least 1 character
-campaign.json: [SCHEMA] Input should be a valid dictionary
-definitions/bog-lurker.json: [READ] Expecting ',' delimiter: line 8 column 3 (char 214)
+adventures/goblins-of-greenhollow.json: [R9] scene 'lair-maw': exit targets unknown scene 'under-whee'
+adventures/goblins-of-greenhollow.json: [R12] scene 'lair-hollow': unknown object template 'notched-cleavor'
+adventures/goblins-of-greenhollow.json: [R17] scene 'lair-hollow': carried template 'goblin' is not an item
+adventures/goblins-of-greenhollow.json: [R18] scene 'village-green': item placement 'bent-horseshoe' cannot carry
+campaign.json: [R12] fixture 'thorn-screen': check 1 bypassed_by entry 0 names unknown object template 'shepherds-knifr'
+campaign.json: [R13] duplicate object template id 'goblin'
+campaign.json: [R14] object template 'stolen-fleece' is not referenced by any scene
+campaign.json: [R15] object template 'zzz-key' duplicates the name 'Rusty Key'
+campaign.json: [R17] fixture 'thorn-screen': check 1 bypassed_by entry 0 'goblin' is not an item
+campaign.json: [SCHEMA] object_templates.0.creature.stat_block.max_hp: Input should be a valid integer
 ```
 
 Running `app content validate` checks every campaign and every version found
@@ -375,18 +449,20 @@ under the content root:
 
 Do not try to add these — they have no field:
 
-- **No items and no fixtures as declared entities.** A scene's occupants are
-  creatures only (`creatures[]`); loot and scenery are Story, narrated rather
-  than declared. *(Superseded in design by P1-D22 — object templates for items
-  and fixtures are ruled in scope — but the shipped schema has not changed yet,
-  so this remains true of the tree you are authoring today.)*
+- **No hit points and no armour class on an item or a fixture.** A fixture's
+  resistance is authored as a `checks[].dc`, never HP/AC.
+- **No weight, no value, no stack size, no slot** on any object template.
+- **No `consumable`, `quantity` or durability on `ItemTemplate`.** Quantity
+  lives on the placement (`count`).
+- **No `locked` / `open` state on `FixtureTemplate`.** A template is
+  immutable; state belongs to the instance, not the authored file.
 - **No level, no proficiency bonus, no skill list, no authored player
   attacks.** A monster's `to_hit` is already the complete bonus its author
   intends; every other check resolves on the raw ability modifier.
 - **No portrait field** on the seed character.
 - **No speed, no challenge rating** on a stat block.
 
-## 10. The two rules a generator gets wrong by default
+## 10. The rules a generator gets wrong by default
 
 **A scene is facts, intentions and consequences, never a script.** Write what
 is true (`truth`), what the creatures present want (`npc_intent`), and what
@@ -399,11 +475,16 @@ comparison.** There is no flag store in this system, so there is nothing to
 compare against. Write `"the bar has been broken, forced, or lifted from
 outside"`. Never write `"alarm_raised == false"` or anything resembling it.
 
+**A fixture's difficulty is an authored `dc`, never an improvised one.** The
+DM judges checks against the numbers `checks[].dc` and `checks[].bypassed_by`
+already give it; it never invents a target number, and it never decides at
+runtime that some item not listed in `bypassed_by` should count.
+
 ## 11. A worked example
 
 This is a minimal campaign, valid against every rule in §7. Reproduced
 verbatim — copy from it directly. It is illustrative only; it is not shipped
-as `backend/content/`. It is **three files** — the whole adventure, both its
+as `backend/content/`. It is **two files** — the whole adventure, both its
 scenes included, is one of them.
 
 `campaigns/hollow-reach/v1/campaign.json`
@@ -431,7 +512,58 @@ scenes included, is one of them.
     "max_hp": 9,
     "armour_class": 14,
     "inventory": ["a shortsword", "a coil of rope", "a tin lantern"]
-  }
+  },
+  "object_templates": [
+    {
+      "id": "bog-lurker",
+      "kind": "creature",
+      "name": "Bog Lurker",
+      "description": "A flat, mottled thing the length of a man, all mouth and patience, indistinguishable from silt until it moves.",
+      "disposition": "Ambush predator. Attacks anything that enters the water and retreats under it when badly hurt.",
+      "stat_block": {
+        "max_hp": 11,
+        "armour_class": 13,
+        "abilities": {
+          "strength": 14,
+          "dexterity": 13,
+          "constitution": 12,
+          "intelligence": 2,
+          "wisdom": 11,
+          "charisma": 4
+        },
+        "attacks": [
+          { "name": "Bite", "to_hit": 4, "damage": "1d6+2" }
+        ],
+        "traits": ["Cannot be seen under still water without a deliberate search."]
+      }
+    },
+    {
+      "id": "rusty-key",
+      "kind": "item",
+      "name": "Rusty Key",
+      "description": "A small iron key, pitted with rust, on a loop of waxed cord.",
+      "attacks": []
+    },
+    {
+      "id": "sunken-door",
+      "kind": "fixture",
+      "name": "Sunken Door",
+      "description": "A swollen wooden door set into the flooded wall, warped shut by the water.",
+      "checks": [
+        {
+          "action": "Force the swollen door with a shoulder",
+          "dc": 14,
+          "success": "The door gives way and the passage beyond stands open."
+        },
+        {
+          "action": "Turn the lock with a key that still fits it",
+          "dc": 8,
+          "success": "The lock turns without a sound and the door swings open.",
+          "bypassed_by": ["rusty-key"]
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -461,6 +593,9 @@ scenes included, is one of them.
           "discovered_by": "a Wisdom (Perception) check on the mud, or searching the bank"
         }
       ],
+      "placements": [
+        { "template": "rusty-key", "count": 1 }
+      ],
       "exits": [
         {
           "to": "mill-floor",
@@ -480,8 +615,9 @@ scenes included, is one of them.
       "consequences": [
         "Climbing to the dry grain chute puts the player out of the lurkers' reach."
       ],
-      "creatures": [
-        { "definition": "bog-lurker", "count": 2 }
+      "placements": [
+        { "template": "bog-lurker", "count": 2 },
+        { "template": "sunken-door", "count": 1 }
       ],
       "pressure": "The water is still rising; the chute will be the only dry footing within the hour."
     }
@@ -489,40 +625,14 @@ scenes included, is one of them.
 }
 ```
 
-`campaigns/hollow-reach/v1/definitions/bog-lurker.json`
-
-```json
-{
-  "id": "bog-lurker",
-  "name": "Bog Lurker",
-  "description": "A flat, mottled thing the length of a man, all mouth and patience, indistinguishable from silt until it moves.",
-  "disposition": "Ambush predator. Attacks anything that enters the water and retreats under it when badly hurt.",
-  "stat_block": {
-    "max_hp": 11,
-    "armour_class": 13,
-    "abilities": {
-      "strength": 14,
-      "dexterity": 13,
-      "constitution": 12,
-      "intelligence": 2,
-      "wisdom": 11,
-      "charisma": 4
-    },
-    "attacks": [
-      { "name": "Bite", "to_hit": 4, "damage": "1d6+2" }
-    ],
-    "traits": ["Cannot be seen under still water without a deliberate search."]
-  }
-}
-```
-
 Why it is valid: the two scene ids are unique across the campaign (R8);
 `mill-floor` is reachable from `mill-approach` (R11) and has no `exits`, so it
-is terminal (R10); `bog-lurker` is referenced by a scene (R14) and its name is
-unique (R15); no scene places a definition twice (R16); the omitted optional
-fields — `npc_intent`, `creatures`, `pressure` on `mill-approach`, and `exits`
-on `mill-floor` — take their defaults, which is legal and is how absence is
-expressed.
+is terminal (R10); every object template is referenced by a scene (R14) and
+its name is unique (R15); no scene places a template twice (R16);
+`sunken-door`'s second check is bypassed by `rusty-key`, an `item`-kind
+template (R17); the omitted optional fields — `npc_intent`, `placements`,
+`pressure` on `mill-approach`, and `exits` on `mill-floor` — take their
+defaults, which is legal and is how absence is expressed.
 
 ## 12. Authoring checklist
 
@@ -531,14 +641,22 @@ Run down this list before validating:
 - [ ] Every scene of every adventure is reachable from that adventure's
       `entry_scene` by following exits.
 - [ ] Every adventure has at least one scene with `exits: []`.
-- [ ] Every definition is referenced by at least one scene.
-- [ ] No scene places the same definition twice — use `count` instead.
-- [ ] Every definition's `name` is unique across the campaign, ignoring case.
+- [ ] Every object template is referenced by at least one placement, one
+      carry, or one `bypassed_by` entry.
+- [ ] No scene places the same template twice in `placements`, and no
+      placement carries the same template twice in `carries` — use `count`
+      instead.
+- [ ] Every object template's `name` is unique across the campaign, ignoring
+      case, across all three kinds.
 - [ ] Every scene id is unique across the whole campaign, not just its own
       adventure.
-- [ ] Every id (`campaign.id`, adventure/scene/definition ids) matches its own
-      filename stem (or, for a scene, is unique campaign-wide) and is
-      lowercase kebab-case.
+- [ ] Every `bypassed_by` entry names an `item`-kind template, never a
+      creature or a fixture.
+- [ ] Every `carries[].template` names an `item`-kind template; an `item`
+      placement never carries anything itself.
+- [ ] Every id (`campaign.id`, adventure/scene/template ids) matches its own
+      filename stem where it has one (or, for a scene or a template, is
+      unique campaign-wide) and is lowercase kebab-case.
 - [ ] Every prose field carries real text — no accidental whitespace-only
       string.
 - [ ] The player-class key is `character_class`, and the armour key is

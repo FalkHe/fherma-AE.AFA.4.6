@@ -1019,10 +1019,14 @@ Numbered, each provable or refutable without reading the implementation.
     rejecting constraint, all eighteen rules with their tags, and reproduces §5's
     worked example; it contains no reference to `Definition`, `definitions/`,
     `creatures[]` as a scene key or `load_definition`.
-35. `grep -ri "definitions/" backend/ docs/` returns nothing outside
-    `docs/roadmap/` (where history is allowed to name it), and
-    `docs/general/glossary.md` no longer carries the "still spells … `Definition`"
-    parenthetical.
+35. No file under `backend/` or `docs/` (outside `docs/roadmap/`, where history
+    is allowed to name it) treats `definitions/` as a live path — i.e. no code
+    builds or opens one, and no doc describes one as part of the current
+    layout. A sentence stating the directory no longer exists is not a
+    violation; a substring grep for the literal text `definitions/` is not the
+    right check, since the two-file layout's own documentation must say so.
+    Separately, `docs/general/glossary.md` no longer carries the "still spells
+    … `Definition`" parenthetical.
 
 ---
 

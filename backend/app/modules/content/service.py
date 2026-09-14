@@ -8,8 +8,8 @@ from app.modules.content.errors import ContentInvalidError, ContentNotFoundError
 from app.modules.content.schemas import (
     Adventure,
     Campaign,
-    Definition,
     LoadedCampaign,
+    ObjectTemplate,
     Scene,
 )
 
@@ -91,6 +91,27 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
             f"campaign.json: [R2] campaign id '{campaign.id}' does not match "
             f"directory '{campaign_id}'"
         )
+
+    # R13: an object template id appears at most once in campaign.object_templates.
+    # The first occurrence keeps the id; later ones are excluded from the result.
+    templates_by_id: dict[str, ObjectTemplate] = {}
+    for template in campaign.object_templates:
+        if template.id in templates_by_id:
+            errors.append(f"campaign.json: [R13] duplicate object template id '{template.id}'")
+            continue
+        templates_by_id[template.id] = template
+
+    # R15: template name unique, case-insensitively, across all kinds.
+    name_groups: dict[str, list[str]] = {}
+    for template_id in sorted(templates_by_id):
+        name_key = templates_by_id[template_id].name.strip().lower()
+        name_groups.setdefault(name_key, []).append(template_id)
+    for template_ids in name_groups.values():
+        for dup_id in template_ids[1:]:
+            errors.append(
+                f"campaign.json: [R15] object template '{dup_id}' duplicates the name "
+                f"'{templates_by_id[dup_id].name}'"
+            )
 
     seen: set[str] = set()
     duplicate_ids: set[str] = set()
@@ -205,57 +226,82 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
                     "reachable from entry_scene"
                 )
 
-    definitions_dir = base / "definitions"
-    definition_files_by_stem = {f.stem: f for f in definitions_dir.glob("*.json")}
-
-    referenced_definition_ids: set[str] = set()
+    # R12, R16, R17, R18: placements and carries in the adventure files.
+    referenced_template_ids: set[str] = set()
     for adventure_id, adventure in adventures_by_id.items():
         for scene in adventure.scenes:
             if scene_owner_by_id.get(scene.id) != adventure_id:
                 continue
             placement_ids: set[str] = set()
-            for placement in scene.creatures:
-                referenced_definition_ids.add(placement.definition)
-                if placement.definition not in definition_files_by_stem:
+            for placement in scene.placements:
+                referenced_template_ids.add(placement.template)
+                template = templates_by_id.get(placement.template)
+                if template is None:
                     errors.append(
                         f"adventures/{adventure_id}.json: [R12] scene '{scene.id}': "
-                        f"creature definition '{placement.definition}' not found"
+                        f"unknown object template '{placement.template}'"
                     )
-                if placement.definition in placement_ids:
+                elif placement.template in placement_ids:
                     errors.append(
                         f"adventures/{adventure_id}.json: [R16] scene '{scene.id}': "
-                        f"definition '{placement.definition}' placed more than once"
+                        f"template '{placement.template}' placed more than once"
                     )
-                placement_ids.add(placement.definition)
+                placement_ids.add(placement.template)
 
-    definitions_by_id: dict[str, Definition] = {}
-    for stem, path in definition_files_by_stem.items():
-        if stem not in referenced_definition_ids:
-            errors.append(f"definitions/{path.name}: [R14] definition not referenced by any scene")
+                if template is not None and template.kind == "item" and placement.carries:
+                    errors.append(
+                        f"adventures/{adventure_id}.json: [R18] scene '{scene.id}': "
+                        f"item placement '{placement.template}' cannot carry"
+                    )
+
+                carried_ids: set[str] = set()
+                for carried in placement.carries:
+                    referenced_template_ids.add(carried.template)
+                    carried_template = templates_by_id.get(carried.template)
+                    if carried_template is None:
+                        errors.append(
+                            f"adventures/{adventure_id}.json: [R12] scene '{scene.id}': "
+                            f"unknown object template '{carried.template}'"
+                        )
+                    elif carried_template.kind != "item":
+                        errors.append(
+                            f"adventures/{adventure_id}.json: [R17] scene '{scene.id}': "
+                            f"carried template '{carried.template}' is not an item"
+                        )
+                    elif carried.template in carried_ids:
+                        errors.append(
+                            f"adventures/{adventure_id}.json: [R16] scene '{scene.id}': "
+                            f"template '{carried.template}' carried more than once"
+                        )
+                    carried_ids.add(carried.template)
+
+    # R12, R14, R17: bypassed_by entries on fixture checks in campaign.json.
+    for template_id in sorted(templates_by_id):
+        template = templates_by_id[template_id]
+        if template.kind != "fixture":
             continue
-        definition, err = _load_json_model(path, Definition)
-        if err:
-            errors.append(f"definitions/{path.name}: {err}")
-            continue
-        assert isinstance(definition, Definition)
-        definitions_by_id[stem] = definition
+        for check_index, check in enumerate(template.checks):
+            for entry_index, entry_id in enumerate(check.bypassed_by):
+                referenced_template_ids.add(entry_id)
+                entry_template = templates_by_id.get(entry_id)
+                if entry_template is None:
+                    errors.append(
+                        f"campaign.json: [R12] fixture '{template.id}': check {check_index} "
+                        f"bypassed_by entry {entry_index} names unknown object template "
+                        f"'{entry_id}'"
+                    )
+                elif entry_template.kind != "item":
+                    errors.append(
+                        f"campaign.json: [R17] fixture '{template.id}': check {check_index} "
+                        f"bypassed_by entry {entry_index} '{entry_id}' is not an item"
+                    )
 
-    for stem, definition in definitions_by_id.items():
-        if definition.id != stem:
+    # R14: every declared template is referenced somewhere.
+    for template_id in sorted(templates_by_id):
+        if template_id not in referenced_template_ids:
             errors.append(
-                f"definitions/{stem}.json: [R13] definition id '{definition.id}' "
-                f"does not match filename '{stem}'"
-            )
-
-    name_groups: dict[str, list[str]] = {}
-    for stem in sorted(definitions_by_id):
-        name_key = definitions_by_id[stem].name.strip().lower()
-        name_groups.setdefault(name_key, []).append(stem)
-    for stems in name_groups.values():
-        for dup_stem in stems[1:]:
-            errors.append(
-                f"definitions/{dup_stem}.json: [R15] duplicate definition name "
-                f"'{definitions_by_id[dup_stem].name}'"
+                f"campaign.json: [R14] object template '{template_id}' is not "
+                "referenced by any scene"
             )
 
     if errors:
@@ -266,7 +312,7 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
         version=version,
         adventures={aid: adventures_by_id[aid] for aid in dedup_adventure_ids},
         scenes=scenes_by_id,
-        definitions=definitions_by_id,
+        object_templates=templates_by_id,
     )
 
 
@@ -281,16 +327,16 @@ def load_scene(campaign_id: str, version: str, scene_id: str) -> Scene:
     return loaded.scenes[scene_id]
 
 
-def load_definition(campaign_id: str, version: str, definition_id: str) -> Definition:
+def load_object_template(campaign_id: str, version: str, template_id: str) -> ObjectTemplate:
     if not _is_content_id(campaign_id) or not VERSION_PATTERN.match(version):
         raise ContentNotFoundError(f"campaigns/{campaign_id}/{version}")
-    if not _is_content_id(definition_id):
+    if not _is_content_id(template_id):
         raise ContentNotFoundError(
-            f"campaigns/{campaign_id}/{version}/definitions/{definition_id}.json"
+            f"campaigns/{campaign_id}/{version}/object-template/{template_id}"
         )
     loaded = load_campaign(campaign_id, version)
-    if definition_id not in loaded.definitions:
+    if template_id not in loaded.object_templates:
         raise ContentNotFoundError(
-            f"campaigns/{campaign_id}/{version}/definitions/{definition_id}.json"
+            f"campaigns/{campaign_id}/{version}/object-template/{template_id}"
         )
-    return loaded.definitions[definition_id]
+    return loaded.object_templates[template_id]

@@ -47,11 +47,6 @@ whole, where no ambiguity is possible.
   carries exactly the fields the mechanics need to resolve interactions against
   it. Template and instance are different things with different lifetimes:
   *creature* is the instance's word, *object template* is the blueprint's.
-  (The shipped schema still spells the creature-only ancestor of this entity
-  `Definition`; the rename and the item/fixture kinds are pinned by P1-D22 and
-  P1-D23 in
-  [phase-01/shared-knowledge.md](../roadmap/Stage-01/phase-01/shared-knowledge.md)
-  and land with the schema change.)
 - **Content version** — pinned-revision jargon: the revision of a campaign a
   playthrough is pinned to. A campaign is extended by publishing a new version,
   never by editing one in place.

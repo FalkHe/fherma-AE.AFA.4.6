@@ -1,20 +1,30 @@
 """Fixtures and content-tree builders shared by `tests/content/`.
 
-Mode-A note (phase-1 shared-knowledge.md §8, P1-D13): `app.modules.content`
-does not exist yet, so every test in this package fails to collect until
-step 1.1 lands `backend/app/modules/content/`. That is expected.
+Mode-A note (step-1.4.md, the object-template rework): this rewrites the
+step-1.1/1.3 fixtures for the new two-file layout and the `ObjectTemplate`
+union. Every test in this package is expected to fail or error until
+backend-dev lands the schema/service rework -- that is correct mode-A
+behaviour, not a defect.
 
-**P1-D20 rework.** An adventure is one file, its scenes inline
-(`Adventure.scenes: list[Scene]`). There is no `scenes/` directory and no
-per-scene file: `build_version_dir` writes only `campaign.json`,
-`adventures/<id>.json` and `definitions/<id>.json`.
+**The two-file layout (step-1.4.md §4).** There is no `definitions/`
+directory any more: `campaign.json` carries `object_templates[]` and a scene
+carries `placements[]`. `build_version_dir` therefore writes only
+`campaign.json` and `adventures/<id>.json`.
 
-Nothing here is committed as a fixture corpus (§8): `build_version_dir`
-writes the §4.1 worked example (or a deliberately broken variant of it) into
-`tmp_path` for the duration of one test, and `content_root` repoints
-`service.CONTENT_ROOT` there via `monkeypatch.setattr` -- never
+Nothing here is committed as a fixture corpus: `build_version_dir` writes a
+worked example (or a deliberately broken variant of it) into `tmp_path` for
+the duration of one test, and `content_root` repoints `service.CONTENT_ROOT`
+there via `monkeypatch.setattr` -- never
 `from app.modules.content.service import CONTENT_ROOT`, which would rebind
-the value and make the monkeypatch silently miss (D10 / phase-1 §5.1).
+the value and make the monkeypatch silently miss (D10 / shared-knowledge.md
+§5.1).
+
+**The worked fixture campaign, `hollow-reach`.** One creature template
+(`bog-lurker`), one item template (`rusty-key`) and one fixture template
+(`sunken-door`) -- enough to exercise all three `ObjectTemplate` kinds, a
+creature placement that carries, a bare item placement, and a
+`bypassed_by` chain, without trying to be the Greenhollow worked example
+(which is step-1.4.md §5's job and belongs to `test_shipped_tree.py`).
 """
 
 import copy
@@ -28,6 +38,78 @@ from app.modules.content import service
 CAMPAIGN_ID = "hollow-reach"
 VERSION = "v1"
 
+ABILITIES: dict = {
+    "strength": 9,
+    "dexterity": 16,
+    "constitution": 12,
+    "intelligence": 11,
+    "wisdom": 13,
+    "charisma": 14,
+}
+
+SEED_CHARACTER: dict = {
+    "name": "Perrin Ashdown",
+    "race": "Halfling",
+    "character_class": "Rogue",
+    "background": "A river-barge thief who owes the warden a favour and would rather not.",
+    "appearance": (
+        "Small, weather-browned, with a river-knotted braid and a coat two sizes too large."
+    ),
+    "abilities": ABILITIES,
+    "max_hp": 9,
+    "armour_class": 14,
+    "inventory": ["a shortsword", "a coil of rope", "a tin lantern"],
+}
+
+CREATURE_TEMPLATE: dict = {
+    "id": "bog-lurker",
+    "kind": "creature",
+    "name": "Bog Lurker",
+    "description": (
+        "A flat, mottled thing the length of a man, all mouth and patience, "
+        "indistinguishable from silt until it moves."
+    ),
+    "disposition": (
+        "Ambush predator. Attacks anything that enters the water and "
+        "retreats under it when badly hurt."
+    ),
+    "stat_block": {
+        "max_hp": 11,
+        "armour_class": 13,
+        "abilities": ABILITIES,
+        "attacks": [{"name": "Bite", "to_hit": 4, "damage": "1d6+2"}],
+        "traits": ["Cannot be seen under still water without a deliberate search."],
+    },
+}
+
+ITEM_TEMPLATE: dict = {
+    "id": "rusty-key",
+    "kind": "item",
+    "name": "Rusty Key",
+    "description": "A small iron key, pitted with rust, on a loop of waxed cord.",
+    "attacks": [],
+}
+
+FIXTURE_TEMPLATE: dict = {
+    "id": "sunken-door",
+    "kind": "fixture",
+    "name": "Sunken Door",
+    "description": "A swollen wooden door set into the flooded wall, warped shut by the water.",
+    "checks": [
+        {
+            "action": "Force the swollen door with a shoulder",
+            "dc": 14,
+            "success": "The door gives way and the passage beyond stands open.",
+        },
+        {
+            "action": "Turn the lock with a key that still fits it",
+            "dc": 8,
+            "success": "The lock turns without a sound and the door swings open.",
+            "bypassed_by": ["rusty-key"],
+        },
+    ],
+}
+
 CAMPAIGN: dict = {
     "id": CAMPAIGN_ID,
     "title": "Hollow Reach",
@@ -35,26 +117,8 @@ CAMPAIGN: dict = {
         "A flooded valley, a mill that stopped turning, and a warden who will not say why."
     ),
     "adventures": ["the-sunken-mill"],
-    "seed_character": {
-        "name": "Perrin Ashdown",
-        "race": "Halfling",
-        "character_class": "Rogue",
-        "background": ("A river-barge thief who owes the warden a favour and would rather not."),
-        "appearance": (
-            "Small, weather-browned, with a river-knotted braid and a coat two sizes too large."
-        ),
-        "abilities": {
-            "strength": 9,
-            "dexterity": 16,
-            "constitution": 12,
-            "intelligence": 11,
-            "wisdom": 13,
-            "charisma": 14,
-        },
-        "max_hp": 9,
-        "armour_class": 14,
-        "inventory": ["a shortsword", "a coil of rope", "a tin lantern"],
-    },
+    "seed_character": SEED_CHARACTER,
+    "object_templates": [CREATURE_TEMPLATE, ITEM_TEMPLATE, FIXTURE_TEMPLATE],
 }
 
 SCENE_APPROACH: dict = {
@@ -72,6 +136,7 @@ SCENE_APPROACH: dict = {
             "discovered_by": "a Wisdom (Perception) check on the mud, or searching the bank",
         }
     ],
+    "placements": [{"template": "rusty-key", "count": 1}],
     "exits": [
         {
             "to": "mill-floor",
@@ -90,7 +155,14 @@ SCENE_FLOOR: dict = {
     ],
     "npc_intent": "The lurkers want to drag anything warm under the water and wait.",
     "consequences": ["Climbing to the dry grain chute puts the player out of the lurkers' reach."],
-    "creatures": [{"definition": "bog-lurker", "count": 2}],
+    "placements": [
+        {
+            "template": "bog-lurker",
+            "count": 2,
+            "carries": [{"template": "rusty-key", "count": 1}],
+        },
+        {"template": "sunken-door", "count": 1},
+    ],
     "pressure": (
         "The water is still rising; the chute will be the only dry footing within the hour."
     ),
@@ -106,33 +178,6 @@ ADVENTURE: dict = {
     ),
     "entry_scene": "mill-approach",
     "scenes": [SCENE_APPROACH, SCENE_FLOOR],
-}
-
-DEFINITION: dict = {
-    "id": "bog-lurker",
-    "name": "Bog Lurker",
-    "description": (
-        "A flat, mottled thing the length of a man, all mouth and patience, "
-        "indistinguishable from silt until it moves."
-    ),
-    "disposition": (
-        "Ambush predator. Attacks anything that enters the water and "
-        "retreats under it when badly hurt."
-    ),
-    "stat_block": {
-        "max_hp": 11,
-        "armour_class": 13,
-        "abilities": {
-            "strength": 14,
-            "dexterity": 13,
-            "constitution": 12,
-            "intelligence": 2,
-            "wisdom": 11,
-            "charisma": 4,
-        },
-        "attacks": [{"name": "Bite", "to_hit": 4, "damage": "1d6+2"}],
-        "traits": ["Cannot be seen under still water without a deliberate search."],
-    },
 }
 
 
@@ -160,27 +205,32 @@ def scene_floor(**overrides) -> dict:
     return data
 
 
-def definition(**overrides) -> dict:
-    data = copy.deepcopy(DEFINITION)
+def creature_template(**overrides) -> dict:
+    data = copy.deepcopy(CREATURE_TEMPLATE)
+    data.update(overrides)
+    return data
+
+
+def item_template(**overrides) -> dict:
+    data = copy.deepcopy(ITEM_TEMPLATE)
+    data.update(overrides)
+    return data
+
+
+def fixture_template(**overrides) -> dict:
+    data = copy.deepcopy(FIXTURE_TEMPLATE)
     data.update(overrides)
     return data
 
 
 def seed_character(**overrides) -> dict:
-    data = copy.deepcopy(CAMPAIGN["seed_character"])
+    data = copy.deepcopy(SEED_CHARACTER)
     data.update(overrides)
     return data
 
 
 def abilities(**overrides) -> dict:
-    data = {
-        "strength": 9,
-        "dexterity": 16,
-        "constitution": 12,
-        "intelligence": 11,
-        "wisdom": 13,
-        "charisma": 14,
-    }
+    data = copy.deepcopy(ABILITIES)
     data.update(overrides)
     return data
 
@@ -198,31 +248,34 @@ def build_version_dir(
     campaign: dict | None = CAMPAIGN,  # noqa: F811 -- shadowing the factory is intentional here
     adventures: dict[str, dict] | None = None,
     scenes: dict[str, dict] | None = None,
-    definitions: dict[str, dict] | None = None,
+    object_templates: list[dict] | None = None,
 ) -> Path:
-    """Writes the phase contract §4.1 worked example (or the given overrides)
-    under `root/campaigns/<campaign_id>/<version>/` and returns that
-    directory.
+    """Writes the fixture campaign (or the given overrides) under
+    `root/campaigns/<campaign_id>/<version>/` and returns that directory.
 
-    P1-D20: there is no `scenes/` directory any more -- a scene is an element
-    of its adventure's `scenes` list. `scenes` here is therefore sugar over
-    the single default adventure: pass a `dict[scene_id, scene_payload]` to
-    override the *default* adventure's inline `scenes` list (order follows
-    dict insertion order), or pass `adventures` directly when a test needs
-    more than one adventure or a scene list that is not a simple override.
-    `adventures` takes precedence over `scenes` when both are given.
+    **step-1.4.md §4: two kinds of file.** There is no `definitions/`
+    directory: `object_templates` overrides `campaign["object_templates"]`
+    directly (default: the three templates above), and there is no separate
+    per-template file to write.
+
+    `scenes` is sugar over the single default adventure: pass a
+    `dict[scene_id, scene_payload]` to override the *default* adventure's
+    inline `scenes` list (order follows dict insertion order), or pass
+    `adventures` directly when a test needs more than one adventure or a
+    scene list that is not a simple override. `adventures` takes precedence
+    over `scenes` when both are given.
 
     Pass `campaign=None` to write no `campaign.json` at all (R1); pass
-    `definitions={}` / `adventures={}` to write none of that kind.
-    `scenes={}` yields an adventure with an empty `scenes` list -- schema
-    invalid by itself (`Adventure.scenes` has `min_length=1`), useful for a
-    test that wants exactly that.
+    `object_templates=[]` to write a campaign with no templates (schema
+    invalid by itself, per criterion 11 -- useful for a test that wants
+    exactly that); pass `adventures={}` to write none.
     """
     if adventures is None:
         scene_list = list(scenes.values()) if scenes is not None else [SCENE_APPROACH, SCENE_FLOOR]
         adventures = {"the-sunken-mill": adventure(scenes=scene_list)}
-    if definitions is None:
-        definitions = {"bog-lurker": DEFINITION}
+
+    if campaign is not None and object_templates is not None:
+        campaign = {**campaign, "object_templates": object_templates}
 
     version_dir = root / "campaigns" / campaign_id / version
     version_dir.mkdir(parents=True, exist_ok=True)
@@ -230,8 +283,6 @@ def build_version_dir(
         write_json(version_dir / "campaign.json", campaign)
     for adventure_id, data in adventures.items():
         write_json(version_dir / "adventures" / f"{adventure_id}.json", data)
-    for definition_id, data in definitions.items():
-        write_json(version_dir / "definitions" / f"{definition_id}.json", data)
     return version_dir
 
 
