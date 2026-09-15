@@ -24,6 +24,19 @@ class ErrorCode(StrEnum):
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    LLM_AUTH = "LLM_AUTH"
+    LLM_BUDGET = "LLM_BUDGET"
+    LLM_RATE_LIMIT = "LLM_RATE_LIMIT"
+    LLM_TIMEOUT = "LLM_TIMEOUT"
+    LLM_REFUSED = "LLM_REFUSED"
+    LLM_UNAVAILABLE = "LLM_UNAVAILABLE"
+    LLM_MALFORMED = "LLM_MALFORMED"
+    LLM_BAD_REQUEST = "LLM_BAD_REQUEST"
+
+
+# The player sees one generic line regardless of which LLM failure occurred;
+# the code behind it is for us, not for them (← D2).
+LLM_FAILURE_MESSAGE = "The AI service could not complete that request."
 
 
 # status, message per code -- the complete table of step-0.1.md §5.1.
@@ -37,6 +50,14 @@ _ERROR_INFO: dict[ErrorCode, tuple[int, str]] = {
     ErrorCode.NOT_FOUND: (404, "Resource not found."),
     ErrorCode.METHOD_NOT_ALLOWED: (405, "Method not allowed."),
     ErrorCode.INTERNAL_ERROR: (500, "An unexpected error occurred."),
+    ErrorCode.LLM_AUTH: (502, LLM_FAILURE_MESSAGE),
+    ErrorCode.LLM_BUDGET: (502, LLM_FAILURE_MESSAGE),
+    ErrorCode.LLM_RATE_LIMIT: (502, LLM_FAILURE_MESSAGE),
+    ErrorCode.LLM_TIMEOUT: (502, LLM_FAILURE_MESSAGE),
+    ErrorCode.LLM_REFUSED: (502, LLM_FAILURE_MESSAGE),
+    ErrorCode.LLM_UNAVAILABLE: (502, LLM_FAILURE_MESSAGE),
+    ErrorCode.LLM_MALFORMED: (502, LLM_FAILURE_MESSAGE),
+    ErrorCode.LLM_BAD_REQUEST: (502, LLM_FAILURE_MESSAGE),
 }
 
 _HTTP_EXCEPTION_CODES: dict[int, ErrorCode] = {
@@ -69,6 +90,23 @@ def _clear_session_cookie(response: Response) -> None:
 
 
 def register_error_handlers(app: FastAPI) -> None:
+    # Function-local: core/llm/errors.py imports ErrorCode from this module
+    # at module scope, so a module-scope import here would be a cycle.
+    from app.core.llm.errors import LlmError
+
+    @app.exception_handler(LlmError)
+    async def _handle_llm_error(request: Request, exc: LlmError) -> JSONResponse:
+        # `LlmConfigurationError` (sprint 01) has no wire `.code`: it fires
+        # before any client is built, so it is an operator fault (a missing
+        # server-side key), not something the caller did - it gets the
+        # generic 500 envelope rather than one of the eight LLM_* codes, and
+        # rather than crashing this handler. Expressed once, here, so any
+        # future `LlmError` subclass that forgets to set `.code` degrades
+        # the same way instead of raising `AttributeError`.
+        code = getattr(exc, "code", ErrorCode.INTERNAL_ERROR)
+        status_code, message = _ERROR_INFO[code]
+        return JSONResponse(status_code=status_code, content=_envelope(code, message, None))
+
     @app.exception_handler(ApiError)
     async def _handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
         response = JSONResponse(
