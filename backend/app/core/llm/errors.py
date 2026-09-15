@@ -44,15 +44,33 @@ class LlmError(Exception):
     """Base for every LLM-access failure.
 
     `code` and `retryable` are class attributes set by each subclass below.
+    Both are left as bare annotations, deliberately without a default: a
+    subclass that forgets one is a bug to surface, not to paper over here.
+    The tolerant read belongs at the call site (sprint 02's `code` fix at
+    the FastAPI handler in `app/core/errors.py` uses
+    `getattr(exc, "code", ErrorCode.INTERNAL_ERROR)`; sprint 03's retry
+    loop does the equivalent for `.retryable`) - not baked into the base
+    class, which would silently hide the same mistake for every future
+    reader of this file.
+
     `str(exc)` is always the generic `LLM_FAILURE_MESSAGE` line (← D2); the
     real provider text, if any, lives in `.provider_message` for logs only.
+    `.retry_after_seconds` carries the provider's `Retry-After` hint, in
+    seconds, when one was present on the underlying SDK exception; `None`
+    otherwise.
     """
 
     code: ErrorCode
     retryable: bool
 
-    def __init__(self, provider_message: str | None = None) -> None:
+    def __init__(
+        self,
+        provider_message: str | None = None,
+        *,
+        retry_after_seconds: float | None = None,
+    ) -> None:
         self.provider_message = provider_message
+        self.retry_after_seconds = retry_after_seconds
         super().__init__(LLM_FAILURE_MESSAGE)
 
 
@@ -60,11 +78,15 @@ class LlmConfigurationError(LlmError):
     """Raised when the seam is misconfigured, before any client is built.
 
     Unchanged from sprint 01: no `code`, its own message naming the env
-    var, not the generic line.
+    var, not the generic line. Sprint 03 adds `retryable = False` and
+    `retry_after_seconds = None`: this is the one failure a retry loop asks
+    about before any network call, so it must never crash that question.
     """
 
     def __init__(self, message: str = "OPENROUTER_API_KEY is not set.") -> None:
         self.provider_message = None
+        self.retryable = False
+        self.retry_after_seconds = None
         Exception.__init__(self, message)
 
 
@@ -147,6 +169,25 @@ def _provider_message_of(exc: Exception) -> str | None:
     return _redact(raw)[:_PROVIDER_MESSAGE_MAX_LEN] or None
 
 
+def _retry_after_of(exc: Exception) -> float | None:
+    """Recover the provider's `Retry-After` hint, in seconds, from an SDK
+    exception's `.headers` - present on `OpenRouterError` only. `None`
+    covers every way this can be absent or unusable: no `.headers`
+    attribute, a `None` headers object, no `retry-after` entry, or a value
+    that is not a bare number (an HTTP-date, for instance) - never raises.
+    """
+    headers = getattr(exc, "headers", None)
+    if headers is None:
+        return None
+    value = headers.get("retry-after")
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _classify_status_code(status_code: int) -> type[LlmError]:
     exact = _STATUS_CODE_CLASSES.get(status_code)
     if exact is not None:
@@ -166,7 +207,7 @@ def classify(exc: Exception) -> LlmError | None:
 
     if isinstance(exc, OpenRouterError):
         cls = _classify_status_code(exc.status_code)
-        return cls(_provider_message_of(exc))
+        return cls(_provider_message_of(exc), retry_after_seconds=_retry_after_of(exc))
 
     if isinstance(exc, HttpxTimeoutException):
         return LlmTimeoutError(_provider_message_of(exc))

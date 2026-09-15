@@ -12,14 +12,28 @@ real in the ordering test, since that behaviour is this work item's own.
 
 Never touches the network; not one of the qa-owned filenames
 (`test_errors.py` / `test_service.py` / `test_commands.py`).
+
+Sprint 03 WI3 wraps `chat()`/`chat_stream()` in `retry.call_with_retry()`/
+`stream_with_retry()`, so a classified error that happens to be retryable
+(e.g. `LlmUnavailableError` below) is now retried underneath these tests
+too, not just raised once. `_no_real_sleep` (autouse) stubs `retry._sleep`
+for the whole module so that retrying never costs this suite wall-clock
+time - the retry *count* itself is qa's `test_retry.py`/`test_commands.py`
+to assert, not this file's.
 """
 
 import openrouter
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
 
+from app.core.llm import retry as llm_retry
 from app.core.llm import service as llm_service
 from app.core.llm.errors import LlmRefusedError, LlmUnavailableError
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sleep(monkeypatch):
+    monkeypatch.setattr(llm_retry, "_sleep", lambda seconds: None)
 
 
 class _ForeignError(Exception):
