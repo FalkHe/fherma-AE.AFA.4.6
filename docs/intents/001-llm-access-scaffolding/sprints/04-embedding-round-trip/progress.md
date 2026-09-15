@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-15
 updated: 2026-09-15
-stage: draft
+stage: done
 ---
 # Progress: Sprint 04
 
@@ -28,3 +28,7 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: approved — AC1–AC5 pass, D1 and D3 hold, no scope creep. Gates clean, 348 passed in 2.88s.
+Reuse confirmed structurally: `errors.py` and `retry.py` are absent from the diff, and request counts show 3 attempts for a retryable class, 1 for a non-retryable one and for the width mismatch. AC5 is asserted on the serialised request body, not on call kwargs.
+Verifier mutation-tested the cost fix (plain `.6f` turns exactly one test red) and disclosed briefly overwriting a working-tree file during a regression check; sprint lead re-verified the tree clean and the suite green afterwards.
+Approval withheld — author and reviewer are the same account (note #67).
