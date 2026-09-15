@@ -64,7 +64,14 @@ def _delay_before_next(err: LlmError, attempt: int, *, backoff_base: float) -> f
     retry_after = getattr(err, "retry_after_seconds", None)
     if retry_after is not None:
         return min(retry_after, MAX_RETRY_AFTER_SECONDS)
-    return backoff_base * 2 ** (attempt - 1) * (0.5 + 0.5 * _random())
+    computed = backoff_base * 2 ** (attempt - 1) * (0.5 + 0.5 * _random())
+    # `LLM_RETRY_BACKOFF_SECONDS` and `llm_retry_attempts` are both
+    # operator-configurable, so the exponent is not bounded either - without
+    # this clamp a high configured base could reproduce the multi-minute
+    # hang this sprint exists to prevent. Same ceiling a provider-supplied
+    # `Retry-After` gets above: the promise to the player is "no single
+    # retry wait exceeds MAX_RETRY_AFTER_SECONDS", regardless of source.
+    return min(computed, MAX_RETRY_AFTER_SECONDS)
 
 
 def _log_attempt_and_should_retry(err: LlmError, *, label: str, attempt: int) -> bool:

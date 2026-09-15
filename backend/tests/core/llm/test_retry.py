@@ -306,7 +306,7 @@ class TestAC5NoSleepingRetryAfterWinsBackoffIsBounded:
 
         assert sleep_calls == [retry_module.MAX_RETRY_AFTER_SECONDS]
 
-    def test_ac5_computed_backoff_delays_grow_and_stay_within_the_cap(
+    def test_ac5_computed_backoff_delays_grow_then_are_clamped_at_the_cap(
         self, sleep_calls, configure_retry, monkeypatch
     ):
         # ← AC5: no `Retry-After` this time, so the delays are the computed
@@ -316,9 +316,13 @@ class TestAC5NoSleepingRetryAfterWinsBackoffIsBounded:
         # criterion actually promises is that the seam is `_random` (so a
         # test can remove the randomness), that nothing here ever really
         # sleeps, and that every delay obeys the same cap a Retry-After
-        # value does.
+        # value does. A high configured backoff base is required to prove
+        # that: it makes the *unclamped* formula exceed
+        # `MAX_RETRY_AFTER_SECONDS` from the second delay onward, so this
+        # only passes because the computed delay is actually clamped, not
+        # because a small base happens to stay under the cap on its own.
         monkeypatch.setattr(retry_module, "_random", lambda: 0.0)
-        configure_retry(attempts=4, backoff=1.0)
+        configure_retry(attempts=5, backoff=50.0)
 
         def operation():
             raise LlmUnavailableError()
@@ -326,7 +330,9 @@ class TestAC5NoSleepingRetryAfterWinsBackoffIsBounded:
         with pytest.raises(LlmUnavailableError):
             retry_module.call_with_retry(operation, label="chat")
 
-        assert len(sleep_calls) == 3
+        # unclamped this would be [25.0, 50.0, 100.0, 200.0]: growth is
+        # real for the first delay, then every later one is capped.
+        assert sleep_calls == [25.0, 30.0, 30.0, 30.0]
         assert all(0 <= delay <= retry_module.MAX_RETRY_AFTER_SECONDS for delay in sleep_calls)
         assert sleep_calls == sorted(sleep_calls)
 

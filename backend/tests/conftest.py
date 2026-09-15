@@ -23,6 +23,7 @@ os.environ["OPENROUTER_API_KEY"] = "test-key"
 os.environ["CHAT_MODEL"] = "test/model"
 
 import pytest  # noqa: E402
+import structlog  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.core.settings import get_settings  # noqa: E402
@@ -31,6 +32,30 @@ get_settings.cache_clear()
 
 from app.core.db import get_db_session  # noqa: E402
 from app.main import create_app  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_structlog_after_every_test():
+    """Suite-wide guard against the structlog leak `configure_logging()`
+    (`app/core/logging.py`) can cause: it binds structlog's
+    `PrintLoggerFactory` to *that test's* `capsys`-provided `sys.stderr`
+    object, which pytest closes at teardown. Any later test that logs
+    through a stale binding either crashes (`ValueError: I/O operation on
+    closed file`) or silently writes to the wrong buffer - and which test
+    counts as "later" depends on collection order, which pytest does not
+    guarantee.
+
+    Autouse and rooted here, not in the individual files that happen to
+    call `configure_logging()` (e.g. `tests/core/test_error_envelope.py`,
+    `tests/core/test_llm_cli_wiring.py`) or a subdirectory `conftest.py`
+    (`tests/core/llm/`): a fix that lives next to only some callers is only
+    as safe as the next person remembering to copy it into every new file
+    that reaches `configure_logging()`. Resetting once here, for the whole
+    suite, makes the leak structurally impossible instead of merely guarded
+    against in the files someone already thought to protect."""
+    yield
+    structlog.reset_defaults()
+
 
 # Mirrors the env vars above; tests assert cookie/CORS attributes against
 # these rather than against magic numbers scattered through the suite.
