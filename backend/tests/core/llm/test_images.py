@@ -181,9 +181,7 @@ class TestImageResultRoundTrip:
     def test_media_type_present_on_the_response_is_used(self, monkeypatch):
         _stub_gateway(
             monkeypatch,
-            lambda request: httpx.Response(
-                200, json=_image_body(media_type="image/svg+xml")
-            ),
+            lambda request: httpx.Response(200, json=_image_body(media_type="image/svg+xml")),
         )
 
         result = llm_service.generate_image("a prompt")
@@ -258,9 +256,7 @@ class TestAC5RaisesNeverSubstitutes:
     """Nothing in this function may return a placeholder image: every
     failure mode raises an `LlmError` instead (← AC5)."""
 
-    def test_blank_api_key_raises_configuration_error_before_any_network_call(
-        self, monkeypatch
-    ):
+    def test_blank_api_key_raises_configuration_error_before_any_network_call(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "")
         get_settings.cache_clear()
 
@@ -298,18 +294,14 @@ class TestAC5RaisesNeverSubstitutes:
 
         assert calls["count"] == retry_module.MALFORMED_MAX_ATTEMPTS
 
-    def test_unparseable_b64_json_raises_malformed_not_a_foreign_binascii_error(
-        self, monkeypatch
-    ):
+    def test_unparseable_b64_json_raises_malformed_not_a_foreign_binascii_error(self, monkeypatch):
         # ← the trap the research flagged: `binascii.Error` is otherwise
         # unclassified and would escape as a foreign exception.
         calls = {"count": 0}
 
         def handler(request):
             calls["count"] += 1
-            return httpx.Response(
-                200, json=_image_body(data=[{"b64_json": "not-valid-base64!!!"}])
-            )
+            return httpx.Response(200, json=_image_body(data=[{"b64_json": "not-valid-base64!!!"}]))
 
         _stub_gateway(monkeypatch, handler)
 
