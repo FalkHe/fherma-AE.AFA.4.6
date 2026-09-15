@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-15
 updated: 2026-09-15
-stage: draft
+stage: done
 ---
 # Progress: Sprint 02
 
@@ -26,3 +26,6 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: approved — AC1–AC6 pass, D2 honoured, D6 correctly absent, no scope creep. Gates clean, 261 passed. Verifier mutation-tested the defences: a no-op `_redact` and a removed blank-key guard each turned their own test red.
+One latent defect found and fixed in-round: the `LlmError` handler crashed on an error without a `code` (`LlmConfigurationError`), degrading to 500. Now falls back to `INTERNAL_ERROR`; 262 passed.
+Approval withheld deliberately — author and reviewer are the same account, so the review is a comment (note #54).

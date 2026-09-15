@@ -12,7 +12,7 @@ Sprint outcomes, dependency-ordered. Status: `open | running | done`.
 | # | Outcome (one verifiable statement) | Depends on | Issue | Status |
 |---|---|---|---|---|
 | 01 | `app llm chat "<prompt>"` answers from the configured OpenRouter chat model and prints that call's prompt/completion tokens and its USD cost | – | #1 | done |
-| 02 | Every gateway failure the seam can meet surfaces as its own domain code behind one generic failure line, the provider's own wording only under `--details` | 01 | #2 | running |
+| 02 | Every gateway failure the seam can meet surfaces as its own domain code behind one generic failure line, the provider's own wording only under `--details` | 01 | #2 | done |
 | 03 | A retryable failure is retried with backoff — each attempt visible in the log — and the failure line appears only once the attempts are spent | 02 | #3 | open |
 | 04 | `app llm embed "<text>"` returns a vector of `EMBEDDING_DIMENSIONS` values together with that call's token count and USD cost | 02 | #4 | open |
 | 05 | `app llm image "<prompt>" --out <file>` writes a portrait PNG that opens, and prints that call's USD cost | 02 | #5 | open |
