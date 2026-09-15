@@ -18,7 +18,9 @@ trail, not a description of the current state.
 
 ## Modules
 
-*None yet — the first module doc lands with the first subsystem.*
+| Doc | Contents |
+|---|---|
+| [modules/content.md](modules/content.md) | The adventure-content schema, its directory layout and versioning, and the authoring guide |
 
 ## Roadmap
 

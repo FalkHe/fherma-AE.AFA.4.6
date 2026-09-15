@@ -5,42 +5,44 @@ phase: 1
 step: 1.3
 status: spec
 created: 2026-09-11
+revised: 2026-09-11
 human_in_the_loop: true
 ---
 
 # Step 1.3 — The first campaign
 
-Author the campaign the game ships with — one campaign, one adventure, at least
-three scenes, its definitions and a seed player character — **from
-`docs/modules/content.md` alone**, and prove the shipped tree loads and
-validates.
+**In the P1-D20 rework this step is a mechanical migration, not an authoring
+step.** `greenhollow/v1` is already authored, already owner-accepted and already
+in the tree. This pass folds each `scenes/<id>.json` body into the adventure's
+`scenes` array, deletes those files and the `scenes/` directory, and proves the
+re-shaped tree loads and validates. **Not one word of prose changes.** §3 is the
+binding rule for how.
 
-**This step is dispatched in two halves, with different reading lists (§9).**
+The step's original purpose — author the shipped campaign from
+`docs/modules/content.md` alone and let that falsify the guide — was served and
+passed in the first pass. It is recorded here because it is what the step means
+the *next* time a campaign is authored; it is not re-run now (§3, criteria 21
+and 23).
 
-- The **authoring half** reads `step-1.3.md` and `docs/modules/content.md`, and
-  nothing else. It does **not** read `shared-knowledge.md` and does **not** read
-  `backend/app/modules/content/`. Everything it needs that the guide does not
-  carry is in §4 of this file.
-- The **QA half** reads `step-1.3.md` and
-  [`shared-knowledge.md`](shared-knowledge.md), the binding phase contract, and
-  may read anything.
+**Human in the loop, already satisfied.** The owner read and accepted this
+campaign's prose in the first pass. Because the migration changes no prose, that
+acceptance carries; criterion 23 is closed, not re-measured.
 
-§3 explains why the split is structural rather than a request.
-
-**Human in the loop.** The owner has chosen the subject (§4). The owner reads
-the finished prose and accepts or rejects it before the step is done. No agent
-judges prose quality, and nothing in the system validates it.
-
-**Depends on steps 1.1 and 1.2.** Both must have landed.
+**Depends on steps 1.1 and 1.2.** Both must have landed in their re-worked
+form — in particular `Adventure.scenes: list[Scene]` must be live, or the
+migrated tree cannot validate.
 
 ## 1. Scope
 
 In scope:
 
-- `backend/content/campaigns/greenhollow/v1/**` — the authored tree.
-- `backend/tests/content/**` — qa-backend's unmocked shipped-tree tests.
-- `docs/modules/content.md` — **only** to fix a defect the authoring exposed
-  (§7).
+- `backend/content/campaigns/greenhollow/v1/**` — the shipped tree, migrated to
+  the one-file-per-adventure layout, **including the deletion** of the four
+  scene files and the now-empty `scenes/` directory (§5).
+- `backend/tests/content/**` — qa-backend's unmocked shipped-tree tests,
+  re-authored against the amended contract.
+- `docs/modules/content.md` — **only** to fix a defect the migration exposed
+  (§7). In a pure migration there should be nothing to fix.
 
 Out of scope, and a deviation if it appears:
 
@@ -53,42 +55,76 @@ Out of scope, and a deviation if it appears:
 - SRD text reproduced verbatim. The campaign is *SRD-flavoured* — it uses the
   vocabulary and the shape of 5e — but every stat block, name and line of prose
   is written for this repository. Do not paste SRD monster entries.
+- **Any change to the prose, the ids, the stat blocks, the numbers or the
+  structure of the story.** This pass moves text between files and deletes
+  files. Improving a sentence, renaming a scene, reordering `truth` entries or
+  "tidying" a stat block all invalidate the owner's acceptance and are
+  deviations.
 
 ## 2. Environment you will meet
 
 - The Docker stack is **down**.
-- **There is no `.env` file.** Run `cp .env.dist .env` first. Without it
-  `app content validate` raises a `ValidationError` before doing any work, and
-  `docker compose run app-cli` cannot start at all.
+- **`.env` exists**, copied from `.env.dist`; `.env.dist` stays owner-only and
+  must not be edited. It has to exist: without it `app content validate` raises
+  a `ValidationError` before doing any work, and `docker compose run app-cli`
+  cannot start at all. If it is missing, run `cp .env.dist .env`.
 - Alembic head is `0001`. **This step adds no migration.**
-- `backend/app/modules/content/` exists and `app content validate` works
-  (step 1.1).
-- `docs/modules/content.md` exists (step 1.2).
-- `backend/content/` **does not exist.** Running `app content validate` right
-  now exits `1` with `no campaigns found under /app/content`. That is the
-  starting state, and making it exit `0` is this step's headline evidence.
+- `backend/app/modules/content/` exists and has been re-worked to P1-D20 by
+  step 1.1: `Adventure.scenes` is `list[Scene]`, and the rule set is R1–R16.
+- `docs/modules/content.md` exists and has been re-worked by step 1.2.
+- `backend/content/campaigns/greenhollow/v1/` **exists in the pre-amendment
+  layout**: `campaign.json`, `adventures/goblins-of-greenhollow.json` whose
+  `scenes` is a list of four ids, `scenes/` holding `village-green.json`,
+  `thornway.json`, `lair-hollow.json` and `lair-maw.json`, and `definitions/`
+  holding `mira.json`, `goblin.json` and `goblin-boss.json`.
+- **Running `app content validate` right now exits `1` with four stderr
+  lines**: a `[SCHEMA]` entry on `adventures/goblins-of-greenhollow.json` — the
+  adventure still carries a list of scene ids — and then an `[R14]` for each of
+  `definitions/goblin-boss.json`, `definitions/goblin.json` and
+  `definitions/mira.json`, because the dropped adventure contributes no scenes
+  and nothing else references them (phase contract §11's drop block). **All four
+  lines are the starting state, and all four clear together** when the migration
+  lands: making this command exit `0` is this step's headline evidence.
+- `backend/tests/content/test_shipped_tree.py` exists and is currently red for
+  the same reason. That is expected (phase contract §8).
 
-## 3. The rule that makes this step meaningful
+## 3. The migration rule
 
-**The authoring agent is dispatched with `step-1.3.md` and
-`docs/modules/content.md` only.** The restriction is enforced by the dispatch,
-not requested of the agent — an agent that has already read
-`shared-knowledge.md` has seen the complete schema, the worked example and the
-rule table, and criterion 21 would then measure that agent's self-restraint
-rather than the guide's completeness.
+**This pass is mechanical and its correctness is checkable by eye.** For the one
+adventure:
 
-Step 1.2's guide claims an agent can author a conformant campaign from it alone.
-This step is the only test of that claim, and it is criterion 21 — the reason
-step 1.2 exists at all. Reading `backend/app/modules/content/schemas.py`,
-`service.py` or `shared-knowledge.md` during authoring silently destroys the
-evidence.
+1. For each id in `adventures/goblins-of-greenhollow.json`'s `scenes` list, in
+   the order the list already has, take the **entire object** in
+   `scenes/<id>.json` and append it to a new `scenes` array in the adventure
+   file, replacing the id list.
+2. Keep every scene's `id` key. It is how exits, `entry_scene`, runs and
+   `LoadedCampaign.scenes` address it, and it is what R8 now polices.
+3. Delete the four scene files and the `scenes/` directory.
+4. Change nothing else — not a character of prose, not a number, not an id, not
+   the order of anything.
 
-If the guide is unclear, incomplete or wrong about a field name, a constraint, a
-default or a rule — **write down what you had to guess**, finish the campaign,
-and fix the guide (§7). A guess you had to make is a defect in the guide, not a
-licence to consult the code.
+**The falsifiable property of this pass**: concatenating the scene objects out
+of the migrated adventure file reproduces the four deleted files exactly, key
+for key and string for string. `git show` of the deleted files is the reference.
+
+**The first pass's restricted-reading device does not apply here.** In the first
+pass the authoring half was dispatched with `docs/modules/content.md` alone, so
+that the campaign it produced would measure the guide's completeness (step-1.2
+criterion 23). There is no fresh authoring in this pass and therefore nothing to
+measure: **this pass is dispatched normally**, with `shared-knowledge.md`, and
+the whole of this file including §6. Withholding §6 now would only hide the
+checklist from the agent doing the move.
+
+Consequently **criteria 21 and 23 are closed from the previous pass and are not
+re-measured** — 21 because no authoring happened, 23 because the prose the owner
+accepted is byte-identical after the move.
 
 ## 4. The authoring brief
+
+**Already satisfied by the landed campaign; carried here as the verification
+checklist for the migration and as the brief for any future authoring pass.**
+Every item below must still be true of the migrated tree — a migration that
+loses one of them has moved something it should not have.
 
 **A classic starter: a village, a trail and a goblin lair.** Chosen by the owner
 because it exercises every feature of the schema with no licensing worry:
@@ -109,7 +145,7 @@ Hard requirements, each checkable:
 |---|---|
 | B1 | Exactly one campaign, id **`greenhollow`**, at exactly one version, **`v1`** |
 | B2 | Exactly one adventure. Its id and title are yours |
-| B3 | **At least three scenes**, all belonging to that one adventure |
+| B3 | **At least three scenes**, all inside that one adventure's file |
 | B4 | **At least one terminal scene** — one with no exits — and the adventure's entry scene is not it |
 | B5 | **Every scene reachable** from the entry scene by following exits |
 | B6 | **At least one definition placed in two different scenes** — the reuse a campaign-scoped definition exists for |
@@ -134,14 +170,22 @@ Prose standards the owner will read for:
 
 ## 5. Files this step creates or edits
 
-| File | Owner | Contents |
+| File | Owner | Action |
 |---|---|---|
-| `backend/content/campaigns/greenhollow/v1/campaign.json` | backend-dev | Campaign metadata, the ordered adventure list, the seed player character |
-| `backend/content/campaigns/greenhollow/v1/adventures/<id>.json` | backend-dev | The one adventure: title, `intro`, `entry_scene`, its scene ids |
-| `backend/content/campaigns/greenhollow/v1/scenes/<id>.json` | backend-dev | Three or more scenes |
-| `backend/content/campaigns/greenhollow/v1/definitions/<id>.json` | backend-dev | The patron, the goblin boss, and whatever else the scenes place |
-| `docs/modules/content.md` | backend-dev | **Only** if the authoring exposed a guide defect (§7) |
-| `backend/tests/content/**` | qa-backend | The unmocked shipped-tree tests (§6, criteria 11–16) |
+| `backend/content/campaigns/greenhollow/v1/campaign.json` | backend-dev | **Unchanged.** Expect no diff. |
+| `backend/content/campaigns/greenhollow/v1/adventures/goblins-of-greenhollow.json` | backend-dev | **Modified.** `scenes` becomes the four scene objects inline, in the order the id list had. Everything else unchanged. |
+| `backend/content/campaigns/greenhollow/v1/scenes/village-green.json` | backend-dev | **Deleted.** |
+| `backend/content/campaigns/greenhollow/v1/scenes/thornway.json` | backend-dev | **Deleted.** |
+| `backend/content/campaigns/greenhollow/v1/scenes/lair-hollow.json` | backend-dev | **Deleted.** |
+| `backend/content/campaigns/greenhollow/v1/scenes/lair-maw.json` | backend-dev | **Deleted.** |
+| `backend/content/campaigns/greenhollow/v1/scenes/` | backend-dev | **Deleted** — the directory itself must be gone, not left empty. |
+| `backend/content/campaigns/greenhollow/v1/definitions/*.json` | backend-dev | **Unchanged.** Expect no diff on any of the three. |
+| `docs/modules/content.md` | backend-dev | **Only** if the migration exposed a guide defect (§7) |
+| `backend/tests/content/**` | qa-backend | The unmocked shipped-tree tests, re-authored (§6, criteria 15–19) |
+
+`git status` after the move must show exactly one modified content file, four
+deletions, and nothing else under `backend/content/`. **A rework whose file list
+carries no deletion is how a stale `scenes/` directory survives into phase 5.**
 
 **qa-backend must not write into `backend/content/`.** If the agent that proves
 the tree valid is also the agent that authored it, the phase's central evidence
@@ -159,10 +203,10 @@ Numbered, each provable or refutable without reading
    contains exactly one version directory, named `v1`.
 2. `campaign.json`'s `adventures` list has exactly one entry, and
    `adventures/` contains exactly one `*.json` file.
-3. `scenes/` contains at least three `*.json` files, and every one of them is
-   listed in that adventure's `scenes`.
-4. Exactly the scenes listed in the adventure exist — no orphan file, no missing
-   file.
+3. That adventure file's `scenes` list holds at least three scene objects, each
+   with its own `id`, and no two share an `id`.
+4. The version directory contains **no `scenes/` directory**: the whole
+   adventure, scenes included, is one file.
 5. At least one scene has `exits` absent or `[]`, and it is not the adventure's
    `entry_scene`.
 6. Every scene is reachable from `entry_scene` by following `exits`, ignoring
@@ -180,7 +224,10 @@ Numbered, each provable or refutable without reading
 12. `campaign.json` carries a `seed_character` with all of `name`, `race`,
     `character_class`, `background`, `appearance`, `abilities` (all six scores),
     `max_hp`, `armour_class` and a non-empty `inventory`.
-13. Some `consequences` entry describes the villain escaping.
+13. At least one `consequences` entry, in any scene, contains the villain
+    definition's `name` string verbatim. (That the entry actually makes the
+    villain's escape a possible outcome — B12 — is the owner's judgement, and
+    is part of criterion 23.)
 
 ### The command line
 
@@ -199,7 +246,7 @@ Numbered, each provable or refutable without reading
 17. That same test asserts, against the returned `LoadedCampaign`, the
     structural facts of criteria 7–11, plus `len(campaign.adventures) == 1` and
     `len(scenes) >= 3` — i.e. the brief is proven from the loaded objects. The
-    `*.json` **file counts** of criteria 2–4 are not observable from a
+    `*.json` **file counts** of criteria 2 and 4 are not observable from a
     `LoadedCampaign` and stay filesystem assertions.
 18. A test calls `service.load_scene("greenhollow", "v1", <the entry scene id,
     read from the loaded adventure>)` and gets that `Scene` back, and
@@ -213,17 +260,31 @@ Numbered, each provable or refutable without reading
 
 ### The guide
 
-21. The authoring was done from `docs/modules/content.md` alone, and the author's
-    report lists every field name, constraint, default or rule they had to guess
-    at — the empty list being the strongest possible result.
+21. **Closed in the previous pass, not re-measured** (§3). The criterion is:
+    the authoring was done from `docs/modules/content.md` alone, and the
+    author's report lists every field name, constraint, default or rule they
+    had to guess at. It was met when this campaign was first authored. The
+    P1-D20 pass performs no authoring, so there is nothing to measure; do not
+    manufacture an authoring exercise to re-run it.
 22. Every such guess is fixed **in `docs/modules/content.md`** (§7), not worked
     around in the content, and the guide still satisfies every criterion of
-    step 1.2 §8.
+    step 1.2 §8. In a pure migration, expect nothing to fix.
 
 ### Human in the loop
 
-23. The owner has read the campaign prose and accepted it. **This criterion is
-    closed by the owner, not by an agent**, and the step is not done until it is.
+23. **Closed in the previous pass, not re-measured** (§3). The owner has read
+    the campaign prose and accepted it, including that B12's escape consequence
+    reads as a possible outcome rather than a scripted one. The P1-D20 pass
+    changes no prose, so that acceptance carries. **What replaces it for this
+    pass is criterion 24**, which proves the prose really is unchanged.
+24. **Migration fidelity.** Every scene object in the migrated adventure file
+    is byte-identical, key for key and string for string, to the body of the
+    `scenes/<id>.json` file it came from — provable against `git show` of the
+    deleted files — and the scene order matches the order the deleted id list
+    had. `campaign.json` and all three `definitions/*.json` show **no diff at
+    all**. `git status` under `backend/content/` shows exactly one modified file
+    and four deletions, and `backend/content/campaigns/greenhollow/v1/scenes/`
+    no longer exists.
 
 ## 7. Recording a guide defect
 
@@ -248,9 +309,15 @@ Expected: exit `0`, stdout exactly `greenhollow/v1: ok`, stderr empty.
 
 Also verify by hand, before handing over:
 
-- Every authored file parses as JSON (`python -m json.tool < <file>`).
-- `git diff --stat` shows only `backend/content/` paths, plus
-  `docs/modules/content.md` if §7 applied.
+- Every file under `backend/content/` parses as JSON
+  (`python -m json.tool < <file>`).
+- `git status --porcelain -- backend/content/` shows **exactly one modified
+  file and four deletions**, and nothing else; `docs/modules/content.md` appears
+  only if §7 applied.
+- `backend/content/campaigns/greenhollow/v1/scenes/` no longer exists.
+- `git diff -- backend/content/` reads as a pure move: every `-` line for a
+  scene reappears as a `+` line inside the adventure file, with no wording
+  change. This is criterion 24 and it is checkable by eye.
 
 **Do not run pytest** — the suite belongs to qa-backend. No ruff and no type
 check apply: this step lands no Python. No Alembic round-trip: no migration.
@@ -262,30 +329,32 @@ evidence depends on the artefact.
 
 | Agent | Owns | When |
 |---|---|---|
-| backend-dev (authoring half) | `backend/content/campaigns/greenhollow/v1/**`, and `docs/modules/content.md` under §7 only | First. Authors from the guide; runs §8's checks |
-| owner | Criterion 23 | After authoring, before QA is dispatched |
-| qa-backend | `backend/tests/content/**` — the unmocked tests of criteria 15–19 — and verification of criteria 1–14 and 20–22 | After the owner accepts |
+| backend-dev | The migration of `backend/content/campaigns/greenhollow/v1/**` per §3 and §5, including the four deletions, and `docs/modules/content.md` under §7 only | First. Runs §8's checks |
+| qa-backend | `backend/tests/content/**` — the unmocked tests of criteria 15–19, re-authored — and verification of criteria 1–14, 20, 22 and 24 | After the migration lands |
 
-**The authoring half is dispatched with exactly two files: `step-1.3.md` and
-`docs/modules/content.md`.** Not `shared-knowledge.md`, not `steps.md`, not
-`step-1.1.md`, not `step-1.2.md`, and no file under
-`backend/app/modules/content/`. This is a property of the briefing, not an
-instruction the agent is trusted to honour, and it is what makes criterion 21 a
-measurement rather than a request.
+**This pass is dispatched normally, to both agents, with everything** —
+`shared-knowledge.md`, this whole file including §6, and the amended guide. The
+first pass's restricted reading list and its withholding of §6 existed to make
+step-1.2's criterion 23 a real measurement of the guide; with no authoring to
+measure, the restriction would now only hide the migration checklist from the
+agent doing the migration. §3 states this and criteria 21 and 23 record it.
 
-The QA half is dispatched normally, with `shared-knowledge.md` and everything
-else. qa-backend authoring its tests before the content exists is fine and
-encouraged: criteria 15–19 are written against the pinned ids `greenhollow` /
-`v1` and derive everything else from the loaded objects, so they need no
-knowledge of the story.
+**The owner is not in the loop for this pass.** Criterion 23 is already closed;
+criterion 24 is what an agent proves instead.
+
+qa-backend's tests are written against the pinned ids `greenhollow` / `v1` and
+derive everything else from the loaded objects, so they need no knowledge of the
+story and can be re-authored before the migration lands.
 
 ## 10. Deviation clause
 
-**Zero deviations from this spec** — and, for the QA half, from
-[`shared-knowledge.md`](shared-knowledge.md). In particular: do not change the
+**Zero deviations from this spec and from
+[`shared-knowledge.md`](shared-knowledge.md).** In particular: do not change the
 schema, do not add a field, do not add a second adventure or version, do not
-read `backend/app/modules/content/` or `shared-knowledge.md` while authoring,
-and do not paste SRD text.
-If the brief of §4 cannot be satisfied within the pinned schema, **stop and
-report it** — that is a finding about the schema, and it is exactly what this
-step exists to surface.
+paste SRD text, and — the one that matters most in this pass — **do not change
+one character of the campaign's prose, ids, numbers or ordering.** The move is
+the whole of the work.
+If a scene cannot be folded in as it stands, or the migrated tree will not
+validate for a reason the guide does not explain, **stop and report it** — that
+is a finding about the schema or the guide, and it is exactly what this step
+exists to surface.

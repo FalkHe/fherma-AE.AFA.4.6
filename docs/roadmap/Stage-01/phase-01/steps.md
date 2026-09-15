@@ -7,7 +7,8 @@ created: 2026-09-11
 
 # Phase 1 — Adventure Content — steps
 
-Three steps. Each states its **Goal** (what is true when it is done), whether it
+Four steps — three that built the phase, and **step 1.4, a rework taken after it
+landed**. Each states its **Goal** (what is true when it is done), whether it
 is **human in the loop**, its **Steps** (the work, one line each) and what it
 **depends on**.
 
@@ -77,3 +78,32 @@ accepts or rejects it; nothing validates prose quality.
 - Record any guide defect the authoring exposed, in the guide
 
 **Depends on:** steps 1.1 and 1.2. Parallel with nothing.
+
+---
+
+## Step 1.4 — The object-template rework
+
+**A rework of steps 1.1–1.3, not new ground.** Four owner decisions taken after
+the phase landed — items and fixtures get authored templates, the entity is
+renamed, the templates move into the campaign file, and a placement may carry
+things at spawn — are applied to the schema, the loader, the rule set, the
+shipped campaign and the authoring guide.
+
+**Goal:** A scene declares creatures, items and fixtures alike; each kind is
+validated against exactly the fields its mechanics need; a placement can own
+equipment at spawn; the campaign version is two kinds of file; and the shipped
+campaign still passes the command-line check with its Story unchanged.
+
+**Human in the loop:** yes, once — the owner accepts the new object templates'
+prose by approving the step spec, not during implementation.
+
+**Steps:**
+- Replace the single creature entity with a kind-discriminated template union
+- Move the campaign-scoped templates into the campaign file and retire the third file kind
+- Add the carried-at-spawn placement axis and the rules that keep it one level deep
+- Rework the referential rule set to eighteen rules over in-memory templates
+- Migrate the shipped campaign without touching a word of its Story
+- Rework the authoring guide and the glossary to the landed contract
+
+**Depends on:** steps 1.1, 1.2 and 1.3, all landed. Backend-only — no frontend
+surface exists for this module.

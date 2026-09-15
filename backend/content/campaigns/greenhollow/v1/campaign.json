@@ -1,0 +1,165 @@
+{
+  "id": "greenhollow",
+  "title": "Greenhollow",
+  "summary": "A hedge-village at the edge of the Thornway woods has lost two flocks and a shepherd to something that came out of the trees. The village cannot pay for soldiers, only a hot meal, a warm bed, and whatever coin the collection plate holds.",
+  "adventures": ["goblins-of-greenhollow"],
+  "seed_character": {
+    "name": "Rosalind Thorn",
+    "race": "Human",
+    "character_class": "Fighter",
+    "background": "A farmhand turned militia spear-carrier after the second flock went missing; she knows the Thornway paths better than the woods deserve, and owes the innkeeper for two winters of unpaid board.",
+    "appearance": "Broad-shouldered and sun-browned, with a mended leather jerkin and a spear she carries like a walking stick until she does not.",
+    "abilities": {
+      "strength": 15,
+      "dexterity": 12,
+      "constitution": 14,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 9
+    },
+    "max_hp": 12,
+    "armour_class": 15,
+    "inventory": ["a spear", "a wooden shield", "a hooded lantern", "a coil of twine", "three days' rations"]
+  },
+  "object_templates": [
+    {
+      "id": "mira",
+      "kind": "creature",
+      "name": "Mira",
+      "description": "The innkeeper of Greenhollow's only inn, greying and broad-handed, more used to settling drunken arguments than raiders.",
+      "disposition": "Anxious for the village and blunt about it; she trusts whoever agrees to go north more than she trusts anyone who asks too many questions first.",
+      "stat_block": {
+        "max_hp": 8,
+        "armour_class": 10,
+        "abilities": {
+          "strength": 10,
+          "dexterity": 9,
+          "constitution": 11,
+          "intelligence": 12,
+          "wisdom": 13,
+          "charisma": 14
+        },
+        "attacks": [],
+        "traits": ["Knows every household in Greenhollow and what each of them has lost."]
+      }
+    },
+    {
+      "id": "goblin",
+      "kind": "creature",
+      "name": "Goblin Raider",
+      "description": "A wiry, sallow-skinned creature in mismatched scraps of leather and stolen wool, quick to flinch and quicker to grin.",
+      "disposition": "Cowardly alone, bold in numbers; happier to threaten and shove than to fight to the death, and quick to flee if a fight turns badly.",
+      "stat_block": {
+        "max_hp": 7,
+        "armour_class": 13,
+        "abilities": {
+          "strength": 8,
+          "dexterity": 14,
+          "constitution": 10,
+          "intelligence": 10,
+          "wisdom": 8,
+          "charisma": 8
+        },
+        "attacks": [
+          { "name": "Rusty Shortsword", "to_hit": 4, "damage": "1d6+2" },
+          { "name": "Sling", "to_hit": 4, "damage": "1d4+2" }
+        ],
+        "traits": ["Fights in a pack and rarely stands alone once outnumbered."]
+      }
+    },
+    {
+      "id": "goblin-boss",
+      "kind": "creature",
+      "name": "Grettle",
+      "description": "A scarred, heavyset goblin wearing a stolen shepherd's cloak as a badge of rank, taller and steadier than the raiders she commands.",
+      "disposition": "Ruthless towards anyone weaker and quick to abandon anyone who is not; she rules the lair through fear and will preserve herself over any fight she is losing.",
+      "stat_block": {
+        "max_hp": 21,
+        "armour_class": 15,
+        "abilities": {
+          "strength": 13,
+          "dexterity": 15,
+          "constitution": 13,
+          "intelligence": 11,
+          "wisdom": 10,
+          "charisma": 12
+        },
+        "attacks": [
+          { "name": "Notched Cleaver", "to_hit": 6, "damage": "2d6+3" },
+          { "name": "Thrown Hand-Axe", "to_hit": 6, "damage": "1d6+3" }
+        ],
+        "traits": ["Knows the wall crack in the lair hollow by feel and can force it in the dark without slowing down."]
+      }
+    },
+    {
+      "id": "shepherds-knife",
+      "kind": "item",
+      "name": "Shepherd's Knife",
+      "description": "A short, thin-bladed knife with a horn handle worn smooth by one pair of hands, kept sharp enough to take wool off a hide in a single pull. It was found lying in the grass where the flock was lost, and Mira has kept it behind the bar ever since.",
+      "attacks": [
+        { "name": "Shepherd's Knife", "to_hit": 4, "damage": "1d4+2" }
+      ]
+    },
+    {
+      "id": "bent-horseshoe",
+      "kind": "item",
+      "name": "Bent Horseshoe",
+      "description": "A horseshoe trodden into the mud where the flock was last seen, wrenched out of true by something stronger than a hoof. It is evidence and nothing else, and it sits on the barrel on the green for anyone who wants to look.",
+      "attacks": []
+    },
+    {
+      "id": "notched-cleaver",
+      "kind": "item",
+      "name": "Notched Cleaver",
+      "description": "A heavy butcher's cleaver with a chipped edge, its grip rebound in strips of stolen wool. It is Grettle's own, it is the reason the shepherd did not come home, and it goes wherever she goes.",
+      "attacks": [
+        { "name": "Notched Cleaver", "to_hit": 6, "damage": "2d6+3" }
+      ]
+    },
+    {
+      "id": "stolen-fleece",
+      "kind": "item",
+      "name": "Stolen Fleece",
+      "description": "A bundled fleece off one of Greenhollow's missing sheep, still carrying the shear-mark of the household it was taken from. Carried back to the green it is proof of what happened and worth something to the house that lost it.",
+      "attacks": []
+    },
+    {
+      "id": "thorn-screen",
+      "kind": "fixture",
+      "name": "Screen of Thornbrush",
+      "description": "A lattice of cut thornbrush dragged across the cave mouth and lashed together at the joints, grey and brittle with age but packed far too thick to push through without tearing skin or making noise.",
+      "checks": [
+        {
+          "action": "Lift the lashed brush aside a branch at a time, without letting it scrape on the stone",
+          "dc": 13,
+          "success": "A gap wide enough to pass through opens at the edge of the screen, and the goblins on the rocks above hear nothing."
+        },
+        {
+          "action": "Cut through the lashings that hold the screen together",
+          "dc": 10,
+          "success": "The screen sags open and the cave mouth stands clear; anything watching the entrance sees it happen.",
+          "bypassed_by": ["shepherds-knife", "notched-cleaver"]
+        }
+      ]
+    },
+    {
+      "id": "wool-sack",
+      "kind": "fixture",
+      "name": "Sack of Stolen Wool",
+      "description": "A grain sack hung from a roof beam by its knotted neck, packed round with fleeces that are not the goblins' to keep.",
+      "checks": [
+        {
+          "action": "Work the knotted neck of the sack loose by hand",
+          "dc": 8,
+          "success": "The sack opens without a sound and the fleeces inside can be lifted out one at a time."
+        },
+        {
+          "action": "Split the sack open with a heavy blade",
+          "dc": 12,
+          "success": "The sack bursts and the fleeces spill across the floor of the hollow, in full hearing of anything still alive down there.",
+          "bypassed_by": ["notched-cleaver"]
+        }
+      ]
+    }
+  ]
+}

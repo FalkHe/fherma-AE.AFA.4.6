@@ -11,8 +11,9 @@ Three rules frame everything below and are not negotiable per-entity:
 - **Postgres is the single source of truth** for character and world state. The
   LangGraph checkpointer holds the *conversation* and graph plumbing only, and
   is treated as rebuildable.
-- **Authored content is static JSON in git**, never rows. Runs reference it by
-  string id plus a pinned version.
+- **Authored Campaign- and Adventure-Definitions are static JSON in git**,
+  never rows, and so is the Story they carry. Runs reference them by string id
+  plus a pinned version.
 - **No ORM relationships and no repository classes** (see
   [architecture.md](architecture.md)). Foreign keys exist in the schema; joins
   are written as queries in `service.py`.
@@ -45,22 +46,23 @@ KNOWLEDGE
   Event and JournalEntry are owned rows with no independent existence; Encounter
   hangs off AdventureRun. Deleting the run deletes them all.
 - **Campaign is a full domain entity** with a stable id — it just lives in a
-  file rather than a table. Content ids carry **no foreign key**; referential
-  integrity for content is loader-time validation, not a database constraint.
+  file rather than a table. Campaign-Definition ids carry **no foreign key**;
+  their referential integrity is loader-time validation, not a database
+  constraint.
 - **Definitions are campaign-scoped, not adventure-scoped.** A recurring NPC —
   the patron who hires the party, the villain who escapes in adventure 1 and
   returns in adventure 3 — is the normal shape of a campaign, and a monster
   stat block is reusable anywhere. So a Scene *references* a definition by id;
-  it does not own one. This is the content-side mirror of objects hanging off
-  the Playthrough: definition above the adventure, instance above the adventure
-  run, and nothing about a returning character is per-adventure.
+  it does not own one. This is the Campaign-Definition mirror of objects hanging
+  off the Playthrough: definition above the adventure, instance above the
+  adventure run, and nothing about a returning character is per-adventure.
 - **SrdRule belongs to no run.** It is global knowledge, rebuilt by a CLI, and
   survives every playthrough. Entities are named for what they hold, never for
   how it is stored — which is why this is not an `embeddings` table and a row
   is not a "chunk". How a rules section is split for retrieval is a column
   concern.
-- One campaign and one adventure ship first. That is the **initial content set,
-  not a ceiling**: more adventures and campaigns arrive as a new content
+- One campaign and one adventure ship first. That is the **initial authored
+  set, not a ceiling**: more adventures and campaigns arrive as a new content
   version.
 
 ## The decisions behind the shape
@@ -82,6 +84,9 @@ campaign extended with a fourth adventure ships as a new version that only new
 runs pick up. Existing runs finish what they started — which is why objects can
 be instantiated eagerly (below) with no backfill path.
 
+**The mechanism**: a version is a `v<n>` directory under the campaign,
+served whole by the loader and never edited in place.
+
 ### Settings live on the run
 
 Model, temperature, DM personality and any system-prompt override belong to the
@@ -101,12 +106,12 @@ makes to the multiplayer capstone (the second being one character per member).
 Every interactable thing — the player character, allies, monsters, items,
 fixtures — is one row in `objects`, owned by the **Playthrough**, so a goblin
 that lost an arm in adventure 1 still has one arm in adventure 2. Instance keys
-are deterministic and stable across a run, so content can name an instance
-without a lookup table.
+are deterministic and stable across a run, so a Campaign-Definition can name an
+instance without a lookup table.
 
 **Kinds are `creature`, `item`, `fixture`.** There is no `npc`/`monster` split:
 a monster *is* an NPC, and "monster" only means "ships a stat block and is
-usually hostile" — a content-side trait, not a storage kind. The player
+usually hostile" — a Campaign-Definition trait, not a storage kind. The player
 character is likewise not a kind of its own; it is a creature identified by the
 user who owns it.
 
@@ -125,12 +130,31 @@ character-sheet specifics (class, background, portrait) are a section of that
 model, not a fourth kind. Hit points, maximum hit points, armour class and
 aliveness are promoted out of the state blob into real columns, because they are
 read on every turn and are the only fields a database constraint can actually
-guard. Abilities, inventory, disposition, injuries and improvised traits stay in
-the blob.
+guard. **Those four columns are nullable and are populated for `creature` rows
+only** — an item and a fixture carry no hit points and no armour class in the
+authored template, so there is nothing to promote and nothing for the mechanics
+layer to invent. Abilities, inventory, disposition, injuries and improvised
+traits stay in the blob.
 
 Objects are instantiated **eagerly when the run starts**: everything the pinned
-content version declares, across all its adventures. No lazy creation during
-play, no half-populated scenes.
+content version's templates and placements declare, across all its adventures.
+No lazy creation during play, no half-populated scenes.
+
+### A carried object is its own row, pointing at its owner
+
+An object template placement may declare that the instance it creates **carries**
+other instances at spawn — the boss holding the key, the sack holding the fleeces.
+Each carried instance is **its own `objects` row** with a nullable
+self-referencing `owner_object_id` naming the row that holds it; `NULL` means the
+object stands free in its scene. The reference cascades with the owner's
+deletion, and one level of ownership is all the authored content can express.
+
+A carried instance is not folded into the owner's inventory blob. It is a real
+object with the same identity, the same state blob and the same
+`update_object` path as any other, so it can be taken, dropped, broken or
+targeted without a second mechanism — which is exactly what the one generic
+table exists to buy. The authored side of this is `Placement.carries[]`, pinned
+in [modules/content.md](../modules/content.md).
 
 ### Position
 
@@ -147,11 +171,11 @@ counter and a turn pointer. Participant state is never duplicated into it.
 ### Situational facts have no flag store
 
 "The alarm was raised", "the village turned hostile" are **journal entries**,
-not columns. Consequence, accepted deliberately: content **cannot
-deterministically gate an exit** on a flag, because no flag exists for code to
-read. Situational conditions are written as scene *truth* and judged by the
-agent, which matches "facts + intentions + consequences, not scripts" — and
-means a mis-retrieved journal entry can un-raise an alarm.
+not columns. Consequence, accepted deliberately: an Adventure-Definition
+**cannot deterministically gate an exit** on a flag, because no flag exists for
+code to read. Situational conditions are written as scene *truth* — Story —
+and judged by the agent, which matches "facts + intentions + consequences, not
+scripts" — and means a mis-retrieved journal entry can un-raise an alarm.
 
 ### Events and journal are two things: what happened vs what is true
 
@@ -210,14 +234,15 @@ stray autogenerate will try to drop it.
 ## Static files
 
 ```
-content/campaigns/<campaign_id>/<version>/
-    campaign.json          # metadata + ordered adventure list
-    adventures/<id>.json
-    npcs/<id>.json         # campaign-scoped, referenced by any scene
-    scenes/<id>.json       # truth[], npc_intent, consequences[], hidden[],
-                           # monsters[], exits{}, pressure?
-    monsters/<id>.json     # stat blocks
-content/srd/                # SRD 5.1 source for the ingest CLI
+backend/content/campaigns/<campaign_id>/<version>/
+    campaign.json          # metadata + ordered adventure list + seed player
+                           # character + object_templates[]: the campaign-scoped
+                           # creature / item / fixture blueprints
+    adventures/<id>.json   # the adventure and its scenes inline: a prose intro,
+                           # an entry_scene, and scenes[] carrying truth[],
+                           # npc_intent?, consequences[], hidden[], placements[],
+                           # exits[] (a list, not a map), pressure?
+backend/content/srd/        # SRD 5.1 source for the ingest CLI
 
 backend/app/modules/game/prompts/
     system/dm.md
@@ -228,9 +253,21 @@ backend/app/modules/game/prompts/
 /data/media/portraits/<id>.png       # Docker volume, never in git
 ```
 
-- **Content** is mounted read-only and reviewed as diffs in PRs. NPC prompt
-  fragments belong to content, not to the prompts directory; they may move to
-  the database later, and nothing outside the content loader may assume a file.
+The content root is `backend/content/`, not a repository-root `content/`: the
+Dockerfile copies `backend/` and compose bind-mounts it, so the path is
+identical in the image, under the dev bind mount and on the host, with no
+configuration.
+
+**There are exactly two kinds of file, and no `scenes/` or `definitions/`
+directory.** A scene belongs to exactly one adventure, so it lives inside that
+adventure's file; an object template is campaign-scoped and shared between
+adventures, so it lives in the campaign-scoped file.
+
+- **Campaign- and Adventure-Definitions** are read-only by convention —
+  nothing writes them and the loader only reads — and are reviewed as diffs in
+  PRs. NPC prose fragments are Story and belong to the Campaign-Definition, not
+  to the prompts directory; they may move to the database later, and nothing
+  outside the content loader may assume a file.
 - **Prompts** live in the module that uses them, versioned in git. The dev
   drawer selects known ids and may set a free-text override stored on the run;
   it never edits a file.
@@ -242,7 +279,7 @@ backend/app/modules/game/prompts/
 
 | Action | Effect |
 |---|---|
-| Start a playthrough | Pin the campaign and content version; create the owner member row; instantiate **all** objects the pinned content declares; generate the player's creature |
+| Start a playthrough | Pin the campaign and content version; create the owner member row; instantiate **all** objects the pinned Campaign-Definition declares; generate the player's creature |
 | Start an adventure | Create an AdventureRun; put the player's creature in the entry scene |
 | Archive | The player-facing removal gesture — a status change; nothing is deleted |
 | Purge | A Typer CLI command hard-deletes archived runs: cascade across members, adventure runs, objects, encounters, events and journal entries, plus the checkpointer thread and the portrait file |
@@ -258,9 +295,9 @@ Recorded, not solved:
    multiplayer must answer.
 2. **A mis-retrieved journal entry can contradict established canon**, because
    situational facts have no deterministic flag store. Accepted trade for
-   keeping content declarative.
-3. **Content integrity is loader-enforced, not database-enforced.** A typo in a
-   scene's exits is caught at load time or not at all.
+   keeping the Adventure-Definition declarative.
+3. **Campaign-Definition integrity is loader-enforced, not database-enforced.**
+   A typo in a scene's exits is caught at load time or not at all.
 4. **Object state correctness rests entirely on the per-kind Pydantic models.**
    If one write path bypasses them, the mechanics layer is no longer
    deterministic.
