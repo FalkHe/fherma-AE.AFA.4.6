@@ -40,6 +40,7 @@ from app.core.llm.errors import (
     LlmTimeoutError,
     LlmUnavailableError,
 )
+from app.core.settings import get_settings
 
 DUMMY_API_KEY = "sk-or-v1-not-a-real-key-0000000000000000000000000000"
 
@@ -264,9 +265,37 @@ class TestAC2NoRealApiKeyNeeded:
         finally:
             get_settings.cache_clear()
 
-    def test_ac2_all_eight_triggers_never_touch_a_real_socket(self, monkeypatch):
+    def test_ac2_a_non_retryable_trigger_never_touches_a_real_socket_and_asks_once(
+        self, monkeypatch
+    ):
         # ← AC2 -- collectively proved by every test above never tripping
         # `_block_real_network`; this test makes the guard itself explicit.
+        # 401 -> LlmAuthError is not one of sprint 03's four retryable
+        # classes (← AC3), so the stub sees exactly the one request a
+        # single, non-retried trigger implies.
+        called = {"count": 0}
+
+        def handler(request):
+            called["count"] += 1
+            return httpx.Response(401, json={"error": {"code": 401, "message": "no key"}})
+
+        _stub_gateway(monkeypatch, handler)
+
+        with pytest.raises(LlmAuthError):
+            llm_service.chat("Roll a d20.")
+
+        assert called["count"] == 1
+
+    def test_ac2_a_retryable_trigger_never_touches_a_real_socket_and_asks_the_full_budget(
+        self, monkeypatch
+    ):
+        # ← AC2 -- same guard, but for one of sprint 03's four retryable
+        # classes (← D6): 429 -> LlmRateLimitError is retried internally by
+        # `chat()` (`app.core.llm.retry`), so the stub sees one request per
+        # attempt, up to the configured total (`llm_retry_attempts`,
+        # default 3 -- one try plus two retries), not just one. Asserted
+        # against the real setting rather than a bare literal, so this
+        # keeps meaning what it says if the default ever changes.
         called = {"count": 0}
 
         def handler(request):
@@ -278,4 +307,4 @@ class TestAC2NoRealApiKeyNeeded:
         with pytest.raises(LlmRateLimitError):
             llm_service.chat("Roll a d20.")
 
-        assert called["count"] == 1
+        assert called["count"] == get_settings().llm_retry_attempts

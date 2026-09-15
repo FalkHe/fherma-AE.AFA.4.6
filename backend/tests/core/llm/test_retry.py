@@ -24,15 +24,6 @@ import time
 import pytest
 import structlog
 
-_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
-
-
-def _plain(text: str) -> str:
-    """Strips the `ConsoleRenderer`'s ANSI colour codes, which otherwise
-    sit adjacent to digits and defeat a `\\b` word-boundary match (a colour
-    code ends in a word character, e.g. `...35m1...`)."""
-    return _ANSI_ESCAPE.sub("", text)
-
 from app.core.llm import retry as retry_module
 from app.core.llm.errors import (
     LlmAuthError,
@@ -41,6 +32,15 @@ from app.core.llm.errors import (
     LlmUnavailableError,
 )
 from app.core.settings import get_settings
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    """Strips the `ConsoleRenderer`'s ANSI colour codes, which otherwise
+    sit adjacent to digits and defeat a `\\b` word-boundary match (a colour
+    code ends in a word character, e.g. `...35m1...`)."""
+    return _ANSI_ESCAPE.sub("", text)
 
 
 @pytest.fixture
