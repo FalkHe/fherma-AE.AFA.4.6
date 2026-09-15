@@ -12,6 +12,8 @@ the (faked) network boundary. Fed real `langchain_core.messages.AIMessage` /
 real `ChatOpenRouter` replies would.
 """
 
+import httpx
+import openrouter
 from langchain_core.messages import AIMessage, AIMessageChunk
 from typer.testing import CliRunner
 
@@ -107,3 +109,50 @@ def test_ac5_blank_api_key_exits_1_names_the_variable_with_no_traceback(
     assert "Traceback" not in result.stdout
     # Raised before constructing anything (I1).
     assert recording_chat_open_router.calls == []
+
+
+# --- Sprint 02 AC4 -----------------------------------------------------
+#
+# `--details` must never leak the configured OpenRouter API key to the
+# terminal. Unlike `test_commands_details.py` (WI4's own suite, which
+# monkeypatches `llm_service.chat` directly and proves a *decoy* key never
+# printed), this drives the real gateway boundary: a stub HTTP transport
+# echoes the configured key back inside a raw (non-JSON) error body, which
+# is the real leak path research.md calls out -- `OpenRouterDefaultError`
+# inlines the raw response body into its own `.message`, and `classify()`
+# must redact it before `--details` ever sees `provider_message`.
+
+CANARY_API_KEY = "sk-or-v1-canary-leak-check-11223344556677889900"
+
+
+def test_ac4_details_never_leaks_the_api_key_the_provider_echoes_back(monkeypatch):
+    # ← AC4
+    monkeypatch.setenv("OPENROUTER_API_KEY", CANARY_API_KEY)
+    get_settings.cache_clear()
+
+    def handler(request):
+        # Non-JSON content type + an unmapped-by-specific-class status (500
+        # is JSON-only in the SDK's dispatch table) forces the SDK's
+        # fallback `OpenRouterDefaultError`, which inlines the raw body --
+        # containing the canary key -- straight into `.message`.
+        body = f"upstream rejected the request for key {CANARY_API_KEY}"
+        return httpx.Response(500, content=body.encode(), headers={"content-type": "text/plain"})
+
+    def fake_build_sdk_client(api_key):
+        return openrouter.OpenRouter(
+            api_key=api_key,
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+            retry_config=None,
+        )
+
+    monkeypatch.setattr(llm_service, "build_sdk_client", fake_build_sdk_client)
+
+    try:
+        result = runner.invoke(cli, ["llm", "chat", "Name one D&D condition.", "--details"])
+    finally:
+        get_settings.cache_clear()
+
+    assert result.exit_code == 1
+    combined = result.stdout + result.stderr
+    assert CANARY_API_KEY not in combined
+    assert "The AI service could not complete that request." in result.stderr
