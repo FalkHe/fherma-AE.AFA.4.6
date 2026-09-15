@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     database_url: str
     session_ttl_seconds: int = 1209600
     frontend_origin: str = "http://localhost:5173"
+    openrouter_api_key: str = ""
+    chat_model: str = "openai/gpt-4.1-mini"
 
 
 @lru_cache
