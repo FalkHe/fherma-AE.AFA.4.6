@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-15
 updated: 2026-09-15
-stage: draft
+stage: done
 ---
 # Progress: Sprint 03
 
@@ -27,3 +27,6 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: approved — AC1–AC6 pass, D6 and D2 hold, no scope creep. Gates clean, 305 passed in 2.5s, slowest test 0.25s.
+Two non-blocking findings fixed in-round: the computed backoff was unclamped while a test claimed otherwise (now clamped at 30s, test rewritten with base 50.0 so it actually fails on regression); and the structlog leak's origin was left in place, making `tests/core/llm/` safe only by collection order (now one autouse reset in the root conftest). Both proven red-then-green, hostile order verified.
+Approval withheld deliberately — author and reviewer are the same account (note #60).
