@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import typer
 
 from app.core.llm import service as llm_service
@@ -20,13 +22,16 @@ def _cost_text(usage) -> str:
     return f"${usage.cost_usd:.6f}"
 
 
-def _usage_line(message) -> str:
-    usage = llm_service.usage_of(message)
+def _usage_text(usage) -> str:
     cost = _cost_text(usage)
     return (
         f"tokens: prompt={usage.prompt_tokens} completion={usage.completion_tokens} "
         f"total={usage.total_tokens} · cost: {cost}"
     )
+
+
+def _usage_line(message) -> str:
+    return _usage_text(llm_service.usage_of(message))
 
 
 def _report_failure(exc: LlmError, *, details: bool) -> typer.Exit:
@@ -88,3 +93,35 @@ def embed(
         )
     except LlmError as exc:
         raise _report_failure(exc, details=details) from exc
+
+
+@llm_app.command("image")
+def image(
+    prompt: str = typer.Argument(...),
+    out: Path = typer.Option(..., "--out"),  # noqa: B008 - Typer's documented pattern
+    model: str | None = typer.Option(None, "--model"),
+    details: bool = typer.Option(False, "--details"),
+) -> None:
+    # Validated before any network call (← research.md): a bad path must
+    # never spend the ~$0.067 an image call costs.
+    parent = out.parent
+    if not parent.is_dir():
+        raise typer.BadParameter(f"parent directory does not exist: {parent}", param_hint="--out")
+
+    try:
+        result = llm_service.generate_image(prompt, model=model)
+    except LlmError as exc:
+        raise _report_failure(exc, details=details) from exc
+
+    usage_text = _usage_text(result.usage)
+    try:
+        out.write_bytes(result.image_bytes)
+    except OSError as exc:
+        # The call was already paid for, so the cost is reported on stdout
+        # even though the write itself failed.
+        typer.echo(usage_text)
+        typer.echo(f"{out}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"wrote {out} ({len(result.image_bytes)} bytes, {result.media_type})")
+    typer.echo(usage_text)

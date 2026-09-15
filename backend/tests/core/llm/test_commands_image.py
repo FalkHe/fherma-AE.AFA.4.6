@@ -54,7 +54,9 @@ def test_writes_the_bytes_returned_by_the_service_byte_identical(monkeypatch, tm
         return _FakeImageResult(
             image_bytes=payload,
             media_type="image/png",
-            usage=_FakeUsage(prompt_tokens=12, completion_tokens=1120, total_tokens=1132, cost_usd=0.067206),
+            usage=_FakeUsage(
+                prompt_tokens=12, completion_tokens=1120, total_tokens=1132, cost_usd=0.067206
+            ),
         )
 
     _patch_generate_image(monkeypatch, _fake_generate_image)
@@ -73,7 +75,9 @@ def test_prints_exactly_two_stdout_lines_on_success(monkeypatch, tmp_path):
         return _FakeImageResult(
             image_bytes=payload,
             media_type="image/png",
-            usage=_FakeUsage(prompt_tokens=12, completion_tokens=1120, total_tokens=1132, cost_usd=0.067206),
+            usage=_FakeUsage(
+                prompt_tokens=12, completion_tokens=1120, total_tokens=1132, cost_usd=0.067206
+            ),
         )
 
     _patch_generate_image(monkeypatch, _fake_generate_image)
@@ -148,30 +152,33 @@ def test_out_parent_that_is_a_file_not_a_directory_rejected_before_any_call(monk
 def test_oserror_at_write_time_prints_usage_line_on_stdout_first_then_reason_on_stderr_exit_1(
     monkeypatch, tmp_path
 ):
-    out = tmp_path / "readonly-dir" / "portrait.png"
-    out.parent.mkdir()
-    out.parent.chmod(0o500)  # read + execute, no write
+    # `out`'s parent (`tmp_path`) is a valid, writable directory — the
+    # `--out`-parent guard passes — but `out` itself is a directory, so the
+    # actual write (`Path.write_bytes`) fails with `IsADirectoryError`, a
+    # subclass of `OSError`. This is root-proof, unlike a chmod-based
+    # permission test, since the suite may run as root in CI/Docker.
+    out = tmp_path / "portrait.png"
+    out.mkdir()
 
     def _fake_generate_image(prompt, *, model=None):
         return _FakeImageResult(
             image_bytes=b"payload-bytes",
             media_type="image/png",
-            usage=_FakeUsage(prompt_tokens=12, completion_tokens=1120, total_tokens=1132, cost_usd=0.067206),
+            usage=_FakeUsage(
+                prompt_tokens=12, completion_tokens=1120, total_tokens=1132, cost_usd=0.067206
+            ),
         )
 
     _patch_generate_image(monkeypatch, _fake_generate_image)
 
-    try:
-        result = runner.invoke(cli, ["llm", "image", "a hero", "--out", str(out)])
-    finally:
-        out.parent.chmod(0o700)  # tmp_path cleanup needs write access back
+    result = runner.invoke(cli, ["llm", "image", "a hero", "--out", str(out)])
 
     assert result.exit_code == 1
     assert result.stdout.splitlines() == [
         "tokens: prompt=12 completion=1120 total=1132 · cost: $0.067206"
     ]
     assert str(out) in result.stderr
-    assert not out.exists()
+    assert out.is_dir()  # untouched — the write never succeeded
 
 
 def test_llm_error_goes_through_report_failure_no_file_written_exit_1(monkeypatch, tmp_path):
@@ -220,7 +227,8 @@ def test_prompt_and_model_are_forwarded(monkeypatch, tmp_path):
     _patch_generate_image(monkeypatch, _fake_generate_image)
 
     result = runner.invoke(
-        cli, ["llm", "image", "a brooding half-orc", "--out", str(out), "--model", "test/image-model"]
+        cli,
+        ["llm", "image", "a brooding half-orc", "--out", str(out), "--model", "test/image-model"],
     )
 
     assert result.exit_code == 0, result.stderr
