@@ -19,6 +19,8 @@ os.environ["DATABASE_URL"] = "postgresql+psycopg://app:app@postgres:5432/applica
 os.environ["ENVIRONMENT"] = "development"
 os.environ["SESSION_TTL_SECONDS"] = "1209600"
 os.environ["FRONTEND_ORIGIN"] = "http://localhost:5173"
+os.environ["OPENROUTER_API_KEY"] = "test-key"
+os.environ["CHAT_MODEL"] = "test/model"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
