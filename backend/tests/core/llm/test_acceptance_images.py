@@ -188,9 +188,7 @@ class TestAC5SeamRaisesAndNeverSubstitutes:
         _stub_gateway(monkeypatch, _status_handler(500, message="provider says no"))
         out_path = tmp_path / "portrait.png"
 
-        result = runner.invoke(
-            cli, ["llm", "image", "a half-elf ranger", "--out", str(out_path)]
-        )
+        result = runner.invoke(cli, ["llm", "image", "a half-elf ranger", "--out", str(out_path)])
 
         assert result.exit_code != 0
         assert not out_path.exists()
@@ -200,9 +198,7 @@ class TestAC5SeamRaisesAndNeverSubstitutes:
         _stub_gateway(monkeypatch, lambda request: httpx.Response(200, json=_image_body([])))
         out_path = tmp_path / "portrait.png"
 
-        result = runner.invoke(
-            cli, ["llm", "image", "a half-elf ranger", "--out", str(out_path)]
-        )
+        result = runner.invoke(cli, ["llm", "image", "a half-elf ranger", "--out", str(out_path)])
 
         assert result.exit_code != 0
         assert not out_path.exists()
