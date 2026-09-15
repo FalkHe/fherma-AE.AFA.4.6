@@ -58,5 +58,5 @@ current state — where a roadmap doc and the code disagree, the code wins.
 - Tests must never build a real DB engine — `backend/tests/conftest.py` stubs the DB session and pins env vars so the root `.env` cannot leak in.
 - Vitest has no globals: import vitest APIs explicitly. Fetch is stubbed by one dispatcher installed at startup (`frontend/src/test/`), because openapi-fetch captures `fetch` at import time.
 - No background job runner and no Redis: every operation is request-scoped or a Typer CLI one-off.
-- `OPENROUTER_API_KEY` is unused until the game agent lands. Optional Langfuse tracing is enabled per checkout via `COMPOSE_FILE` in `.env`.
+- `OPENROUTER_API_KEY` is read by the `core/llm/` seam (`app llm chat`); without it every model call fails naming the variable. Optional Langfuse tracing is enabled per checkout via `COMPOSE_FILE` in `.env`.
 - `make langfuse-down` uses `stop`, never `down` — `down` would tear down the whole project and can delete the dev database.
