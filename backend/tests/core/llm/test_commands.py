@@ -156,3 +156,50 @@ def test_ac4_details_never_leaks_the_api_key_the_provider_echoes_back(monkeypatc
     combined = result.stdout + result.stderr
     assert CANARY_API_KEY not in combined
     assert "The AI service could not complete that request." in result.stderr
+
+
+# --- Sprint 03 AC1 ------------------------------------------------------
+#
+# The end-to-end proof, through the real CLI: a gateway that fails twice
+# then succeeds must be invisible to the player. Unlike `test_retry.py`
+# (which drives `retry.call_with_retry` directly with a scripted callable),
+# this drives the full path -- `app llm chat` down through `llm_service.chat`
+# and its internal retry loop -- with the same `recording_chat_open_router`
+# fake sprint 01's own AC2/AC4/AC5 tests above use, scripted to raise the
+# already-classified `LlmUnavailableError` on its first two calls. `retry`'s
+# own `_sleep` seam is monkeypatched so this test never waits on the
+# configured backoff.
+
+
+def test_ac1_retried_then_succeeds_prints_the_answer_with_no_failure_line(
+    recording_chat_open_router, monkeypatch
+):
+    # ← AC1
+    from app.core.llm import retry as retry_module
+    from app.core.llm.errors import LlmUnavailableError
+
+    monkeypatch.setattr(llm_service, "ChatOpenRouter", recording_chat_open_router)
+    monkeypatch.setattr(retry_module, "_sleep", lambda seconds: None)
+    recording_chat_open_router.response = AIMessage(
+        content="A dazed creature can't take actions.",
+        usage_metadata={"input_tokens": 12, "output_tokens": 34, "total_tokens": 46},
+        response_metadata={"cost": 0.001234},
+    )
+    attempts = {"count": 0}
+    original_invoke = recording_chat_open_router.invoke
+
+    def flaky_invoke(self, prompt):
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise LlmUnavailableError()
+        return original_invoke(self, prompt)
+
+    recording_chat_open_router.invoke = flaky_invoke
+
+    result = runner.invoke(cli, ["llm", "chat", "Name one D&D condition."])
+
+    assert result.exit_code == 0, result.stderr
+    assert attempts["count"] == 3
+    assert "A dazed creature can't take actions." in result.stdout
+    combined = result.stdout + result.stderr
+    assert "The AI service could not complete that request." not in combined
