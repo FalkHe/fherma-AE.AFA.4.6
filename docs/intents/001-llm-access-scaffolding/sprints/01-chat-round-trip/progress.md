@@ -29,4 +29,4 @@ Status: `open | running | done | failed`
 
 ## Verify
 Round 1: approved — all six ACs pass, D1 and D3 hold, no scope creep. Gates re-run clean, 152 passed. MR !4.
-The verifier's own `glab mr approve` was not rejected (author and reviewer are the same account); revoked as meaningless. AC1/AC2 still owe one hand-run with a real key.
+The verifier's own `glab mr approve` was not rejected (author and reviewer are the same account); revoked as meaningless. AC1–AC5 since confirmed live with a real key: plain, `--stream` and `--model`/`--temperature` all return an answer plus real USD cost; blank key exits 1 with no traceback. `usage.cost` survives on both paths, confirming no `/api/v1/generation` fallback was needed.
