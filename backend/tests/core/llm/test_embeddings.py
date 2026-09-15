@@ -76,9 +76,7 @@ class TestAC3RequestOrder:
     even when the response's `index` values arrive shuffled, or are absent
     altogether (← AC3)."""
 
-    def test_ac3_shuffled_index_values_still_return_vectors_in_request_order(
-        self, monkeypatch
-    ):
+    def test_ac3_shuffled_index_values_still_return_vectors_in_request_order(self, monkeypatch):
         # ← AC3: the sharp case — response `data` arrives out of order, but
         # each item's explicit `index` says where it really belongs.
         data = [
@@ -217,9 +215,7 @@ class TestAC4EightCodesWithoutAKey:
             llm_service.embed_texts(["a"])
 
         assert excinfo.value.code is expected_cls.code
-        expected_count = (
-            get_settings().llm_retry_attempts if expect_full_retry_budget else 1
-        )
+        expected_count = get_settings().llm_retry_attempts if expect_full_retry_budget else 1
         assert calls["count"] == expected_count
 
     def test_ac4_sse_string_response_raises_malformed_and_is_retried_up_to_its_own_cap(
