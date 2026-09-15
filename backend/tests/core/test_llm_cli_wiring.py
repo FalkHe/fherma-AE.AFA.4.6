@@ -111,7 +111,7 @@ def test_plain_path_prints_answer_then_one_usage_line(monkeypatch: pytest.Monkey
     monkeypatch.setattr(llm_service, "chat_model", lambda **kwargs: FakeChatModel())
     monkeypatch.setattr(llm_service, "usage_of", lambda message: FakeUsage(10, 5, 15, 0.001234))
 
-    result = runner.invoke(llm_app, ["hi"])
+    result = runner.invoke(llm_app, ["chat", "hi"])
 
     assert result.exit_code == 0
     lines = result.stdout.splitlines()
@@ -132,7 +132,7 @@ def test_stream_path_prints_answer_then_exactly_one_usage_line(
 
     monkeypatch.setattr(llm_service, "usage_of", fake_usage_of)
 
-    result = runner.invoke(llm_app, ["hi", "--stream"])
+    result = runner.invoke(llm_app, ["chat", "hi", "--stream"])
 
     assert result.exit_code == 0
     assert "hello there" in result.stdout
@@ -153,7 +153,7 @@ def test_model_and_temperature_options_reach_the_seam(monkeypatch: pytest.Monkey
     monkeypatch.setattr(llm_service, "chat_model", fake_chat_model)
     monkeypatch.setattr(llm_service, "usage_of", lambda message: FakeUsage(1, 1, 2, None))
 
-    result = runner.invoke(llm_app, ["hi", "--model", "some/model", "--temperature", "0.4"])
+    result = runner.invoke(llm_app, ["chat", "hi", "--model", "some/model", "--temperature", "0.4"])
 
     assert result.exit_code == 0
     assert received == {"model": "some/model", "temperature": 0.4}
@@ -170,7 +170,7 @@ def test_options_default_to_none_when_omitted(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(llm_service, "chat_model", fake_chat_model)
     monkeypatch.setattr(llm_service, "usage_of", lambda message: FakeUsage(1, 1, 2, None))
 
-    result = runner.invoke(llm_app, ["hi"])
+    result = runner.invoke(llm_app, ["chat", "hi"])
 
     assert result.exit_code == 0
     assert received == {"model": None, "temperature": None}
@@ -184,7 +184,7 @@ def test_llm_error_exits_1_with_generic_line_on_stderr_and_no_traceback(
 
     monkeypatch.setattr(llm_service, "chat_model", raise_llm_error)
 
-    result = runner.invoke(llm_app, ["hi"])
+    result = runner.invoke(llm_app, ["chat", "hi"])
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -204,7 +204,7 @@ def test_llm_error_with_details_also_prints_the_provider_message(
 
     monkeypatch.setattr(llm_service, "chat_model", raise_llm_error)
 
-    result = runner.invoke(llm_app, ["hi", "--details"])
+    result = runner.invoke(llm_app, ["chat", "hi", "--details"])
 
     assert result.exit_code == 1
     assert result.stdout == ""
