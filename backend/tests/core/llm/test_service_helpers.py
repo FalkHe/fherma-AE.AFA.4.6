@@ -33,7 +33,11 @@ and width-mismatch checks, index-based reordering, and the usage mapping.
 import openrouter
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
-from openrouter.operations import CreateEmbeddingsData, CreateEmbeddingsResponseBody, CreateEmbeddingsUsage
+from openrouter.operations import (
+    CreateEmbeddingsData,
+    CreateEmbeddingsResponseBody,
+    CreateEmbeddingsUsage,
+)
 
 from app.core.llm import retry as llm_retry
 from app.core.llm import service as llm_service
@@ -220,7 +224,9 @@ def _embeddings_response(items, *, usage=None):
         CreateEmbeddingsData(embedding=vector, object="embedding", index=index)
         for vector, index in items
     ]
-    return CreateEmbeddingsResponseBody(data=data, model="test/embedding-model", object="list", usage=usage)
+    return CreateEmbeddingsResponseBody(
+        data=data, model="test/embedding-model", object="list", usage=usage
+    )
 
 
 def test_embed_texts_rejects_empty_input_before_any_network_call(monkeypatch):
