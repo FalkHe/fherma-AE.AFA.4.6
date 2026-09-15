@@ -96,8 +96,16 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(LlmError)
     async def _handle_llm_error(request: Request, exc: LlmError) -> JSONResponse:
-        status_code, message = _ERROR_INFO[exc.code]
-        return JSONResponse(status_code=status_code, content=_envelope(exc.code, message, None))
+        # `LlmConfigurationError` (sprint 01) has no wire `.code`: it fires
+        # before any client is built, so it is an operator fault (a missing
+        # server-side key), not something the caller did - it gets the
+        # generic 500 envelope rather than one of the eight LLM_* codes, and
+        # rather than crashing this handler. Expressed once, here, so any
+        # future `LlmError` subclass that forgets to set `.code` degrades
+        # the same way instead of raising `AttributeError`.
+        code = getattr(exc, "code", ErrorCode.INTERNAL_ERROR)
+        status_code, message = _ERROR_INFO[code]
+        return JSONResponse(status_code=status_code, content=_envelope(code, message, None))
 
     @app.exception_handler(ApiError)
     async def _handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
