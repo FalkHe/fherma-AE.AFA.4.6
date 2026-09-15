@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,8 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     openrouter_api_key: str = ""
     chat_model: str = "openai/gpt-4.1-mini"
+    llm_retry_attempts: int = Field(default=3, ge=1)
+    llm_retry_backoff_seconds: float = Field(default=0.5, ge=0)
 
 
 @lru_cache
