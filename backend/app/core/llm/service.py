@@ -382,12 +382,18 @@ def generate_image(prompt: str, *, model: str | None = None) -> ImageResult:
     `output_format` are never sent.
 
     Never returns a substitute (← AC5): a return that is not an
-    `ImageGenerationResponse`, an empty `data`, or a `b64_json` that fails
-    to decode (`binascii.Error`, otherwise unclassified and liable to
-    escape as a foreign exception) all raise `LlmMalformedError()` -
-    retryable, capped like every other malformed reply. `media_type` is
-    `data[0].media_type`, or `"image/png"` when the provider omits it (the
-    documented behaviour for standard raster output).
+    `ImageGenerationResponse`, an empty `data`, a `b64_json` that fails to
+    decode (`binascii.Error`, otherwise unclassified and liable to escape
+    as a foreign exception), or a `b64_json` that decodes to zero bytes
+    all raise `LlmMalformedError()` - retryable, capped like every other
+    malformed reply. A `data[0]` missing `b64_json` entirely, or with it
+    `null`, never reaches this code: `b64_json` is a required `str` field
+    on the SDK's own response model, so the SDK's JSON parsing itself
+    raises a pydantic `ValidationError` first, which `classify()` already
+    maps to `LlmMalformedError()` - no parallel check needed here.
+    `media_type` is `data[0].media_type`, or `"image/png"` when the
+    provider omits it (the documented behaviour for standard raster
+    output).
 
     A `logger.info("llm_image_request", ...)` line fires before the call,
     with `url` derived from the client's own `get_server_details()` rather
@@ -422,6 +428,9 @@ def generate_image(prompt: str, *, model: str | None = None) -> ImageResult:
             image_bytes = base64.b64decode(response.data[0].b64_json, validate=True)
         except binascii.Error as exc:
             raise LlmMalformedError() from exc
+
+        if not image_bytes:
+            raise LlmMalformedError()
 
         media_type = response.data[0].media_type or "image/png"
         usage = _usage_of_image(response.usage)
