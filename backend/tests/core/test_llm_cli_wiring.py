@@ -31,6 +31,10 @@ class FakeUsage:
 class FakeMessage:
     def __init__(self, text: str) -> None:
         self._text = text
+        # A real LangChain `AIMessage` always carries `response_metadata`;
+        # empty (no `finish_reason` key) means `raise_for_finish_reason()`
+        # passes through without raising.
+        self.response_metadata: dict = {}
 
     @property
     def text(self) -> str:
@@ -40,6 +44,7 @@ class FakeMessage:
 class FakeChunk:
     def __init__(self, text: str) -> None:
         self._text = text
+        self.response_metadata: dict = {}
 
     @property
     def text(self) -> str:
@@ -131,7 +136,7 @@ def test_options_default_to_none_when_omitted(monkeypatch: pytest.MonkeyPatch) -
     assert received == {"model": None, "temperature": None}
 
 
-def test_llm_error_exits_1_with_message_on_stderr_and_no_traceback(
+def test_llm_error_exits_1_with_generic_line_on_stderr_and_no_traceback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def raise_llm_error(**kwargs):
@@ -143,9 +148,30 @@ def test_llm_error_exits_1_with_message_on_stderr_and_no_traceback(
 
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert result.stderr.strip() == "openrouter is unreachable"
+    # ← D2: every failure class prints the same generic line; the
+    # provider's own wording only appears behind `--details`.
+    assert result.stderr.strip() == "The AI service could not complete that request."
+    assert "openrouter is unreachable" not in result.stderr
     assert "Traceback" not in result.stderr
     assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_llm_error_with_details_also_prints_the_provider_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_llm_error(**kwargs):
+        raise LlmError("openrouter is unreachable")
+
+    monkeypatch.setattr(llm_service, "chat_model", raise_llm_error)
+
+    result = runner.invoke(llm_app, ["hi", "--details"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    stderr_lines = result.stderr.splitlines()
+    assert stderr_lines[0] == "The AI service could not complete that request."
+    assert stderr_lines[1] == "details: openrouter is unreachable"
+    assert "Traceback" not in result.stderr
 
 
 def test_registered_on_the_top_level_cli_as_llm_chat(monkeypatch: pytest.MonkeyPatch) -> None:
