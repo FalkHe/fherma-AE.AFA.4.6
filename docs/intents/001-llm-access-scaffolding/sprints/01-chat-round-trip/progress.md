@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-15
 updated: 2026-09-15
-stage: draft
+stage: done
 ---
 # Progress: Sprint 01
 
@@ -24,6 +24,9 @@ Status: `open | running | done | failed`
 - AC6 cannot be asserted from pytest: `app-cli` only has `backend/` (`docker/backend.Dockerfile` `COPY backend/ ./`, compose mounts `./backend:/app`), so repo-root docs and `.git` are invisible to the suite. Verified deterministically at the gate instead; the plan was wrong to ask qa for a fixture test.
 
 ## Backlog proposals
+- Sprint 02: an empty stream leaves `total = None`, so the usage line would raise on `None.response_metadata`. Unreachable against OpenRouter today; error handling is 02's brief.
 - Mount the repo root read-only into `app-cli` if a later sprint needs the suite to assert on docs or run `git grep`.
 
 ## Verify
+Round 1: approved — all six ACs pass, D1 and D3 hold, no scope creep. Gates re-run clean, 152 passed. MR !4.
+The verifier's own `glab mr approve` was not rejected (author and reviewer are the same account); revoked as meaningless. AC1/AC2 still owe one hand-run with a real key.
