@@ -47,7 +47,7 @@ current state — where a roadmap doc and the code disagree, the code wins.
 - One module never imports another module's internals — only its `service.py` / `models.py`.
 - camelCase on the wire; one error envelope `{"error": {"code", "message", "details"}}` with stable domain codes.
 - Every user-facing string goes through a react-i18next key. No literal copy in components.
-- LLM access goes through OpenRouter via LangChain — never straight to a vendor API.
+- LLM access goes through OpenRouter — never straight to a vendor API.
 
 ## Gotchas
 
