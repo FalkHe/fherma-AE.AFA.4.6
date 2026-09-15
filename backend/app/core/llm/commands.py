@@ -7,7 +7,17 @@ llm_app = typer.Typer()
 
 
 def _cost_text(usage) -> str:
-    return "unavailable" if usage.cost_usd is None else f"${usage.cost_usd:.6f}"
+    # Three cases, kept unambiguous (← gate fix): `None` stays "unavailable";
+    # a genuine zero stays "$0.000000"; a non-zero cost that rounds to zero
+    # at 6 decimals (embeddings routinely cost a fraction of a microdollar)
+    # renders as "<$0.000001" instead of silently looking free. Anything
+    # that already displays as non-zero at 6 decimals is untouched, so
+    # `chat`'s existing `$0.000024`-style output is byte-identical.
+    if usage.cost_usd is None:
+        return "unavailable"
+    if usage.cost_usd != 0 and round(usage.cost_usd, 6) == 0:
+        return "<$0.000001"
+    return f"${usage.cost_usd:.6f}"
 
 
 def _usage_line(message) -> str:

@@ -52,6 +52,38 @@ def test_prints_one_length_line_per_vector_in_order_then_usage_line(monkeypatch)
     assert lines[2] == "tokens: prompt=7 total=7 · cost: $0.000001"
 
 
+def test_zero_cost_prints_six_zeros(monkeypatch):
+    def _fake_embed_texts(texts, *, model=None):
+        return _FakeEmbeddingResult(
+            vectors=[[0.0]],
+            usage=_FakeUsage(prompt_tokens=1, total_tokens=1, cost_usd=0.0),
+        )
+
+    monkeypatch.setattr(llm_service, "embed_texts", _fake_embed_texts)
+
+    result = runner.invoke(cli, ["llm", "embed", "a"])
+
+    assert result.exit_code == 0, result.stderr
+    assert result.stdout.splitlines()[-1] == "tokens: prompt=1 total=1 · cost: $0.000000"
+
+
+def test_nonzero_cost_below_display_precision_is_never_shown_as_zero(monkeypatch):
+    def _fake_embed_texts(texts, *, model=None):
+        return _FakeEmbeddingResult(
+            vectors=[[0.0]],
+            usage=_FakeUsage(prompt_tokens=5, total_tokens=5, cost_usd=1e-07),
+        )
+
+    monkeypatch.setattr(llm_service, "embed_texts", _fake_embed_texts)
+
+    result = runner.invoke(cli, ["llm", "embed", "a"])
+
+    assert result.exit_code == 0, result.stderr
+    usage_line = result.stdout.splitlines()[-1]
+    assert usage_line == "tokens: prompt=5 total=5 · cost: <$0.000001"
+    assert "$0.000000" not in usage_line
+
+
 def test_usage_line_has_no_completion_field(monkeypatch):
     def _fake_embed_texts(texts, *, model=None):
         return _FakeEmbeddingResult(
