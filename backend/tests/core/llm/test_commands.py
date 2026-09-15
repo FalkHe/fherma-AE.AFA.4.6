@@ -203,3 +203,54 @@ def test_ac1_retried_then_succeeds_prints_the_answer_with_no_failure_line(
     assert "A dazed creature can't take actions." in result.stdout
     combined = result.stdout + result.stderr
     assert "The AI service could not complete that request." not in combined
+
+
+# --- Sprint 04 AC3 / AC5 -------------------------------------------------
+#
+# `app llm embed` down through the real `llm_service.embed_texts`, faking
+# out only the network boundary (`service.build_sdk_client`, sprint 02's
+# seam) exactly as `test_embeddings.py` does — never `ChatOpenRouter`, which
+# plays no part in an embedding call.
+
+
+def test_ac3_embed_several_texts_prints_one_vector_line_each_in_request_order(monkeypatch):
+    # ← AC3
+    def handler(request):
+        data = [
+            {"embedding": [0.0, 0.0, 0.0, 0.0], "object": "embedding", "index": 0},
+            {"embedding": [1.0, 1.0, 1.0, 1.0], "object": "embedding", "index": 1},
+            {"embedding": [2.0, 2.0, 2.0, 2.0], "object": "embedding", "index": 2},
+        ]
+        body = {
+            "data": data,
+            "model": "test/embedding-model",
+            "object": "list",
+            "usage": {"prompt_tokens": 9, "total_tokens": 9, "cost": 0.0027},
+        }
+        return httpx.Response(200, json=body)
+
+    def fake_build_sdk_client(api_key):
+        return openrouter.OpenRouter(
+            api_key=api_key,
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+            retry_config=None,
+        )
+
+    monkeypatch.setattr(llm_service, "build_sdk_client", fake_build_sdk_client)
+
+    result = runner.invoke(cli, ["llm", "embed", "a", "b", "c"])
+
+    assert result.exit_code == 0, result.stderr
+    lines = result.stdout.splitlines()
+    vector_lines = [line for line in lines if line.startswith("vector ")]
+    # One line per vector, in request order (1-indexed): "a" first, "c" last.
+    assert vector_lines == [
+        "vector 1: length=4",
+        "vector 2: length=4",
+        "vector 3: length=4",
+    ]
+    # The embed line's shape is `chat`'s minus `completion=` — this
+    # endpoint returns no completion-token count (← AC5's sibling fact).
+    usage_lines = [line for line in lines if line.startswith("tokens: ")]
+    assert usage_lines == ["tokens: prompt=9 total=9 · cost: $0.002700"]
+    assert "completion=" not in result.stdout
