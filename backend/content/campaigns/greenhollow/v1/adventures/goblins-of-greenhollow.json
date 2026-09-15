@@ -1,0 +1,128 @@
+{
+  "id": "goblins-of-greenhollow",
+  "title": "Goblins of Greenhollow",
+  "intro": "Greenhollow has lost two flocks and a shepherd to raiders out of the Thornway woods. The innkeeper, Mira, has put together what coin the village can spare for anyone willing to follow the sign north to wherever it leads.",
+  "entry_scene": "village-green",
+  "scenes": [
+    {
+      "id": "village-green",
+      "title": "The Village Green",
+      "truth": [
+        "Greenhollow is a huddle of a dozen houses around a well and a green, with the Thornway woods a dark line to the north.",
+        "Mira, who keeps the village's only inn, has laid a torn grain sack and a bent horseshoe on a barrel on the green — everything that was found near the missing shepherd's flock.",
+        "The shepherd's own knife was found lying with them, and Mira has kept it behind the bar since; she means it to go north with whoever goes.",
+        "The village has no soldiers and no priest; whoever goes north goes on their own account."
+      ],
+      "npc_intent": "Mira wants the raiding stopped before a third flock disappears and the village starts to starve; she will pay what she can, tell everything she knows and press the shepherd's knife on whoever agrees to go, but she will not go north herself.",
+      "consequences": [
+        "Anyone who asks around the green before leaving hears the same fear repeated by three different households, with no new fact among them.",
+        "Delaying past nightfall means leaving at first light instead, and one more grazing flock left unwatched overnight."
+      ],
+      "hidden": [],
+      "placements": [
+        {
+          "template": "mira",
+          "count": 1,
+          "carries": [{ "template": "shepherds-knife", "count": 1 }]
+        },
+        { "template": "bent-horseshoe", "count": 1 }
+      ],
+      "exits": [
+        {
+          "to": "thornway",
+          "description": "The cart track that runs from the green to the treeline, the same way the missing flock was last driven.",
+          "condition": null
+        }
+      ]
+    },
+    {
+      "id": "thornway",
+      "title": "The Thornway",
+      "truth": [
+        "The cart track narrows to a deer path within sight of the village and runs on into close-grown thorn and birch.",
+        "Wool tufts snagged on the thorns mark the flock's route north in a line no shepherd would have chosen.",
+        "The path forks: the wider way continues along the old drove road, and a narrower cut breaks off through the thorn towards higher ground."
+      ],
+      "npc_intent": null,
+      "consequences": [
+        "Following the wool tufts rather than the drove road adds an hour to the walk but keeps the true trail; losing it means backtracking to the fork."
+      ],
+      "hidden": [
+        {
+          "fact": "The narrower cut has been deliberately widened at ankle height, as if something has dragged heavy loads through it more than once.",
+          "dc": 12,
+          "discovered_by": "a Wisdom (Perception) check while walking the narrower cut, or crouching to examine the broken thorn at ground level"
+        }
+      ],
+      "placements": [],
+      "exits": [
+        {
+          "to": "lair-maw",
+          "description": "The narrow cut, climbing towards a rocky outcrop where the thorn finally gives way to bare stone.",
+          "condition": "the player has followed the wool-marked trail rather than the open drove road"
+        }
+      ]
+    },
+    {
+      "id": "lair-maw",
+      "title": "The Lair Maw",
+      "truth": [
+        "A cave mouth opens in the rock, closed off by a screen of dragged thornbrush lashed across it, dead long enough to have gone grey and still packed thick enough to be a wall.",
+        "Bones, both animal and otherwise, are scattered outside the entrance where they were thrown rather than buried.",
+        "Three goblins keep watch from the rocks above the entrance, bored and inattentive rather than alert."
+      ],
+      "npc_intent": "The goblins want to be left alone to finish their watch shift without their boss noticing they slacked; they will fight only once they realise they have been seen, and will otherwise shout a warning down into the lair.",
+      "consequences": [
+        "A loud approach — shouting, a fight in the open, a fall on the loose scree — is heard inside the lair, and whatever is below has time to arm itself before the player arrives.",
+        "A goblin allowed to flee downward reaches the boss first, and the boss is ready rather than surprised."
+      ],
+      "hidden": [
+        {
+          "fact": "A second, smaller gap in the rock to the side of the main entrance is not watched at all and leads to the same chamber below.",
+          "dc": 14,
+          "discovered_by": "a Wisdom (Perception) check on the rock face, or deliberately searching the outcrop for another way in before approaching the main entrance"
+        }
+      ],
+      "placements": [
+        { "template": "goblin", "count": 3 },
+        { "template": "thorn-screen", "count": 1 }
+      ],
+      "exits": [
+        {
+          "to": "lair-hollow",
+          "description": "A downward scramble over loose scree into the dark of the cave.",
+          "condition": null
+        }
+      ]
+    },
+    {
+      "id": "lair-hollow",
+      "title": "The Lair Hollow",
+      "truth": [
+        "The cave opens into a low hollow lit by a smoking fire, with a shepherd's crook driven upright into the dirt and a grain sack of stolen fleeces hung from the roof beam above the flames.",
+        "Grettle, the goblin boss, holds this chamber with a single bodyguard goblin at her side, her notched cleaver never out of her hand, and will not be taken by surprise twice.",
+        "A crack in the far wall, just wide enough for a goblin, is the only way out besides the scree slope the player came down."
+      ],
+      "npc_intent": "Grettle means to keep what she has taken and will fight for the hollow, but she values her own skin over the fight and will break for the wall crack the moment the fight turns against her.",
+      "consequences": [
+        "If the fight goes against Grettle, she abandons her bodyguard and forces the wall crack; she is too quick and the space too narrow for anyone in armour to follow, and she is not seen again this side of Greenhollow.",
+        "Killing or driving off both goblins without Grettle escaping ends the raiding on Greenhollow for good, and leaves her cleaver on the floor of the hollow; if she escapes she takes it with her, and the village is safe for now but the raids may begin again wherever she resurfaces."
+      ],
+      "hidden": [],
+      "placements": [
+        {
+          "template": "goblin-boss",
+          "count": 1,
+          "carries": [{ "template": "notched-cleaver", "count": 1 }]
+        },
+        { "template": "goblin", "count": 1 },
+        {
+          "template": "wool-sack",
+          "count": 1,
+          "carries": [{ "template": "stolen-fleece", "count": 2 }]
+        }
+      ],
+      "exits": []
+    }
+  ]
+}

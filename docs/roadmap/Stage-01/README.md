@@ -285,6 +285,7 @@ the owning phase's step spec.
 | The agent-progress milestone vocabulary, bound by the constraint that **nothing in the stream may reveal that a hidden roll happened** | 8 |
 | The in-stream error representation. **Ruled: one error shape, two transports** — a turn failing after the 200 terminates the stream with an event carrying the same `{code, message, details}` object, so D4's single shape holds. Phase 8 pins the remaining transport detail | 8 |
 | **What passes through the guard's override hook.** The free-text system-prompt override sits in the system position, upstream of everything a turn-inspecting guard reads, so this decides whether Medium-8's claim holds. **Phase 8 owns leaving the hook; phase 10 owns the policy, and the architect settles it, not the implementer** | 10 |
+| **How `hidden` and `Secret.dc` are projected out of any scene-derived tool result** before it reaches the visible trace. Content carries DM-only secrets and their difficulty; a tool result that passes a `Scene` through unfiltered leaks both, and "the fact that a roll happened is not a tell" fails. Recorded by phase 1 (`roadmap/Stage-01/phase-01/shared-knowledge.md` §10.3) | 8 |
 
 ## 8. The requirement-3 reading
 
@@ -324,8 +325,9 @@ capability the phase just changed is the phase's own output.
 
 | Contradiction | File | Owning phase |
 |---|---|---|
-| The content shape describes neither the per-adventure `intro` nor the seed player character | `general/model.md` | 1 |
+| The static-file tree's content root, its `scenes/` directory, the `npcs/` + `monsters/` split, the scene-field line, the missing `intro` / `entry_scene` / seed character, and the unstated version mechanism — enumerated in `roadmap/Stage-01/phase-01/shared-knowledge.md` §9.2 | `general/model.md` | 1 |
 | "Authored by an LLM once through a `generate_adventure` CLI that prompts with the SRD and enforces the schema" — content is hand-authored | `general/architecture.md` | 1 |
+| The tool table's `get_monster(name)` row — with one `Definition` entity the binding is id- or name-addressed over `definitions`, and its final name and argument are phase 8's to pin | `general/architecture.md` | 8 |
 | Requirement 3's wording does not state the player-capability reading | `general/requirement-map.md` | 1 (states it) · 11 (full argument) |
 | `docs/modules/` does not exist and `docs/README.md` says "None yet" | `docs/README.md`, `docs/modules/` | every phase; first entry lands with 1 |
 | The static-file tree lists a content-generation prompt asset that will not exist, **and pins the only prompt root as `game`'s directory** — which would place the character-generation prompt inside `game` even if the character capability becomes its own module, a module-boundary violation. The correction is the root convention: an id resolves against its owning capability's own prompt directory | `general/model.md` | 2 |

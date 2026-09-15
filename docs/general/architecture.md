@@ -49,10 +49,9 @@ randomness, generates a portrait through an image API and writes the character
 sheet to state.
 
 **Adventure content** — campaigns, adventures, scenes and definitions as
-static JSON in git, pinned per run by content version. Authored by an LLM once
-through a `generate_adventure` CLI that prompts with the SRD and enforces the
-schema, then reviewed as a diff and treated as fixed. Layout and scene fields
-are in [model.md](model.md).
+static JSON in git, pinned per run by content version. Content is
+hand-authored, validated by `app content validate`, and reviewed as a diff.
+Layout and scene fields are in [model.md](model.md).
 
 **Rules knowledge base** — SRD 5.1 chunked into pgvector by a one-time ingest
 CLI. Agentic: the game agent decides whether a lookup is needed and may
