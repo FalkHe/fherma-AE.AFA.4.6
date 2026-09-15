@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     llm_retry_backoff_seconds: float = Field(default=0.5, ge=0)
     embedding_model: str = "openai/text-embedding-3-small"
     embedding_dimensions: int = Field(default=1536, ge=1)
+    image_model: str = "google/gemini-3.1-flash-image"
 
 
 @lru_cache
