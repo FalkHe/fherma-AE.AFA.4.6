@@ -20,15 +20,31 @@ too, not just raised once. `_no_real_sleep` (autouse) stubs `retry._sleep`
 for the whole module so that retrying never costs this suite wall-clock
 time - the retry *count* itself is qa's `test_retry.py`/`test_commands.py`
 to assert, not this file's.
+
+Sprint 04 WI2 adds `embed_texts()`'s own unit coverage below, in the same
+spirit: `service.build_sdk_client` is monkeypatched to a scripted stand-in
+for the raw SDK client (never a real `httpx.MockTransport` - that full
+round-trip, including `classify()`'s real dispatch table, is qa's own
+`test_embeddings.py`), so this file's embedding tests are the seam's own
+control flow only - empty-input / blank-key short-circuits, the malformed
+and width-mismatch checks, index-based reordering, and the usage mapping.
 """
 
 import openrouter
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
+from openrouter.operations import CreateEmbeddingsData, CreateEmbeddingsResponseBody, CreateEmbeddingsUsage
 
 from app.core.llm import retry as llm_retry
 from app.core.llm import service as llm_service
-from app.core.llm.errors import LlmRefusedError, LlmUnavailableError
+from app.core.llm.errors import (
+    LlmBadRequestError,
+    LlmConfigurationError,
+    LlmMalformedError,
+    LlmRefusedError,
+    LlmUnavailableError,
+)
+from app.core.settings import get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -171,3 +187,194 @@ def test_chat_stream_reraises_an_unclassified_mid_stream_exception_unchanged(mon
     stream = llm_service.chat_stream("hello")
     with pytest.raises(_ForeignError):
         next(stream)
+
+
+class _StubEmbeddingsEndpoint:
+    """Fakes the `.embeddings` attribute of the raw SDK client
+    `build_sdk_client()` would otherwise return. `.calls` records every
+    `generate()` call's kwargs, so a test can assert `dimensions`/
+    `encoding_format` were never passed (← AC5) alongside the `model`/
+    `input` that were."""
+
+    def __init__(self, *, result=None, error=None):
+        self._result = result
+        self._error = error
+        self.calls: list[dict] = []
+
+    def generate(self, **kwargs):
+        self.calls.append(kwargs)
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+
+class _StubSdkClient:
+    def __init__(self, *, result=None, error=None):
+        self.embeddings = _StubEmbeddingsEndpoint(result=result, error=error)
+
+
+def _embeddings_response(items, *, usage=None):
+    """`items` is a list of `(vector, index)`; `index=None` mimics a data
+    item that carries no `.index` at all."""
+    data = [
+        CreateEmbeddingsData(embedding=vector, object="embedding", index=index)
+        for vector, index in items
+    ]
+    return CreateEmbeddingsResponseBody(data=data, model="test/embedding-model", object="list", usage=usage)
+
+
+def test_embed_texts_rejects_empty_input_before_any_network_call(monkeypatch):
+    calls = []
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: calls.append(key))
+
+    with pytest.raises(LlmBadRequestError):
+        llm_service.embed_texts([])
+
+    assert calls == []
+
+
+def test_embed_texts_raises_configuration_error_for_a_blank_key_without_retrying(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    get_settings.cache_clear()
+    build_calls = []
+    monkeypatch.setattr(
+        llm_service, "build_sdk_client", lambda key: build_calls.append(key) or _StubSdkClient()
+    )
+
+    try:
+        with pytest.raises(LlmConfigurationError):
+            llm_service.embed_texts(["hello"])
+    finally:
+        get_settings.cache_clear()
+
+    assert build_calls == []
+
+
+def test_embed_texts_never_sends_dimensions_or_encoding_format(monkeypatch):
+    stub = _StubSdkClient(result=_embeddings_response([([1.0, 2.0, 3.0, 4.0], 0)]))
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    llm_service.embed_texts(["hello"])
+
+    call = stub.embeddings.calls[-1]
+    assert "dimensions" not in call
+    assert "encoding_format" not in call
+    assert call["input"] == ["hello"]
+    assert call["model"] == get_settings().embedding_model
+
+
+def test_embed_texts_passes_the_requested_model_when_given(monkeypatch):
+    stub = _StubSdkClient(result=_embeddings_response([([1.0, 2.0, 3.0, 4.0], 0)]))
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    llm_service.embed_texts(["hello"], model="some/other-model")
+
+    assert stub.embeddings.calls[-1]["model"] == "some/other-model"
+
+
+def test_embed_texts_reorders_vectors_by_index_when_every_item_carries_one(monkeypatch):
+    shuffled = [([2.0, 2.0, 2.0, 2.0], 1), ([1.0, 1.0, 1.0, 1.0], 0)]
+    stub = _StubSdkClient(result=_embeddings_response(shuffled))
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    result = llm_service.embed_texts(["a", "b"])
+
+    assert result.vectors == [[1.0, 1.0, 1.0, 1.0], [2.0, 2.0, 2.0, 2.0]]
+
+
+def test_embed_texts_keeps_response_order_when_index_is_only_partially_present(monkeypatch):
+    partial = [([2.0, 2.0, 2.0, 2.0], None), ([1.0, 1.0, 1.0, 1.0], 0)]
+    stub = _StubSdkClient(result=_embeddings_response(partial))
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    result = llm_service.embed_texts(["a", "b"])
+
+    assert result.vectors == [[2.0, 2.0, 2.0, 2.0], [1.0, 1.0, 1.0, 1.0]]
+
+
+def test_embed_texts_raises_malformed_for_the_sse_str_response(monkeypatch):
+    stub = _StubSdkClient(result="data: [DONE]\n\n")
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    with pytest.raises(LlmMalformedError):
+        llm_service.embed_texts(["hello"])
+
+
+def test_embed_texts_raises_malformed_for_a_base64_string_embedding(monkeypatch):
+    stub = _StubSdkClient(result=_embeddings_response([("base64-blob", 0)]))
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    with pytest.raises(LlmMalformedError):
+        llm_service.embed_texts(["hello"])
+
+
+def test_embed_texts_raises_malformed_when_data_count_does_not_match_input_count(monkeypatch):
+    stub = _StubSdkClient(
+        result=_embeddings_response([([1.0, 2.0, 3.0, 4.0], 0), ([1.0, 2.0, 3.0, 4.0], 1)])
+    )
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    with pytest.raises(LlmMalformedError):
+        llm_service.embed_texts(["only one text"])
+
+
+def test_embed_texts_raises_configuration_error_naming_both_env_vars_on_width_mismatch(monkeypatch):
+    stub = _StubSdkClient(result=_embeddings_response([([1.0, 2.0, 3.0], 0)]))
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    with pytest.raises(LlmConfigurationError) as excinfo:
+        llm_service.embed_texts(["hello"])
+
+    message = str(excinfo.value)
+    assert "EMBEDDING_DIMENSIONS" in message
+    assert "EMBEDDING_MODEL" in message
+    assert "3" in message
+
+
+def test_embed_texts_maps_prompt_and_total_tokens_and_cost_with_zero_completion(monkeypatch):
+    usage = CreateEmbeddingsUsage(prompt_tokens=7, total_tokens=7, cost=1.4e-06)
+    stub = _StubSdkClient(result=_embeddings_response([([1.0, 2.0, 3.0, 4.0], 0)], usage=usage))
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    result = llm_service.embed_texts(["hello"])
+
+    assert result.usage == llm_service.Usage(
+        prompt_tokens=7, completion_tokens=0, total_tokens=7, cost_usd=1.4e-06
+    )
+
+
+def test_embed_texts_degrades_to_zero_usage_and_no_cost_when_usage_is_absent(monkeypatch):
+    stub = _StubSdkClient(result=_embeddings_response([([1.0, 2.0, 3.0, 4.0], 0)], usage=None))
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+
+    result = llm_service.embed_texts(["hello"])
+
+    assert result.usage == llm_service.Usage(
+        prompt_tokens=0, completion_tokens=0, total_tokens=0, cost_usd=None
+    )
+
+
+def test_embed_texts_raises_the_classified_error_for_a_recognised_exception(monkeypatch):
+    provider_exc = _ForeignError("502 from the provider")
+    classified = LlmUnavailableError("502 from the provider")
+    stub = _StubSdkClient(error=provider_exc)
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+    monkeypatch.setattr(
+        llm_service, "classify", lambda exc: classified if exc is provider_exc else None
+    )
+
+    with pytest.raises(LlmUnavailableError) as excinfo:
+        llm_service.embed_texts(["hello"])
+
+    assert excinfo.value is classified
+    assert excinfo.value.__cause__ is provider_exc
+
+
+def test_embed_texts_reraises_an_unclassified_exception_unchanged(monkeypatch):
+    provider_exc = _ForeignError("not ours")
+    stub = _StubSdkClient(error=provider_exc)
+    monkeypatch.setattr(llm_service, "build_sdk_client", lambda key: stub)
+    monkeypatch.setattr(llm_service, "classify", lambda exc: None)
+
+    with pytest.raises(_ForeignError):
+        llm_service.embed_texts(["hello"])
