@@ -73,7 +73,9 @@ def test_chat_raises_the_classified_error_for_a_recognised_exception(monkeypatch
     monkeypatch.setattr(
         llm_service, "chat_model", lambda **_: _StubChatModel(invoke_error=provider_exc)
     )
-    monkeypatch.setattr(llm_service, "classify", lambda exc: classified if exc is provider_exc else None)
+    monkeypatch.setattr(
+        llm_service, "classify", lambda exc: classified if exc is provider_exc else None
+    )
 
     with pytest.raises(LlmUnavailableError) as excinfo:
         llm_service.chat("hello")
@@ -113,9 +115,7 @@ def test_chat_stream_yields_a_failing_chunks_text_before_raising_for_it(monkeypa
     # already on screen: the chunk that will fail is still yielded first.
     good = AIMessageChunk(content="partial ", response_metadata={"finish_reason": None})
     bad = AIMessageChunk(content="answer", response_metadata={"finish_reason": "error"})
-    monkeypatch.setattr(
-        llm_service, "chat_model", lambda **_: _StubChatModel(chunks=[good, bad])
-    )
+    monkeypatch.setattr(llm_service, "chat_model", lambda **_: _StubChatModel(chunks=[good, bad]))
 
     stream = llm_service.chat_stream("hello")
 
@@ -134,7 +134,9 @@ def test_chat_stream_classifies_a_mid_stream_exception(monkeypatch):
         "chat_model",
         lambda **_: _StubChatModel(chunks=[good], stream_error=provider_exc),
     )
-    monkeypatch.setattr(llm_service, "classify", lambda exc: classified if exc is provider_exc else None)
+    monkeypatch.setattr(
+        llm_service, "classify", lambda exc: classified if exc is provider_exc else None
+    )
 
     stream = llm_service.chat_stream("hello")
     assert next(stream) is good
