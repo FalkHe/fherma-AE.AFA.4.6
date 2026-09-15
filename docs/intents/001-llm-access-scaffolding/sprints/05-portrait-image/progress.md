@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-15
 updated: 2026-09-15
-stage: draft
+stage: done
 ---
 # Progress: Sprint 05
 
@@ -26,3 +26,7 @@ Status: `open | running | done | failed`
 - **Portrait economics, for phase 7:** ~$0.067 and ~1.7 MB per portrait at the model's defaults. A character-creation flow that regenerates freely is materially expensive, and 1.7 MB per stored portrait adds up. `resolution` / `output_format` exist on `images.generate` if either needs tuning; choosing them is out of scope here.
 
 ## Verify
+Round 1: approved — AC1–AC5 pass, D1/D3/D4 honoured, no scope creep. Gates clean, 412 passed in 3.84s.
+AC5 mutation-tested by the verifier: placeholder returns injected into the empty-`data`, `classify()` and base64-decode paths turned 7 / 24 / 2 tests red respectively; tree restored and re-verified clean. D1 asserted on the real request host inside the mock transport, with the logged URL derived from `get_server_details()` rather than a literal.
+One non-blocking gap closed in-round: `b64_json: ""` decoded to zero bytes and exited 0 with a 0-byte file — success reported for an unusable result. Now `LlmMalformedError`, verified red-then-green.
+Approval withheld — author and reviewer are the same account (note #79).
