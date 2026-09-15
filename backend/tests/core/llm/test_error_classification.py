@@ -31,18 +31,24 @@ from app.core.llm.errors import (
 )
 
 
-def _raw_response(status_code: int) -> httpx.Response:
-    return httpx.Response(status_code, request=httpx.Request("POST", "https://openrouter.ai/x"))
+def _raw_response(status_code: int, headers: dict[str, str] | None = None) -> httpx.Response:
+    return httpx.Response(
+        status_code,
+        headers=headers,
+        request=httpx.Request("POST", "https://openrouter.ai/x"),
+    )
 
 
-def _fake_open_router_error(status_code: int, message: str = "boom"):
+def _fake_open_router_error(
+    status_code: int, message: str = "boom", headers: dict[str, str] | None = None
+):
     """A real `openrouter.errors.OpenRouterError` with an arbitrary status
     code, so `classify()` must dispatch on `.status_code` alone - never on
     which concrete SDK subclass it is (the SDK has many, and degrades to
     `OpenRouterDefaultError` on a non-JSON body)."""
     from openrouter.errors import OpenRouterError
 
-    return OpenRouterError(message, _raw_response(status_code))
+    return OpenRouterError(message, _raw_response(status_code, headers))
 
 
 class TestSubclassAttributes:
@@ -211,3 +217,93 @@ class TestRaiseForFinishReason:
     def test_missing_finish_reason_returns_quietly(self):
         message = AIMessage(content="x", response_metadata={})
         raise_for_finish_reason(message)
+
+
+class TestLlmConfigurationErrorIsSafelyNonRetryable:
+    def test_retryable_is_false_and_retry_after_is_none(self):
+        # sprint 03: the one error raised before any network call must
+        # never crash the question a retry loop asks first.
+        exc = LlmConfigurationError()
+        assert exc.retryable is False
+        assert exc.retry_after_seconds is None
+
+
+class TestRetryAfterSeconds:
+    def test_defaults_to_none_when_not_supplied(self):
+        exc = LlmAuthError("x")
+        assert exc.retry_after_seconds is None
+
+    def test_stored_when_supplied_as_keyword(self):
+        exc = LlmAuthError("x", retry_after_seconds=7.0)
+        assert exc.retry_after_seconds == 7.0
+
+    def test_provider_message_stays_positional_and_first(self):
+        # call sites elsewhere in the codebase construct these classes with
+        # a single positional argument - that must keep compiling.
+        exc = LlmAuthError("just the message")
+        assert exc.provider_message == "just the message"
+        assert exc.retry_after_seconds is None
+
+    def test_classify_recovers_numeric_retry_after_header_from_openrouter_error(self):
+        exc = classify(_fake_open_router_error(502, headers={"retry-after": "7"}))
+        assert exc.retry_after_seconds == 7.0
+
+    def test_classify_leaves_retry_after_none_when_header_is_absent(self):
+        exc = classify(_fake_open_router_error(502))
+        assert exc.retry_after_seconds is None
+
+    def test_classify_leaves_retry_after_none_when_header_is_an_http_date(self):
+        exc = classify(
+            _fake_open_router_error(503, headers={"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"})
+        )
+        assert exc.retry_after_seconds is None
+
+    def test_client_side_exceptions_never_carry_a_retry_after(self):
+        assert classify(httpx.TimeoutException("timed out")).retry_after_seconds is None
+        assert classify(httpx.ConnectError("no connection")).retry_after_seconds is None
+
+        class _Model(BaseModel):
+            n: int
+
+        try:
+            _Model(n="not an int")
+        except ValidationError as err:
+            exc = classify(err)
+        assert exc.retry_after_seconds is None
+
+
+class TestRetryAfterOfHelper:
+    """`_retry_after_of` is the parsing helper `classify()` uses on the
+    `OpenRouterError` branch; exercised directly here so every failure mode
+    - missing attribute, `None` object, missing key, unparseable value - is
+    proven never to raise, not just the two the `classify()` path reaches."""
+
+    def test_missing_headers_attribute_returns_none(self):
+        class _NoHeaders:
+            pass
+
+        assert llm_errors._retry_after_of(_NoHeaders()) is None
+
+    def test_none_headers_returns_none(self):
+        class _NullHeaders:
+            headers = None
+
+        assert llm_errors._retry_after_of(_NullHeaders()) is None
+
+    def test_headers_without_retry_after_key_returns_none(self):
+        class _EmptyHeaders:
+            headers = httpx.Headers({})
+
+        assert llm_errors._retry_after_of(_EmptyHeaders()) is None
+
+    def test_non_numeric_value_returns_none(self):
+        class _JunkHeaders:
+            headers = httpx.Headers({"retry-after": "not-a-number"})
+
+        assert llm_errors._retry_after_of(_JunkHeaders()) is None
+
+    def test_numeric_string_is_parsed_to_float(self):
+        class _NumericHeaders:
+            headers = httpx.Headers({"retry-after": "12"})
+
+        assert llm_errors._retry_after_of(_NumericHeaders()) == 12.0

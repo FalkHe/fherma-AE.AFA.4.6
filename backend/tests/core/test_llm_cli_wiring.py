@@ -10,14 +10,54 @@ behaviour of `llm_service` / `errors` is WI2's and lives in
 from dataclasses import dataclass
 
 import pytest
+import structlog
 from typer.testing import CliRunner
 
 from app.cli import cli
+from app.core.llm import retry as llm_retry
 from app.core.llm import service as llm_service
 from app.core.llm.commands import llm_app
 from app.core.llm.errors import LlmError
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sleep(monkeypatch):
+    monkeypatch.setattr(llm_retry, "_sleep", lambda seconds: None)
+
+
+@pytest.fixture(autouse=True)
+def _configured_logging():
+    """Tests below call `runner.invoke(llm_app, ...)` directly, bypassing
+    `cli`'s own callback -- the only place `configure_logging()` normally
+    runs before a command executes. Sprint 03's retry loop now logs on every
+    failed attempt (`app/core/llm/retry.py`), a path the `LlmError` tests
+    below exercise, so without this fixture structlog is left in whatever
+    state an unrelated, earlier-running test file happened to leave it:
+    either its own never-configured default (a bare `PrintLogger` that
+    writes to *stdout*, breaking this file's `stdout == ""` assertions), or
+    -- worse -- a *stale* configuration some other test left behind by
+    calling `configure_logging()` without ever resetting it (e.g.
+    `test_error_envelope.py`), which binds `PrintLoggerFactory` to that
+    other test's `capsys` buffer -- already closed by the time this file's
+    tests run, crashing the CLI invocation with an uncaught `ValueError`
+    before anything is printed (`result.stdout`/`result.stderr` both empty,
+    the two failures this fixture exists to prevent).
+
+    Configuring here, *before* `runner.invoke()` swaps in its own isolated
+    stdout/stderr for the duration of the call, binds `PrintLoggerFactory`
+    to the outer (real) stream instead -- the same one `capsys` reads, not
+    `result.stderr` -- so a retry log line never leaks into the exact-match
+    assertions on `result.stderr` below; only `commands.py`'s own
+    `typer.echo(..., err=True)` (which resolves its stream dynamically, at
+    call time, from inside the isolated `invoke()` context) does. Resetting
+    at teardown stops this file from becoming the next such leak."""
+    from app.core.logging import configure_logging
+
+    configure_logging()
+    yield
+    structlog.reset_defaults()
 
 
 @dataclass(frozen=True)

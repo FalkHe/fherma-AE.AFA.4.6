@@ -27,6 +27,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_openrouter import ChatOpenRouter
 
 from app.core.llm.errors import LlmConfigurationError, classify, raise_for_finish_reason
+from app.core.llm.retry import call_with_retry, stream_with_retry
 from app.core.settings import get_settings
 
 DEFAULT_TEMPERATURE = 0.7
@@ -72,6 +73,14 @@ def chat_model(*, model: str | None = None, temperature: float | None = None) ->
     `stream_usage` is left at `ChatOpenRouter`'s own default (`True`), so a
     streaming caller's final chunk still carries `usage_metadata` for
     `usage_of()` to read.
+
+    `max_retries=0` is passed explicitly even though `client=` already makes
+    it dead (`ChatOpenRouter` only reads it in `_build_client()`, which
+    `validate_environment` skips whenever `client` is already set): sprint
+    01 *was* silently retrying with a ~300 s window before `client=` landed,
+    so this is a guard against a later edit dropping `client=` resurrecting
+    that. Sprint 03's own retry loop (`app/core/llm/retry.py`) owns retry
+    deliberately, on top of this seam.
     """
     settings = get_settings()
     if not settings.openrouter_api_key.strip():
@@ -82,6 +91,7 @@ def chat_model(*, model: str | None = None, temperature: float | None = None) ->
         temperature=temperature if temperature is not None else DEFAULT_TEMPERATURE,
         api_key=settings.openrouter_api_key,
         client=build_sdk_client(settings.openrouter_api_key),
+        max_retries=0,
     )
 
 
@@ -95,16 +105,26 @@ def chat(
     exception re-raises unchanged - foreign errors are never swallowed.
     `raise_for_finish_reason()` then turns a silent refusal / mid-stream
     failure recorded on the reply into the matching `LlmError`.
-    """
-    try:
-        message = chat_model(model=model, temperature=temperature).invoke(prompt)
-    except Exception as exc:
-        if (err := classify(exc)) is not None:
-            raise err from exc
-        raise
 
-    raise_for_finish_reason(message)
-    return message
+    The whole attempt runs through `call_with_retry()` (sprint 03, ←
+    `retry.py`), which retries a retryable `LlmError` quietly, per the
+    configured budget, before the caller ever sees anything (← D6).
+    `chat_model()` is called again on every attempt, so `LlmConfigurationError`
+    still raises on attempt 1 and is never retried.
+    """
+
+    def _attempt() -> AIMessage:
+        try:
+            message = chat_model(model=model, temperature=temperature).invoke(prompt)
+        except Exception as exc:
+            if (err := classify(exc)) is not None:
+                raise err from exc
+            raise
+
+        raise_for_finish_reason(message)
+        return message
+
+    return call_with_retry(_attempt, label="chat")
 
 
 def chat_stream(
@@ -117,20 +137,30 @@ def chat_stream(
     mid-stream failure arrives as a silent chunk (`finish_reason == "error"`)
     following partial output already on screen, so the generic failure line
     lands after it, on stderr, exit 1 - not before it.
-    """
-    stream = chat_model(model=model, temperature=temperature).stream(prompt)
-    while True:
-        try:
-            chunk = next(stream)
-        except StopIteration:
-            return
-        except Exception as exc:
-            if (err := classify(exc)) is not None:
-                raise err from exc
-            raise
 
-        yield chunk
-        raise_for_finish_reason(chunk)
+    Opening the stream (up to and including its first chunk) runs through
+    `stream_with_retry()` (sprint 03, ← `retry.py`), which retries only
+    until that first chunk is yielded - see its docstring for why a
+    mid-stream failure is never retried. `chat_model()` is rebuilt on every
+    retried attempt, so `LlmConfigurationError` still raises on attempt 1.
+    """
+
+    def _open() -> Iterator[AIMessageChunk]:
+        stream = chat_model(model=model, temperature=temperature).stream(prompt)
+        while True:
+            try:
+                chunk = next(stream)
+            except StopIteration:
+                return
+            except Exception as exc:
+                if (err := classify(exc)) is not None:
+                    raise err from exc
+                raise
+
+            yield chunk
+            raise_for_finish_reason(chunk)
+
+    return stream_with_retry(_open, label="chat_stream")
 
 
 def usage_of(message: BaseMessage) -> Usage:
