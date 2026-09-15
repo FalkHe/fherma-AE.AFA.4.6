@@ -10,15 +10,18 @@ stage: draft
 | WI | Status | Note |
 |---|---|---|
 | 1 | done | 2 settings + conftest pins, 2 tests, suite 307 |
-| 2 | running | |
-| 3 | running | |
-| qa | running | |
+| 2 | done | embed_texts + EmbeddingResult, 23 tests, red-first verified |
+| 3 | done | app llm embed + two byte-identical refactors, 9 tests |
+| qa | done | AC3-AC5 green, 9 tests incl. shuffled-index and no-dimensions |
 
 Status: `open | running | done | failed`
 
 ## Issues
 - Branched off `sprint/001-03-quiet-retry`, not `main`: !6 was still open and both sprints edit `service.py`. Embeddings therefore inherit D6's retry. **!6 must merge before this sprint's MR.** It did — but GitLab **squash-merges**, so sprint 03's ten commits are in `main` under one new SHA and are still present individually here. Rebase onto `main` before opening !7, once all agents have landed, or the MR replays sprint 03.
 - The intent research's premise for this sprint was wrong — it assumed embeddings needed raw `httpx` because LangChain drops `usage.cost`. The SDK exposes embeddings directly with cost first-class. Re-verifying before building saved a parallel error path.
+
+- WI3 correctly returned `partial` rather than reaching outside its scope: adding `embed` made `llm_app` multi-command, so Typer's single-command shortcut stopped applying and `test_llm_cli_wiring.py`'s `invoke(llm_app, ["hi"])` needed `["chat", "hi"]`. Fixed separately. No user-facing change — real invocations were always `app llm chat`.
+- Rebased with `--onto origin/main 38455c3` to replay only sprint 04's eleven commits; a plain rebase hit repeated docs conflicts replaying sprint 03.
 
 ## Backlog proposals
 
