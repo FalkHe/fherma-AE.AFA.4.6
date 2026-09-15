@@ -294,6 +294,23 @@ class TestAC5RaisesNeverSubstitutes:
 
         assert calls["count"] == retry_module.MALFORMED_MAX_ATTEMPTS
 
+    def test_empty_b64_json_raises_malformed_not_a_silent_zero_byte_success(self, monkeypatch):
+        # ← the gap the verifier flagged on !8: `b64_json: ""` decodes
+        # cleanly to zero bytes, so a naive decode-and-return would report
+        # success for a file that never opens (AC1).
+        calls = {"count": 0}
+
+        def handler(request):
+            calls["count"] += 1
+            return httpx.Response(200, json=_image_body(data=[{"b64_json": ""}]))
+
+        _stub_gateway(monkeypatch, handler)
+
+        with pytest.raises(LlmMalformedError):
+            llm_service.generate_image("a prompt")
+
+        assert calls["count"] == retry_module.MALFORMED_MAX_ATTEMPTS
+
     def test_unparseable_b64_json_raises_malformed_not_a_foreign_binascii_error(self, monkeypatch):
         # ← the trap the research flagged: `binascii.Error` is otherwise
         # unclassified and would escape as a foreign exception.
