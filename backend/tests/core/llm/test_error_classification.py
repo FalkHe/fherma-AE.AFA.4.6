@@ -11,8 +11,8 @@ import httpx
 import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessage
-from pydantic_core import ValidationError
 from pydantic import BaseModel
+from pydantic_core import ValidationError
 
 from app.core.errors import ErrorCode
 from app.core.llm import errors as llm_errors
@@ -21,7 +21,6 @@ from app.core.llm.errors import (
     LlmBadRequestError,
     LlmBudgetError,
     LlmConfigurationError,
-    LlmError,
     LlmMalformedError,
     LlmRateLimitError,
     LlmRefusedError,
@@ -36,15 +35,14 @@ def _raw_response(status_code: int) -> httpx.Response:
     return httpx.Response(status_code, request=httpx.Request("POST", "https://openrouter.ai/x"))
 
 
-class _FakeOpenRouterError(Exception):
-    """Stands in for `openrouter.errors.OpenRouterError` subclasses:
-    carries `.status_code`/`.message` without needing a real SDK error
-    class, since `classify()` must dispatch on `.status_code` alone."""
+def _fake_open_router_error(status_code: int, message: str = "boom"):
+    """A real `openrouter.errors.OpenRouterError` with an arbitrary status
+    code, so `classify()` must dispatch on `.status_code` alone - never on
+    which concrete SDK subclass it is (the SDK has many, and degrades to
+    `OpenRouterDefaultError` on a non-JSON body)."""
+    from openrouter.errors import OpenRouterError
 
-    def __init__(self, status_code: int, message: str = "boom") -> None:
-        self.status_code = status_code
-        self.message = message
-        super().__init__(message)
+    return OpenRouterError(message, _raw_response(status_code))
 
 
 class TestSubclassAttributes:
@@ -116,7 +114,7 @@ class TestClassify:
         ],
     )
     def test_openrouter_error_classified_by_status_code(self, status_code, expected_cls):
-        exc = classify(_FakeOpenRouterError(status_code, message="provider said no"))
+        exc = classify(_fake_open_router_error(status_code, message="provider said no"))
         assert isinstance(exc, expected_cls)
         assert exc.provider_message == "provider said no"
 
@@ -167,7 +165,7 @@ class TestProviderMessageRedaction:
         get_settings.cache_clear()
         try:
             exc = classify(
-                _FakeOpenRouterError(500, message="body echoed sk-super-secret-123 back")
+                _fake_open_router_error(500, message="body echoed sk-super-secret-123 back")
             )
         finally:
             get_settings.cache_clear()
@@ -180,18 +178,18 @@ class TestProviderMessageRedaction:
         monkeypatch.setenv("OPENROUTER_API_KEY", "")
         get_settings.cache_clear()
         try:
-            exc = classify(_FakeOpenRouterError(500, message="a perfectly normal message"))
+            exc = classify(_fake_open_router_error(500, message="a perfectly normal message"))
         finally:
             get_settings.cache_clear()
 
         assert exc.provider_message == "a perfectly normal message"
 
     def test_provider_message_is_truncated_to_500_chars(self):
-        exc = classify(_FakeOpenRouterError(500, message="x" * 600))
+        exc = classify(_fake_open_router_error(500, message="x" * 600))
         assert len(exc.provider_message) == 500
 
     def test_blank_message_becomes_none(self):
-        exc = classify(_FakeOpenRouterError(500, message=""))
+        exc = classify(_fake_open_router_error(500, message=""))
         assert exc.provider_message is None
 
 
