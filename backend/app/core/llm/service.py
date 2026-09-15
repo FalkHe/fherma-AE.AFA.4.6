@@ -15,9 +15,18 @@ with the SDK's own retry switched off (`retry_config=None`): left at its
 default, the SDK retries 5XX itself with a near-unbounded backoff, which
 would make this sprint's own 5XX handling hang for minutes. Sprint 03 owns
 retry deliberately, on top of this seam - not invisibly underneath it.
+
+`embed_texts()` (sprint 04) reuses the same client, built from the same
+`build_sdk_client()`, for `client.embeddings.generate(...)` - the SDK
+exposes embeddings directly and raises the same `openrouter.errors.*`
+types `classify()` already matches on, so no parallel error path exists
+here. `dimensions`/`encoding_format` are never passed to `generate()`: the
+model's native width is what `EMBEDDING_DIMENSIONS` must be set to match
+(← AC5), and a returned vector of the wrong width raises rather than
+degrades - see `embed_texts()`'s own docstring.
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import openrouter
@@ -25,8 +34,15 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_openrouter import ChatOpenRouter
+from openrouter.operations import CreateEmbeddingsResponseBody, CreateEmbeddingsUsage
 
-from app.core.llm.errors import LlmConfigurationError, classify, raise_for_finish_reason
+from app.core.llm.errors import (
+    LlmBadRequestError,
+    LlmConfigurationError,
+    LlmMalformedError,
+    classify,
+    raise_for_finish_reason,
+)
 from app.core.llm.retry import call_with_retry, stream_with_retry
 from app.core.settings import get_settings
 
@@ -40,6 +56,12 @@ class Usage:
     completion_tokens: int
     total_tokens: int
     cost_usd: float | None
+
+
+@dataclass(frozen=True)
+class EmbeddingResult:
+    vectors: list[list[float]]
+    usage: Usage
 
 
 def build_sdk_client(api_key: str) -> openrouter.OpenRouter:
@@ -181,3 +203,113 @@ def usage_of(message: BaseMessage) -> Usage:
         total_tokens=usage_metadata.get("total_tokens", 0),
         cost_usd=cost,
     )
+
+
+def _usage_of_embeddings(usage: CreateEmbeddingsUsage | None) -> Usage:
+    """This endpoint returns no completion-token count, hence the 0 - not a
+    degraded read like `usage_of()`'s `.get(..., 0)`, since the SDK's own
+    `CreateEmbeddingsUsage` model has no such field to be absent."""
+    if usage is None:
+        return Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0, cost_usd=None)
+
+    return Usage(
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=0,
+        total_tokens=usage.total_tokens,
+        cost_usd=usage.cost,
+    )
+
+
+def _vectors_from_response(
+    response: CreateEmbeddingsResponseBody, *, expected_count: int, requested_model: str
+) -> list[list[float]]:
+    """Validate and unwrap `response.data` into plain vectors, in request
+    order.
+
+    A non-`CreateEmbeddingsResponseBody` return (the SSE `str` case, ←
+    `embeddings.py`), a `str` where a vector should be (the base64 encoding
+    variant, never requested here since `encoding_format` is never passed),
+    or a `data` list of the wrong length all mean the response cannot be
+    trusted at all - `LlmMalformedError()`, retryable like every other
+    malformed reply.
+
+    `data` is re-sorted by `.index` only when *every* item carries one: a
+    partial set gives nothing reliable to sort on, so response order is
+    kept for that case rather than guessed at.
+
+    Any vector whose length differs from `settings.embedding_dimensions`
+    raises `LlmConfigurationError` naming both env vars and the width
+    actually received, instead of returning it: a silently wrong-width
+    vector would corrupt phase 4/6's `vector(n)` column downstream, and
+    retrying a misconfiguration cannot help - this refuses rather than
+    degrades, deliberately.
+    """
+    if not isinstance(response, CreateEmbeddingsResponseBody):
+        raise LlmMalformedError()
+
+    data = response.data
+    if len(data) != expected_count:
+        raise LlmMalformedError()
+    if any(isinstance(item.embedding, str) for item in data):
+        raise LlmMalformedError()
+
+    if all(item.index is not None for item in data):
+        data = sorted(data, key=lambda item: item.index)
+
+    settings = get_settings()
+    vectors = [list(item.embedding) for item in data]
+    for vector in vectors:
+        if len(vector) != settings.embedding_dimensions:
+            raise LlmConfigurationError(
+                f"EMBEDDING_DIMENSIONS is {settings.embedding_dimensions}, but model "
+                f"'{requested_model}' (EMBEDDING_MODEL) returned a vector of length "
+                f"{len(vector)}."
+            )
+
+    return vectors
+
+
+def embed_texts(texts: Sequence[str], *, model: str | None = None) -> EmbeddingResult:
+    """Embed `texts` and return the vectors, in request order, with tokens
+    and USD cost.
+
+    `model` falls back to `get_settings().embedding_model` when omitted.
+    Empty `texts` raises `LlmBadRequestError()` before any network call -
+    there is nothing to send. Otherwise the whole attempt runs through
+    `call_with_retry()` (← sprint 03), structured exactly like `chat()`:
+    one `_attempt()` closure, rebuilt per attempt, so a blank
+    `OPENROUTER_API_KEY` raises `LlmConfigurationError()` on attempt 1 and
+    is never retried; the provider call is wrapped in the same
+    `except Exception` / `classify()` / re-raise-unclassified shape `chat()`
+    uses, so sprint 02's `classify()` and sprint 03's retry work unchanged
+    - no parallel error path.
+
+    `dimensions`/`encoding_format` are never passed to `generate()` (←
+    AC5): the model's native width is what `EMBEDDING_DIMENSIONS` must
+    match, not a value this seam requests.
+    """
+    if not texts:
+        raise LlmBadRequestError()
+
+    def _attempt() -> EmbeddingResult:
+        settings = get_settings()
+        if not settings.openrouter_api_key.strip():
+            raise LlmConfigurationError()
+
+        requested_model = model if model is not None else settings.embedding_model
+        try:
+            response = build_sdk_client(settings.openrouter_api_key).embeddings.generate(
+                input=list(texts), model=requested_model
+            )
+        except Exception as exc:
+            if (err := classify(exc)) is not None:
+                raise err from exc
+            raise
+
+        vectors = _vectors_from_response(
+            response, expected_count=len(texts), requested_model=requested_model
+        )
+        usage = _usage_of_embeddings(response.usage)
+        return EmbeddingResult(vectors=vectors, usage=usage)
+
+    return call_with_retry(_attempt, label="embed")

@@ -21,6 +21,8 @@ os.environ["SESSION_TTL_SECONDS"] = "1209600"
 os.environ["FRONTEND_ORIGIN"] = "http://localhost:5173"
 os.environ["OPENROUTER_API_KEY"] = "test-key"
 os.environ["CHAT_MODEL"] = "test/model"
+os.environ["EMBEDDING_MODEL"] = "test/embedding-model"
+os.environ["EMBEDDING_DIMENSIONS"] = "4"
 
 import pytest  # noqa: E402
 import structlog  # noqa: E402

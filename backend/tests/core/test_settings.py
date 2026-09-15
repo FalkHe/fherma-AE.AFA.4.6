@@ -3,6 +3,9 @@ chat model that the LangChain seam (WI2) will read.
 
 Intent 001 sprint 03 WI1: `Settings` also carries the retry attempt budget
 and backoff base that the quiet-retry loop (WI3) will read.
+
+Intent 001 sprint 04 WI1: `Settings` also carries the embedding model and
+its vector width that the embedding round-trip (WI2-4) will read.
 """
 
 import importlib
@@ -62,4 +65,27 @@ def test_llm_retry_backoff_seconds_rejects_negative():
             _env_file=None,
             database_url="postgresql+psycopg://app:app@postgres:5432/x",
             llm_retry_backoff_seconds=-0.1,
+        )
+
+
+def test_settings_exposes_embedding_model_and_dimensions_with_documented_defaults(
+    monkeypatch,
+):
+    monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+    monkeypatch.delenv("EMBEDDING_DIMENSIONS", raising=False)
+
+    instance = settings_module.Settings(
+        _env_file=None, database_url="postgresql+psycopg://app:app@postgres:5432/x"
+    )
+
+    assert instance.embedding_model == "openai/text-embedding-3-small"
+    assert instance.embedding_dimensions == 1536
+
+
+def test_embedding_dimensions_rejects_zero():
+    with pytest.raises(ValidationError):
+        settings_module.Settings(
+            _env_file=None,
+            database_url="postgresql+psycopg://app:app@postgres:5432/x",
+            embedding_dimensions=0,
         )
