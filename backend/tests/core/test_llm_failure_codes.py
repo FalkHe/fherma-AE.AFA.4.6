@@ -13,7 +13,7 @@ message text itself.
 
 import pytest
 
-from app.core.errors import LLM_FAILURE_MESSAGE, ErrorCode, _ERROR_INFO
+from app.core.errors import _ERROR_INFO, LLM_FAILURE_MESSAGE, ErrorCode
 
 LLM_CODES = [
     ErrorCode.LLM_AUTH,
