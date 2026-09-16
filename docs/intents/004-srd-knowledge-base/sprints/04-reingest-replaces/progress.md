@@ -9,9 +9,9 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
-| 2 | open | |
-| qa | running | |
+| 1 | done | positions now counted per heading trail, with the database enforcing uniqueness; real corpus still 2,132 passages and migrates cleanly |
+| 2 | done | a failed import puts the previous rules file back byte-for-byte, and a broken restore cannot hide the real failure |
+| qa | done | one acceptance test per criterion; four already passed against the previous sprint's work, one drove the restore |
 
 Status: `open | running | done | failed`
 
@@ -24,6 +24,9 @@ Status: `open | running | done | failed`
 
 ## Backlog proposals
 <none yet>
+
+## Gates
+Lint, both suites and the live-database run all pass (611 offline, 18 live, 53 frontend). A second live import was also run: same 2,132 passages at the same byte count for $0.010056, and the corpus afterwards reported 2,132 rules with a later import time, nothing duplicated and the stored file unchanged.
 
 ## Verify
 <pending>
