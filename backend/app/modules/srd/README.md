@@ -15,7 +15,11 @@ this module reaches the corpus directly (D1).
   passage `service.chunk_source` produced — `heading_path`, `ordinal`,
   `text`, `token_count`; an `IngestReport` is what one `app srd ingest` run
   did or would do — source version, stored byte count, chunk count, total
-  token count and `cost_usd` (`None` under `--dry-run`, no embedding call).
+  token count, `cost_usd` and `cost_complete`. `cost_usd` is `None` under
+  `--dry-run` (no embedding call) or when a real run priced no batch at
+  all; otherwise it is the sum of every batch the gateway did price, and
+  `cost_complete` is `False` when that was only some of them — a known
+  lower bound rather than the true total.
 - `SrdError` / `SrdCorpusEmptyError` / `SrdVectorWidthError` / `SrdSourceError`
   (`errors.py`).
 - The `vector` extension and the `srd_rules` table/index migration
