@@ -9,10 +9,10 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| 4 | open | |
+| 1 | done | langgraph 1.2.11 + checkpoint-postgres 3.1.2, make up verified, 8 tests |
+| 2 | done | env.py both configure calls, ast-checked, 6 tests, proven red |
+| 3 | done | CLI + demo graph, 6 tests; found the setup() blocker by hand-run |
+| 4 | done | model.md names search_path, not a schema option |
 
 Status: `open | running | done | failed`
 
@@ -20,6 +20,9 @@ Status: `open | running | done | failed`
 - Only sprint of this intent needing a real database. AC1/AC2/AC3/AC5 are hand-run; AC4/AC6 are the automated part and must stay engine-free.
 - Research asked for a human ruling on `model.md:227`-`231`. Judged a documentation-accuracy matter, not product-visible: the doc names a schema mechanism that does not exist, and standing inaccuracies in these docs have already misled three sprints. WI4 amends it.
 - Research left a dev database volume `fherma-aeafa46_postgres-data` that it created (removal was denied by the permission system). Left in place deliberately — this sprint needs a database for its hand-run checks, and deleting a database volume unprompted is not reversible.
+
+- **A blocker the suite structurally could not catch.** `ensure_schema()` used `async with psycopg.AsyncConnection.connect(...)` without awaiting the coroutine, so `app checkpoint setup` raised `TypeError`. Every test monkeypatches the database away (conftest forbids a real engine), so nothing exercised the line; WI3 found it only by hand-running the CLI. Fixed, and covered by tests whose fakes are coroutine functions — a plain-function stub would not have caught it.
+- Lead verified all six ACs live: dropped the schema, `setup` recreated all four tables **in `checkpoints`**; a uuid4 seed from process 1 reappeared in a separate container's process 2 (AC2/AC3); `alembic upgrade head` succeeded with the schema present (AC5); and `alembic revision --autogenerate` produced `pass`/`pass` with the tables physically there (AC4). Probe revision removed.
 
 ## Backlog proposals
 - Should `checkpoint setup` join `alembic upgrade head` in `entrypoint-web.sh` for phase 7? Out of scope here.
