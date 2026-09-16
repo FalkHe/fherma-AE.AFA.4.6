@@ -64,8 +64,8 @@ class FakeGateway:
 
     def __call__(self, texts, *, model=None):
         self.calls.append(list(texts))
-        vectors = self._vectors if self._vectors is not None else [[0.0] * EMBEDDING_WIDTH] * len(
-            texts
+        vectors = (
+            self._vectors if self._vectors is not None else [[0.0] * EMBEDDING_WIDTH] * len(texts)
         )
         return EmbeddingResult(
             vectors=vectors,
@@ -134,7 +134,10 @@ def test_ac2_the_closest_passage_ranks_first_and_ordering_follows_similarity(srd
     monkeypatch.setattr(srd_service.llm_service, "embed_texts", gateway)
 
     identical = _row(
-        heading_path="Spells › Fire Bolt", ordinal=0, text="identical direction", embedding=_basis(0)
+        heading_path="Spells › Fire Bolt",
+        ordinal=0,
+        text="identical direction",
+        embedding=_basis(0),
     )
     diagonal = _row(
         heading_path="Spells › Ray of Frost",
