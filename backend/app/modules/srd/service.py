@@ -198,21 +198,31 @@ def _sections(text: str) -> list[tuple[str, str]]:
     return [(heading_path, "\n".join(body_lines).strip()) for heading_path, body_lines in sections]
 
 
-def _split_section(heading_path: str, body: str) -> list[RuleChunk]:
+def _split_section(heading_path: str, body: str, *, start_ordinal: int) -> list[RuleChunk]:
     """One `RuleChunk` per `MAX_CHUNK_TOKENS`-token window of `body`, sharing
-    `heading_path` and gaining ascending ordinals from 0, each window
-    overlapping the previous by `CHUNK_OVERLAP_TOKENS` tokens so a citation
-    at a split boundary still reads in context (AC4). A section within the
-    cap yields exactly one chunk."""
+    `heading_path` and gaining ascending ordinals from `start_ordinal`, each
+    window overlapping the previous by `CHUNK_OVERLAP_TOKENS` tokens so a
+    citation at a split boundary still reads in context (AC4). A section
+    within the cap yields exactly one chunk.
+
+    `start_ordinal` lets `chunk_source` continue the numbering for a
+    `heading_path` that a later markdown section shares -- e.g. two headings
+    that collapse to the same anchor-stripped trail -- rather than letting
+    every section restart at 0 and risk two passages claiming the same
+    citation (AC2)."""
     tokens = _encoding().encode(body)
     total = len(tokens)
     if total <= MAX_CHUNK_TOKENS:
-        return [RuleChunk(heading_path=heading_path, ordinal=0, text=body, token_count=total)]
+        return [
+            RuleChunk(
+                heading_path=heading_path, ordinal=start_ordinal, text=body, token_count=total
+            )
+        ]
 
     step = MAX_CHUNK_TOKENS - CHUNK_OVERLAP_TOKENS
     chunks: list[RuleChunk] = []
     start = 0
-    ordinal = 0
+    ordinal = start_ordinal
     while start < total:
         end = min(start + MAX_CHUNK_TOKENS, total)
         window = tokens[start:end]
@@ -241,6 +251,13 @@ def chunk_source(path: Path) -> list[RuleChunk]:
     neighbour would blur which heading the text actually belongs to
     (research.md, "Open questions").
 
+    `ordinal` is the passage's position, from 0, among **all** passages that
+    share its `heading_path` across the whole document -- not within one
+    markdown section. Two headings that collapse to the same anchor-free
+    trail (e.g. `{#fire-bolt}` / `{#fire-bolt-1}`) therefore continue one
+    shared sequence instead of each restarting at 0, so `(heading_path,
+    ordinal)` stays unique across the returned list by construction (AC2).
+
     A `path` that cannot be read, or whose bytes are not valid UTF-8 text
     (a damaged stored file, however it got that way), raises
     `SrdSourceError` rather than letting `OSError`/`UnicodeDecodeError`
@@ -252,10 +269,14 @@ def chunk_source(path: Path) -> list[RuleChunk]:
     except UnicodeDecodeError as exc:
         raise SrdSourceError(f"stored SRD source at {path} is not valid UTF-8 text: {exc}") from exc
     chunks: list[RuleChunk] = []
+    next_ordinal: dict[str, int] = {}
     for heading_path, body in _sections(text):
         if not body:
             continue
-        chunks.extend(_split_section(heading_path, body))
+        start_ordinal = next_ordinal.get(heading_path, 0)
+        section_chunks = _split_section(heading_path, body, start_ordinal=start_ordinal)
+        next_ordinal[heading_path] = start_ordinal + len(section_chunks)
+        chunks.extend(section_chunks)
     return chunks
 
 

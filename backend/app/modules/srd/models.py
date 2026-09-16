@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from pgvector.sqlalchemy import VECTOR
-from sqlalchemy import DateTime, Index, Integer, String, Text, func
+from sqlalchemy import DateTime, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -21,6 +21,14 @@ class SrdRule(Base):
     """
 
     __tablename__ = "srd_rules"
+    __table_args__ = (
+        # No two stored passages can claim the same citation: the position
+        # a passage carries is unique within its heading trail, enforced by
+        # the store rather than trusted to the splitter (AC2). Named via
+        # `Base.metadata`'s `NAMING_CONVENTION` (`app/core/db.py`) so the
+        # generated name matches what the `0003` migration creates by hand.
+        UniqueConstraint("source_version", "heading_path", "ordinal"),
+    )
 
     id: Mapped[str] = mapped_column(ID_TYPE, primary_key=True, default=generate_id)
     source_version: Mapped[str] = mapped_column(String, nullable=False)
