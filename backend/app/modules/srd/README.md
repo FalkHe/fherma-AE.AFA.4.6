@@ -13,15 +13,21 @@ this module reaches the corpus directly (D1).
   index for nearest-neighbour lookup, and constrained unique on
   `(source_version, heading_path, ordinal)` — the database itself refuses a
   duplicate citation, independent of `chunk_source`'s own numbering.
-- `RuleChunk` / `IngestReport` (`schemas.py`): a `RuleChunk` is one citable
-  passage `service.chunk_source` produced — `heading_path`, `ordinal`,
-  `text`, `token_count`; an `IngestReport` is what one `app srd ingest` run
-  did or would do — source version, stored byte count, chunk count, total
-  token count, `cost_usd` and `cost_complete`. `cost_usd` is `None` under
-  `--dry-run` (no embedding call) or when a real run priced no batch at
-  all; otherwise it is the sum of every batch the gateway did price, and
-  `cost_complete` is `False` when that was only some of them — a known
-  lower bound rather than the true total.
+- `RuleChunk` / `RuleMatch` / `IngestReport` (`schemas.py`): a `RuleChunk` is
+  one citable passage `service.chunk_source` produced — `heading_path`,
+  `ordinal`, `text`, `token_count`; `text` is body only, but `token_count`
+  covers what is actually sent to the embedder — the heading trail joined to
+  the body — so it stays honest even though the stored/cited `text` never
+  carries the heading a second time. A `RuleMatch` is one passage
+  `service.search_rules` returned — the same `heading_path`/`ordinal`/`text`
+  plus `score` (`1 - cosine_distance`, higher is closer), best match first.
+  An `IngestReport` is what one `app srd ingest` run did or would do —
+  source version, stored byte count, chunk count, total token count,
+  `cost_usd` and `cost_complete`. `cost_usd` is `None` under `--dry-run` (no
+  embedding call) or when a real run priced no batch at all; otherwise it is
+  the sum of every batch the gateway did price, and `cost_complete` is
+  `False` when that was only some of them — a known lower bound rather than
+  the true total.
 - `SrdError` / `SrdCorpusEmptyError` / `SrdVectorWidthError` / `SrdSourceError`
   (`errors.py`).
 - The `vector` extension and the `srd_rules` table/index migration
@@ -43,18 +49,38 @@ this module reaches the corpus directly (D1).
   real — one progress line per embed batch, then the report (source
   version, bytes, chunk count, token count, cost). A gateway failure
   (`LlmError`) or a source/vector-width failure (`SrdError`) prints one
-  stderr line and exits 1, never a traceback; searching is a later work
-  item in this intent.
+  stderr line and exits 1, never a traceback.
+- `app srd search QUERY [--limit N]` (`commands.py`): runs
+  `service.search_rules`, then prints each `RuleMatch` numbered, best
+  first — its heading trail, ordinal and score on one line, the passage
+  text indented below. `--limit` caps how many come back, defaulting to
+  `service.DEFAULT_LIMIT` when omitted; a non-positive `--limit` is
+  rejected by hand with one stderr line before any query runs. An empty
+  corpus (`SrdCorpusEmptyError`) prints the same empty-corpus message
+  `status` uses; any other `SrdError` or a gateway failure (`LlmError`)
+  prints one stderr line and exits 1, never a traceback.
 - `service.ingest(db, *, version, on_batch)` (`service.py`): fetches,
   stores, chunks, embeds in `EMBED_BATCH_SIZE`-sized batches and replaces
   `srd_rules` wholesale in one transaction opened only after every vector
   is in hand; `on_batch(chunks_done, chunks_total)` fires after each batch
-  for a caller's progress reporting — the service itself never prints. Any
-  failure after the new source file replaces the old one — chunking,
-  embedding or the write — restores the previous file byte-for-byte (or
-  removes it entirely when there was none) before re-raising, so the
-  stored file and the corpus can never disagree; the restore itself only
-  ever swallows its own filesystem error, never the failure that triggered it.
+  for a caller's progress reporting — the service itself never prints. Each
+  chunk is embedded as its heading trail joined to its body, not the body
+  alone — a passage's own name (e.g. a spell) often lives only in its
+  heading — while the stored row's `text` stays body-only, what a citation
+  quotes back. Any failure after the new source file replaces the old
+  one — chunking, embedding or the write — restores the previous file
+  byte-for-byte (or removes it entirely when there was none) before
+  re-raising, so the stored file and the corpus can never disagree; the
+  restore itself only ever swallows its own filesystem error, never the
+  failure that triggered it.
+- `service.search_rules(db, query, *, limit=DEFAULT_LIMIT)` (`service.py`):
+  embeds `query` through the shared gateway and returns the `limit` closest
+  `srd_rules` rows by cosine distance, best first, as `RuleMatch`es.
+  `require_corpus` runs first, so an empty corpus raises
+  `SrdCorpusEmptyError` before `query` ever reaches the gateway. No
+  relevance floor is applied — a query with no genuinely close match still
+  returns its `limit` nearest rows; a floor and a "no relevant rule" signal
+  are a later sprint's job.
 - `service.fetch_source()` downloads `SOURCE_URL` and stores it at
   `SRD_ROOT/<version>/SOURCE_FILENAME`, overwriting an existing copy in
   place; a non-200 response, a timeout/connection failure or an empty body

@@ -46,7 +46,14 @@ echoed as-is. Each `RuleMatch` is printed as a numbered entry --
 `heading_path`, `ordinal` and `score` on one line (the citation and how
 confident the match is, both required to be visible), the passage text
 indented on the line(s) below it, and a blank line between entries so
-multiple results stay readable in a terminal."""
+multiple results stay readable in a terminal.
+
+A non-positive `--limit` is rejected by hand before `asyncio.run(...)` --
+never a gateway call, never a query -- with one plain stderr line, rather
+than leaving it to Typer/Click's own `IntRange` validation: that path
+renders a multi-line rich panel (a "Usage: ..." line, a hint line, then a
+bordered error box), which is not the one-sentence failure every other
+path in this module guarantees."""
 
 import asyncio
 
@@ -197,6 +204,10 @@ def search(
         srd_service.DEFAULT_LIMIT, "--limit", help="How many passages to return, best first."
     ),
 ) -> None:
+    if limit < 1:
+        typer.echo(f"--limit must be a positive integer, got {limit}", err=True)
+        raise typer.Exit(code=1)
+
     try:
         matches = asyncio.run(_search_rules(query, limit))
     except LlmError as exc:

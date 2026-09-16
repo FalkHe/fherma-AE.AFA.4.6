@@ -146,3 +146,37 @@ def test_gateway_failure_prints_one_stderr_line_naming_its_code_and_exits_1(monk
     stderr_lines = [line for line in result.stderr.splitlines() if line.strip()]
     assert len(stderr_lines) == 1, result.stderr
     assert "LLM_RATE_LIMIT" in result.stderr
+
+
+def test_negative_limit_prints_one_stderr_line_and_exits_1_without_calling_search_rules(
+    monkeypatch,
+):
+    def _forbidden(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        raise AssertionError("a non-positive --limit must never reach search_rules")
+
+    monkeypatch.setattr(srd_service, "search_rules", _forbidden)
+
+    result = runner.invoke(cli, ["srd", "search", "half cover", "--limit", "-1"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Traceback" not in result.output
+    stderr_lines = [line for line in result.stderr.splitlines() if line.strip()]
+    assert len(stderr_lines) == 1, result.stderr
+    assert "-1" in result.stderr
+
+
+def test_zero_limit_prints_one_stderr_line_and_exits_1_without_calling_search_rules(monkeypatch):
+    def _forbidden(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        raise AssertionError("a non-positive --limit must never reach search_rules")
+
+    monkeypatch.setattr(srd_service, "search_rules", _forbidden)
+
+    result = runner.invoke(cli, ["srd", "search", "half cover", "--limit", "0"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Traceback" not in result.output
+    stderr_lines = [line for line in result.stderr.splitlines() if line.strip()]
+    assert len(stderr_lines) == 1, result.stderr
+    assert "0" in result.stderr
