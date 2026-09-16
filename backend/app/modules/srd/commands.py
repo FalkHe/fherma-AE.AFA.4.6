@@ -48,6 +48,13 @@ confident the match is, both required to be visible), the passage text
 indented on the line(s) below it, and a blank line between entries so
 multiple results stay readable in a terminal.
 
+`search_rules` (sprint 06) now drops every match scoring below
+`RELEVANCE_FLOOR` itself, so an empty list means "nothing in the rules
+covers this" rather than a query bug -- a real, successful answer, not a
+failure. That case prints `NO_RELEVANT_RULE_MESSAGE` to stdout and returns
+normally (exit 0), never stderr, so it can never be confused with the
+`SrdCorpusEmptyError` branch above it, which stays on stderr with exit 1.
+
 A non-positive `--limit` is rejected by hand before `asyncio.run(...)` --
 never a gateway call, never a query -- with one plain stderr line, rather
 than leaving it to Typer/Click's own `IntRange` validation: that path
@@ -74,6 +81,7 @@ from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleMatch
 srd_app = typer.Typer()
 
 EMPTY_CORPUS_MESSAGE = "SRD corpus is empty: 0 rules ingested; run `app srd ingest` to load it."
+NO_RELEVANT_RULE_MESSAGE = "no relevant rule found for this query"
 _HEADING_SAMPLE_SIZE = 5
 
 
@@ -219,6 +227,10 @@ def search(
     except SrdError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+
+    if not matches:
+        typer.echo(NO_RELEVANT_RULE_MESSAGE)
+        return
 
     for position, match in enumerate(matches, start=1):
         _print_match(position, match)
