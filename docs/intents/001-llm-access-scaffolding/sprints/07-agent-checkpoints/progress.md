@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-16
 updated: 2026-09-16
-stage: draft
+stage: done
 ---
 # Progress: Sprint 07
 
@@ -28,3 +28,7 @@ Status: `open | running | done | failed`
 - Should `checkpoint setup` join `alembic upgrade head` in `entrypoint-web.sh` for phase 7? Out of scope here.
 
 ## Verify
+Round 1: **changes-requested** (note #101). All six ACs passed live, but `docs/architecture.md:15` and `docs/general/backend-stack.md:14` still said LangGraph was not wired, which this sprint falsified. Non-blocking: `demo resume` on an unstarted thread printed a bare `KeyError`.
+AC4 proven load-bearing both ways: dropping `include_object` makes autogenerate emit four `drop_table`s; dropping `include_schemas=True` reddens the `ast` test naming `do_run_migrations`.
+Round 2: **approved** (note #102). Docs corrected and re-read in full for newly introduced inaccuracies; the `resume` guard verified not to mask real failures — a started thread whose node raises still surfaces its own `ValueError`. 510 passed.
+Approval withheld on the platform throughout — author and reviewer are the same account.
