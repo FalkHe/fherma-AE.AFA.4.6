@@ -12,7 +12,7 @@ stage: draft
 | 1 | done | search returns the closest passages best first, refusing an empty rulebook before spending a call; index use confirmed |
 | 2 | running | |
 | 3 | running | |
-| qa | running | |
+| qa | done | one acceptance test per criterion, AC1-AC6 |
 
 Status: `open | running | done | failed`
 
