@@ -29,4 +29,4 @@ Status: `open | running | done | failed`
 Lint, both suites and the live-database run all pass (611 offline, 18 live, 53 frontend). A second live import was also run: same 2,132 passages at the same byte count for $0.010056, and the corpus afterwards reported 2,132 rules with a later import time, nothing duplicated and the stored file unchanged.
 
 ## Verify
-<pending>
+Round 1: changes-requested. Three items. An import interrupted by the operator rather than failing on its own still left the repository showing rules the corpus did not serve. The rules component's own description had not been updated for any of this sprint's changes. And two empty scratch files had been committed by mistake, removed by the sprint lead.
