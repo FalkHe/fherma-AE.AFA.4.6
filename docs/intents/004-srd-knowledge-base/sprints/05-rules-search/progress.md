@@ -11,7 +11,7 @@ stage: draft
 |---|---|---|
 | 1 | done | search returns the closest passages best first, refusing an empty rulebook before spending a call; index use confirmed |
 | 2 | done | `srd search` prints citation, score and passage, best first, with a cap flag |
-| 3 | running | |
+| 3 | done | the heading trail is now learned with the passage; stored text still the body alone |
 | qa | done | one acceptance test per criterion, AC1-AC6 |
 
 Status: `open | running | done | failed`
@@ -23,10 +23,16 @@ Status: `open | running | done | failed`
 - Two agents were cut off part-way by a usage limit. The search work survived intact and was checked and committed by the sprint lead; the acceptance tests were resumed. Nothing was lost.
 - Fifth merge request in an unmerged chain.
 
+- The report's passage-size figure now counts the heading trail too, which is honest about what is learned but makes one schema comment slightly stale.
 - Passages carry the raw HTML tables the source document uses, so a table-heavy rule prints as markup rather than readable text. Harmless for matching, but it will need handling before a player sees a quoted rule.
 
 ## Backlog proposals
 - Citation trails read oddly where the rules text skips a heading level: a rule can appear nested under a sibling rather than its real parent, as in "Acid Arrow › Fire Bolt". Still accurate enough to cite, but it will look wrong to a player once citations are shown.
+
+## Gates
+Lint, both suites and the live-database run all pass (634 offline, 27 live, 53 frontend).
+
+By-eye check against the real rulebook after re-importing (2,132 passages, 529,572 tokens, $0.010591): "how does half cover work" returns Combat > Cover first, "what does the poisoned condition do" returns the Poisoned condition first, "how does grappling work" returns Grappling first, and "what does fire bolt do" now returns Fire Bolt first, where before the fix it ranked 47th.
 
 ## Verify
 <pending>
