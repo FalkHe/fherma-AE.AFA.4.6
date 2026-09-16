@@ -28,7 +28,9 @@ async def corpus_status(db: AsyncSession) -> CorpusStatus:
     rule_count = await db.scalar(select(func.count()).select_from(SrdRule))
     rule_count = rule_count or 0
     if rule_count == 0:
-        return CorpusStatus(rule_count=0, source_version=None, embedding_model=None, ingested_at=None)
+        return CorpusStatus(
+            rule_count=0, source_version=None, embedding_model=None, ingested_at=None
+        )
 
     latest = await db.scalar(select(SrdRule).order_by(SrdRule.created_at.desc()).limit(1))
     return CorpusStatus(
