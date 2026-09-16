@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-16
 updated: 2026-09-16
-stage: draft
+stage: done
 ---
 # Progress: Sprint 06
 
@@ -28,4 +28,5 @@ Status: `open | running | done | failed`
 
 ## Verify
 Round 1: **changes-requested** (note #86). AC4 failed: `_SEGMENT`/`VERSION_PATTERN` anchored with `$`, which in Python matches before a trailing newline — so `game/system/smoke\n` passed the grammar, built a `Path`, hit the filesystem and failed as NOT_FOUND/exit 3, defeating the design's "refused before any Path is built" claim. AC1 partial: `read_text()` translated CRLF to LF, so a prompt was not verbatim. Plus `list_versions` did not validate `capability`.
-Round 2: all three fixed (`re.fullmatch`, `read_bytes().decode()`, capability validated), each proven red-then-green; 486 passed. Lead re-verified live via CliRunner: both trailing-newline cases now exit 2 as invalid.
+Round 2: **approved** (note #88) — all three fixed (`re.fullmatch`, `read_bytes().decode()`, capability validated), each proven red-then-green; 486 passed. Lead re-verified live via CliRunner: both trailing-newline cases now exit 2 as invalid.
+Re-verification extended the battery to 55 ids across the newline/whitespace class — all refused with **zero** `open`/`stat`/`scandir` calls — and reverted each of the four fixes individually to confirm each reddens only its own test. The shipped-prompt guard then gained CRLF/BOM checks so a bad file blames the file, not the resolver; the resolver never silently strips a BOM, since AC1 is a fidelity guarantee.
