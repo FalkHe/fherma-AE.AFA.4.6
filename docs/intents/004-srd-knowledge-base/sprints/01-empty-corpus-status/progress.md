@@ -28,10 +28,11 @@ Status: `open | running | done | failed`
 - Two implementers staging commits at the same moment briefly swept one's files into the other's commit; the agent caught and reverted it, but parallel work items sharing one checkout make this a standing risk.
 
 ## Backlog proposals
-<none yet>
+- The empty-corpus message points the operator at the ingest command, which does not exist until sprint 03 — anyone following the hint before then gets an unknown-command error.
+- `decisions/module-structure.md` §3 still lacks the vector-width error the code now raises; the attachment is the human's to amend.
 
 ## Gates
 Lint, both test suites and the live-database run all pass (542 offline, 4 live, 53 frontend). One formatting-only fix applied to the acceptance test file at the gate; no assertion touched.
 
 ## Verify
-<pending>
+Round 1: changes-requested. Every acceptance criterion and decision passed, and all three lead decisions were judged acceptable; the single failure was that the project's own test conventions and command list no longer described the new opt-in real-database path. Sent back to the work item that built it.
