@@ -10,8 +10,8 @@ stage: draft
 | WI | Status | Note |
 |---|---|---|
 | 1 | done | the source downloads to a fixed path, replacing in place, and a failed download leaves the stored copy intact; 10 tests |
-| 2 | running | |
-| 3 | open | |
+| 2 | done | 2,132 citable passages from the real document, none over the cap; 6 tests |
+| 3 | done | `srd ingest --dry-run` reports path, size, passage and token counts and sample headings |
 | 4 | done | the rules document and its licence ship in the repository; attribution in the project README |
 | qa | done | one acceptance test per criterion, AC1-AC6 |
 
@@ -28,6 +28,9 @@ Status: `open | running | done | failed`
 
 ## Backlog proposals
 <none yet>
+
+## Gates
+Lint, both suites and the live-database run all pass (573 offline, 4 live, 53 frontend). The dry run was also executed for real against the public source: it fetched 1,878,072 bytes, reported 2,132 passages and 502,818 tokens, and left the working tree clean.
 
 ## Verify
 <pending>
