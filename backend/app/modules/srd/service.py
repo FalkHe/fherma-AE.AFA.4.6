@@ -1,18 +1,20 @@
 import os
 import re
 import tempfile
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 
 import httpx
 import tiktoken
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.llm import service as llm_service
 from app.core.settings import get_settings
 from app.modules.srd.errors import SrdCorpusEmptyError, SrdSourceError, SrdVectorWidthError
 from app.modules.srd.models import EMBEDDING_WIDTH, SrdRule
-from app.modules.srd.schemas import CorpusStatus, RuleChunk
+from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleChunk
 
 SRD_ROOT: Path = Path(__file__).resolve().parents[3] / "content" / "srd"
 SOURCE_URL = "https://raw.githubusercontent.com/palikhov/cc-srd5-1/main/cc-srd5.md"
@@ -255,3 +257,100 @@ def chunk_source(path: Path) -> list[RuleChunk]:
             continue
         chunks.extend(_split_section(heading_path, body))
     return chunks
+
+
+# The gateway's own per-request cap is 300,000 tokens; chunks cap at
+# `MAX_CHUNK_TOKENS` (800), so 256 * 800 = 204,800 stays comfortably under it
+# while 512 would not (decisions, "Decisions already made for you"). The
+# shipped corpus -- 2,132 chunks / 502,818 tokens -- takes 9 requests at
+# this size.
+EMBED_BATCH_SIZE = 256
+
+
+async def ingest(
+    db: AsyncSession,
+    *,
+    version: str = SOURCE_VERSION,
+    on_batch: Callable[[int, int], None] | None = None,
+) -> IngestReport:
+    """Fetches, stores, chunks, embeds and stores the SRD corpus, replacing
+    it wholesale (`module-structure.md` §2, §6).
+
+    Checks the embedding width first (AC3): a mismatch between
+    `EMBEDDING_DIMENSIONS` and the `srd_rules.embedding` column raises
+    `SrdVectorWidthError` before `fetch_source` runs, so a misconfiguration
+    never spends a gateway request. Every chunk is embedded, in
+    `EMBED_BATCH_SIZE`-sized batches (each safely under the gateway's
+    per-request token cap), before any row is written: `llm_service.
+    embed_texts` is called attribute-style so tests can monkeypatch it, and
+    its `LlmError` travels out unwrapped -- the write below never runs when
+    a batch fails, so the corpus is left exactly as it was, never half-filled
+    (AC4). `on_batch(chunks_done, chunks_total)` fires after each batch
+    completes, for a caller that wants progress; this function itself never
+    prints -- that is the command's job.
+
+    The write is one short transaction: delete every existing row, insert
+    the newly embedded ones, commit. It is never opened until every vector
+    is already in hand, so it is never held across a gateway call -- that
+    would pin a database connection for the ~minute a full embed run takes,
+    for no benefit (← decisions). A failure during the write rolls the
+    transaction back before the exception is re-raised, so a failed write
+    leaves the previous corpus untouched rather than half-replaced.
+
+    `cost_usd` on the returned report is the sum of every batch's reported
+    cost, but only when every batch reported one -- if the gateway priced
+    only some of them, returning that partial sum would silently undercount
+    it, so the report carries `None` instead: `None` means "not a reliable
+    total", never "free".
+    """
+    check_vector_width()
+
+    path = fetch_source(version=version)
+    chunks = chunk_source(path)
+
+    embedding_model = get_settings().embedding_model
+    total = len(chunks)
+
+    vectors: list[list[float]] = []
+    cost_total = 0.0
+    cost_complete = True
+
+    for start in range(0, total, EMBED_BATCH_SIZE):
+        batch = chunks[start : start + EMBED_BATCH_SIZE]
+        result = llm_service.embed_texts([chunk.text for chunk in batch], model=embedding_model)
+        vectors.extend(result.vectors)
+        if result.usage.cost_usd is None:
+            cost_complete = False
+        else:
+            cost_total += result.usage.cost_usd
+        if on_batch is not None:
+            on_batch(len(vectors), total)
+
+    rows = [
+        SrdRule(
+            source_version=version,
+            heading_path=chunk.heading_path,
+            ordinal=chunk.ordinal,
+            text=chunk.text,
+            token_count=chunk.token_count,
+            embedding_model=embedding_model,
+            embedding=vector,
+        )
+        for chunk, vector in zip(chunks, vectors, strict=True)
+    ]
+
+    try:
+        await db.execute(delete(SrdRule))
+        db.add_all(rows)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    return IngestReport(
+        source_version=version,
+        source_bytes=path.stat().st_size,
+        chunk_count=total,
+        token_count=sum(chunk.token_count for chunk in chunks),
+        cost_usd=cost_total if cost_complete else None,
+    )
