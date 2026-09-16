@@ -6,7 +6,17 @@ never as *not found* (← AC4's "differently"); the numerically highest
 version wins when none is requested; a missing requested version never
 falls back to another one (← D5); and the two error classes fire for their
 own, distinguishable cause.
+
+Round-2: a trailing newline must not slip through `$`-anchored grammar
+(Python's `$` matches before a trailing `\n`) — proven both for the id and
+for `--version`, and proven with no filesystem access at all, not merely
+with the right exception type. Prompt text is read as raw bytes, so a CRLF
+file round-trips byte for byte instead of being silently normalised by
+`Path.read_text()`'s universal-newline translation. `list_versions` closes
+the same traversal hole `load_prompt` already closes for `capability`.
 """
+
+from pathlib import Path
 
 import pytest
 
@@ -182,3 +192,76 @@ def test_invalid_and_not_found_are_distinguishable(prompts_root):
     assert invalid_info.value.code == "PROMPT_ID_INVALID"
     assert not_found_info.value.code == "PROMPT_NOT_FOUND"
     assert type(invalid_info.value) is not type(not_found_info.value)
+
+
+# --- Round 2, finding 1: `$` matches before a trailing newline ------------
+
+
+def test_trailing_newline_in_id_is_rejected_as_invalid_with_no_filesystem_access(
+    prompts_root, monkeypatch
+):
+    """`"game/system/smoke\\n"` must fail PROMPT_ID_INVALID, never reach a
+    `Path` at all -- a `$`-anchored grammar would let it slip past the
+    whitelist and only fail later as PROMPT_NOT_FOUND."""
+
+    def _forbidden(self):
+        raise AssertionError("filesystem was accessed for a malformed id")
+
+    monkeypatch.setattr(Path, "is_file", _forbidden)
+    monkeypatch.setattr(Path, "is_dir", _forbidden)
+
+    with pytest.raises(errors.PromptIdInvalidError) as exc_info:
+        service.load_prompt("game/system/smoke\n")
+
+    assert exc_info.value.code == "PROMPT_ID_INVALID"
+
+
+def test_trailing_newline_in_version_is_rejected_as_invalid_with_no_filesystem_access(
+    prompts_root, monkeypatch
+):
+    """A `--version` of `"v1\\n"` must fail PROMPT_ID_INVALID before any
+    `Path.is_file()` check, for the same `$`-before-newline reason."""
+    write_prompt(prompts_root, "game", "v1", "system", "dm", "text")
+
+    def _forbidden(self):
+        raise AssertionError("filesystem was accessed for a malformed version")
+
+    monkeypatch.setattr(Path, "is_file", _forbidden)
+
+    with pytest.raises(errors.PromptIdInvalidError) as exc_info:
+        service.load_prompt("game/system/dm", version="v1\n")
+
+    assert exc_info.value.code == "PROMPT_ID_INVALID"
+
+
+# --- Round 2, finding 2: text is read verbatim, not newline-translated ----
+
+
+def test_text_round_trips_crlf_bytes_verbatim(prompts_root):
+    """`Path.read_text()` performs universal-newline translation, turning
+    `b"a\\r\\nb\\r\\n"` into `"a\\nb\\n"`. AC1 requires the file's exact
+    bytes, so a CRLF prompt must come back with its `\\r\\n` intact."""
+    path = prompts_root / "game" / "prompts" / "v1" / "system" / "dm.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = b"a\r\nb\r\n"
+    path.write_bytes(raw)
+
+    resolved = service.load_prompt("game/system/dm")
+
+    assert resolved.text.encode("utf-8") == raw
+    assert resolved.text == "a\r\nb\r\n"
+
+
+# --- Round 2, finding 3: `list_versions` must validate `capability` too ---
+
+
+def test_list_versions_rejects_a_traversal_capability(prompts_root):
+    """`list_versions` is a public entry point in its own right; the
+    traversal guarantee must hold here too, not only through `load_prompt`."""
+    outside = prompts_root.parent / "outside"
+    (outside / "prompts" / "v1").mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(errors.PromptIdInvalidError) as exc_info:
+        service.list_versions("../outside")
+
+    assert exc_info.value.code == "PROMPT_ID_INVALID"
