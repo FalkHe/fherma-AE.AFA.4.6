@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-16
 updated: 2026-09-16
-stage: draft
+stage: done
 ---
 # Progress: Sprint 01 — empty corpus status
 
@@ -36,3 +36,4 @@ Lint, both test suites and the live-database run all pass (542 offline, 4 live, 
 
 ## Verify
 Round 1: changes-requested. Every acceptance criterion and decision passed, and all three lead decisions were judged acceptable; the single failure was that the project's own test conventions and command list no longer described the new opt-in real-database path. Sent back to the work item that built it.
+Round 2: approved. The conventions and command list now describe the opt-in real-database path as the single exception to the no-real-engine rule, nothing else changed, and both deferred items were agreed as the human's call. One non-blocking imprecision left standing: the conventions text implies the marked tests are excluded from the ordinary test run, when in truth that run simply does not start a database — if one happens to be running, they run against it.
