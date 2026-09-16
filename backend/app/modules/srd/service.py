@@ -373,7 +373,10 @@ async def ingest(
     corpus still serves the old one. So a failure anywhere in that window
     restores the file `fetch_source` replaced back to what it held before
     this call, byte-for-byte, before the exception is re-raised -- no file
-    at all when there was none to begin with (AC4).
+    at all when there was none to begin with (AC4). Caught as `BaseException`,
+    not `Exception`: an operator's `KeyboardInterrupt` partway through a
+    minute-long embed run must restore the file exactly like any other
+    failure here, not skip it because it is not an `Exception` subclass.
     """
     check_vector_width()
 
@@ -428,10 +431,16 @@ async def ingest(
             await db.execute(delete(SrdRule))
             db.add_all(rows)
             await db.commit()
-        except Exception:
+        except BaseException:
             await db.rollback()
             raise
-    except Exception:
+    except BaseException:
+        # `BaseException`, not `Exception`: a `KeyboardInterrupt` during a
+        # minute-long embed run is a real operator action, not a
+        # hypothetical, and it must restore the file exactly like any
+        # other failure in this window (AC4) -- `_restore_previous_source`
+        # itself only ever swallows its own `OSError`, so the interrupt
+        # (or any other exception) still propagates unchanged below.
         _restore_previous_source(dest_path, previous_source_bytes)
         raise
 
