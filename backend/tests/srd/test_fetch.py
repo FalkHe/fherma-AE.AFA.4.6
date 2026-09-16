@@ -1,23 +1,41 @@
-"""WI1: `service.fetch_source()` (AC1, AC3, AC5 in part).
+"""WI1: `service.fetch_source()` (AC1, AC3, AC5).
 
 The network boundary is `service.httpx` (a module attribute, never a name
 import, per AGENTS.md's monkeypatching rule) -- every test here replaces it
 with a small stand-in exposing only `.get(url, **kwargs)`, so nothing in
 this file ever opens a socket. `service.SRD_ROOT` is repointed at `tmp_path`
 with `monkeypatch.setattr`, following `tests/content/conftest.py`'s
-`CONTENT_ROOT` precedent."""
+`CONTENT_ROOT` precedent.
+
+AC5 also covers a 200 response whose body is not a usable rules document: a
+truncated download, an HTML error page, or arbitrary text. The check reuses
+`chunk_source` (the same parser `ingest` runs) against the downloaded bytes
+before they replace the stored file -- "parses as markdown and yields at
+least one citable section" -- so `_USABLE_BODY` below (one heading, one
+non-empty body line) is the minimum shape that passes, and `_UNUSABLE_BODY`
+(no heading at all) is the minimum shape that cannot: no amount of
+truncation or corruption of a real download is likely to happen to contain
+a well-formed `#`-heading line followed by body text, so this is cheap,
+structural, and not something a broken body passes by accident."""
 
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from typer.testing import CliRunner
 
+from app.cli import cli
 from app.modules.srd import service
 from app.modules.srd.errors import SrdSourceError
 
+runner = CliRunner()
+
+_USABLE_BODY = b"# Combat\n\nSome rules text about combat.\n"
+_UNUSABLE_BODY = b"This is not a rules document -- no markdown heading anywhere in it.\n"
+
 
 class _FakeResponse:
-    def __init__(self, status_code: int = 200, content: bytes = b"some srd text"):
+    def __init__(self, status_code: int = 200, content: bytes = _USABLE_BODY):
         self.status_code = status_code
         self.content = content
 
@@ -45,28 +63,30 @@ def _stub_get(*, response=None, exc=None):
 
 
 def test_stores_the_download_at_the_expected_path_creating_parent_dirs(monkeypatch, srd_root):
-    fake_httpx, _ = _stub_get(response=_FakeResponse(content=b"the srd body"))
+    fake_httpx, _ = _stub_get(response=_FakeResponse(content=_USABLE_BODY))
     monkeypatch.setattr(service, "httpx", fake_httpx)
 
     result = service.fetch_source()
 
     expected = srd_root / service.SOURCE_VERSION / service.SOURCE_FILENAME
     assert result == expected
-    assert expected.read_bytes() == b"the srd body"
+    assert expected.read_bytes() == _USABLE_BODY
 
 
 def test_a_second_run_overwrites_the_stored_file_in_place(monkeypatch, srd_root):
-    fake_httpx_1, _ = _stub_get(response=_FakeResponse(content=b"first body"))
+    first_body = b"# Combat\n\nfirst body\n"
+    fake_httpx_1, _ = _stub_get(response=_FakeResponse(content=first_body))
     monkeypatch.setattr(service, "httpx", fake_httpx_1)
     first_path = service.fetch_source()
-    assert first_path.read_bytes() == b"first body"
+    assert first_path.read_bytes() == first_body
 
-    fake_httpx_2, _ = _stub_get(response=_FakeResponse(content=b"second, replacing body"))
+    second_body = b"# Combat\n\nsecond, replacing body\n"
+    fake_httpx_2, _ = _stub_get(response=_FakeResponse(content=second_body))
     monkeypatch.setattr(service, "httpx", fake_httpx_2)
     second_path = service.fetch_source()
 
     assert second_path == first_path
-    assert second_path.read_bytes() == b"second, replacing body"
+    assert second_path.read_bytes() == second_body
 
 
 def test_a_non_200_response_raises_srd_source_error(monkeypatch, srd_root):
@@ -138,12 +158,81 @@ def test_an_empty_body_leaves_an_existing_stored_file_untouched(monkeypatch, srd
     assert dest_path.read_bytes() == b"previously stored body"
 
 
+def test_an_unparseable_body_raises_srd_source_error(monkeypatch, srd_root):
+    """A 200 response whose body has no markdown heading at all -- a
+    truncated download, an HTML error page, arbitrary text -- is not a
+    usable rules document, even though it downloaded cleanly (AC5)."""
+    fake_httpx, _ = _stub_get(response=_FakeResponse(content=_UNUSABLE_BODY))
+    monkeypatch.setattr(service, "httpx", fake_httpx)
+
+    with pytest.raises(SrdSourceError):
+        service.fetch_source()
+
+
+def test_an_unparseable_body_leaves_an_existing_stored_file_untouched(monkeypatch, srd_root):
+    dest_dir = srd_root / service.SOURCE_VERSION
+    dest_dir.mkdir(parents=True)
+    dest_path = dest_dir / service.SOURCE_FILENAME
+    dest_path.write_bytes(b"previously stored body")
+
+    fake_httpx, _ = _stub_get(response=_FakeResponse(content=_UNUSABLE_BODY))
+    monkeypatch.setattr(service, "httpx", fake_httpx)
+
+    with pytest.raises(SrdSourceError):
+        service.fetch_source()
+
+    assert dest_path.read_bytes() == b"previously stored body"
+
+
+def test_an_unparseable_body_leaves_no_leftover_temp_file(monkeypatch, srd_root):
+    """The reject-before-replace path must clean up its own temp file, not
+    just leave the destination alone -- otherwise a stray `.tmp` file
+    accumulates in the version directory on every rejected fetch."""
+    fake_httpx, _ = _stub_get(response=_FakeResponse(content=_UNUSABLE_BODY))
+    monkeypatch.setattr(service, "httpx", fake_httpx)
+
+    with pytest.raises(SrdSourceError):
+        service.fetch_source()
+
+    version_dir = srd_root / service.SOURCE_VERSION
+    assert list(version_dir.iterdir()) == []
+
+
+def test_chunk_source_on_a_non_utf8_stored_file_raises_srd_source_error_not_a_traceback(tmp_path):
+    """A stored file that is already on disk but damaged (not valid UTF-8)
+    must surface as `SrdSourceError`, the same as every other unparseable-
+    source case, rather than letting a raw `UnicodeDecodeError` escape
+    (AC5)."""
+    damaged = tmp_path / "damaged.md"
+    damaged.write_bytes(b"\xff\xfe# Combat\n\nnot valid utf-8\n")
+
+    with pytest.raises(SrdSourceError):
+        service.chunk_source(damaged)
+
+
+def test_ingest_dry_run_reports_an_unparseable_body_as_one_stderr_line_not_a_traceback(
+    monkeypatch, srd_root
+):
+    """The unparseable-body failure reaches `app srd ingest --dry-run` the
+    same way every other `SrdSourceError` does: one line on stderr, exit 1,
+    no traceback (AC5)."""
+    fake_httpx, _ = _stub_get(response=_FakeResponse(content=_UNUSABLE_BODY))
+    monkeypatch.setattr(service, "httpx", fake_httpx)
+
+    result = runner.invoke(cli, ["srd", "ingest", "--dry-run"])
+
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    stderr_lines = [line for line in result.stderr.splitlines() if line.strip()]
+    assert len(stderr_lines) == 1, result.stderr
+
+
 def test_fetch_source_never_touches_the_real_module_level_httpx(monkeypatch, srd_root):
     """Guards the monkeypatch seam itself: if `fetch_source` ever imported
     `httpx.get` by name instead of going through the module reference, this
     stub would be bypassed silently and the other tests here would be
     exercising nothing (AGENTS.md's module-attribute rule)."""
-    fake_httpx, calls = _stub_get(response=_FakeResponse(content=b"body"))
+    fake_httpx, calls = _stub_get(response=_FakeResponse(content=_USABLE_BODY))
     monkeypatch.setattr(service, "httpx", fake_httpx)
 
     service.fetch_source()

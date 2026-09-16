@@ -74,11 +74,13 @@ def fetch_source(*, version: str = SOURCE_VERSION) -> Path:
     `core/llm/service.py`.
 
     Raises `SrdSourceError` on a non-200 response, a timeout/connection
-    failure or an empty body, and never touches the destination file until
-    a full, valid body is in hand: the download is written to a temporary
-    file in the destination directory first, then moved into place with
-    `os.replace`, so a failed fetch leaves an existing stored copy
-    byte-identical (AC5)."""
+    failure, an empty body, or a body that does not parse into at least one
+    citable rules section -- and never touches the destination file until a
+    full, valid, chunkable body is in hand: the download is written to a
+    temporary file in the destination directory first, checked by running
+    it through `chunk_source` (the same parser `ingest` would use), and only
+    then moved into place with `os.replace`. A failed fetch, at any of
+    these stages, leaves an existing stored copy byte-identical (AC5)."""
     try:
         response = httpx.get(SOURCE_URL, timeout=_FETCH_TIMEOUT_SECONDS, follow_redirects=True)
     except Exception as exc:
@@ -100,6 +102,24 @@ def fetch_source(*, version: str = SOURCE_VERSION) -> Path:
     try:
         with os.fdopen(fd, "wb") as tmp_file:
             tmp_file.write(content)
+    except OSError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise SrdSourceError(f"could not store SRD source at {dest_path}: {exc}") from exc
+
+    try:
+        chunks = chunk_source(tmp_path)
+    except SrdSourceError:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    if not chunks:
+        tmp_path.unlink(missing_ok=True)
+        raise SrdSourceError(
+            f"SRD source {SOURCE_URL} does not parse into any citable rules section "
+            "-- the body is not a usable rules document"
+        )
+
+    try:
         os.replace(tmp_path, dest_path)
     except OSError as exc:
         tmp_path.unlink(missing_ok=True)
@@ -218,8 +238,17 @@ def chunk_source(path: Path) -> list[RuleChunk]:
     no chunk -- an empty citation would not be usable; merging it into a
     neighbour would blur which heading the text actually belongs to
     (research.md, "Open questions").
-    """
-    text = path.read_text(encoding="utf-8")
+
+    A `path` that cannot be read, or whose bytes are not valid UTF-8 text
+    (a damaged stored file, however it got that way), raises
+    `SrdSourceError` rather than letting `OSError`/`UnicodeDecodeError`
+    escape as a raw traceback (AC5)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise SrdSourceError(f"could not read stored SRD source at {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise SrdSourceError(f"stored SRD source at {path} is not valid UTF-8 text: {exc}") from exc
     chunks: list[RuleChunk] = []
     for heading_path, body in _sections(text):
         if not body:
