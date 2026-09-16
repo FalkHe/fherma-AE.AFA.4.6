@@ -137,6 +137,36 @@ def test_demo_resume_calls_the_service_and_graph_and_prints_the_answer_line(monk
     assert result.stdout == "answer: hello-from-run-1|hello\n"
 
 
+def test_demo_resume_fails_readably_when_the_thread_was_never_started(monkeypatch):
+    # Exercises the real `demo_graph.resume` (not faked, unlike the other
+    # resume tests) against a fake checkpointer whose `aget_tuple` reports
+    # no prior checkpoint - the never-started-thread case - to prove the
+    # CLI surfaces a plain sentence naming the thread rather than the bare
+    # `KeyError` that node "one" would otherwise raise reading `state["seed"]`
+    # off an empty state.
+    class _FakeCheckpointer:
+        async def aget_tuple(self, config):
+            return None
+
+    @asynccontextmanager
+    async def _fake_cm():
+        yield _FakeCheckpointer()
+
+    monkeypatch.setattr(checkpointer_service, "checkpointer", lambda: _fake_cm())
+
+    result = runner.invoke(
+        cli,
+        ["checkpoint", "demo", "resume", "--thread", "never-started", "--value", "x"],
+    )
+
+    assert result.exit_code == 1
+    assert "never-started" in result.stderr
+    assert "no interrupted state to resume" in result.stderr
+    assert "KeyError" not in result.stderr
+    assert "Traceback" not in result.stderr
+    assert result.stdout == ""
+
+
 def test_demo_resume_exits_1_when_the_graph_raises(monkeypatch):
     _patch_checkpointer(monkeypatch)
 

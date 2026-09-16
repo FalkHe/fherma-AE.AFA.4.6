@@ -81,10 +81,15 @@ async def start(checkpointer, thread_id: str) -> object:
 async def resume(checkpointer, thread_id: str, value: str) -> str:
     """Resume, on `thread_id`, a run previously paused by `start()`,
     supplying `value` as the interrupt's resume payload. Returns the
-    combined `<left>|<value>` answer; raises if there was nothing to
-    resume or the graph did not reach `"two"`."""
-    graph = _build(checkpointer)
+    combined `<left>|<value>` answer; raises a readable error - not the
+    bare `KeyError` node `"one"` would otherwise raise reading `state["seed"]`
+    off an empty state - if `thread_id` was never started, and raises if the
+    graph did not reach `"two"`."""
     config = {"configurable": {"thread_id": thread_id}}
+    existing = await checkpointer.aget_tuple(config)
+    if existing is None:
+        raise RuntimeError(f"thread {thread_id!r} has no interrupted state to resume")
+    graph = _build(checkpointer)
     result = await graph.ainvoke(Command(resume=value), config=config)
     answer = result.get("answer")
     if answer is None:
