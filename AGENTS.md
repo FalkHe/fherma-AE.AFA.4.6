@@ -12,6 +12,7 @@ Everything runs in Docker; no host Python/Node toolchain is required.
 - Lint / format: `make lint` (`make backend-lint` = ruff check + format check · `make frontend-lint` = ESLint)
 - Tests (all): `make test` · backend only: `make backend-test` · frontend only: `make frontend-test`
 - Tests (single file): `docker compose run --rm --no-deps app-cli pytest tests/<path>` · `docker compose run --rm --no-deps node-cli pnpm test <path>`
+- Tests (opt-in, real database): `make backend-test-db` — starts postgres, runs the `database`-marked tests against a scratch database
 - Type check: `make frontend-typecheck`
 - Typed API client: `make generate-api` (stack must be up)
 - `make help` lists every target.
@@ -55,7 +56,7 @@ current state — where a roadmap doc and the code disagree, the code wins.
 - Run `make build` after any dependency change; `make rebuild` also renews the frontend `node_modules` volume.
 - `frontend/src/api/schema.d.ts` is generated and committed — never hand-edited.
 - Backend pytest runs with `filterwarnings = ["error"]`: any warning fails the suite.
-- Tests must never build a real DB engine — `backend/tests/conftest.py` stubs the DB session and pins env vars so the root `.env` cannot leak in.
+- Tests must never build a real DB engine — `backend/tests/conftest.py` stubs the DB session and pins env vars so the root `.env` cannot leak in. One opt-in exception: tests marked `database` (`backend/tests/srd/conftest.py`) build a real engine against a scratch database and skip cleanly when no Postgres answers.
 - Vitest has no globals: import vitest APIs explicitly. Fetch is stubbed by one dispatcher installed at startup (`frontend/src/test/`), because openapi-fetch captures `fetch` at import time.
 - No background job runner and no Redis: every operation is request-scoped or a Typer CLI one-off.
 - `OPENROUTER_API_KEY` is read by the `core/llm/` seam (`app llm chat`); without it every model call fails naming the variable. Optional Langfuse tracing is enabled per checkout via `COMPOSE_FILE` in `.env`.

@@ -40,7 +40,7 @@ skeletons and username/password authentication exist. The game agent does not.
 - camelCase on the wire via a shared Pydantic base; resource objects returned directly, no envelope.
 - One error envelope for every non-2xx: `{"error": {"code", "message", "details"}}`. Domain codes carry the meaning; the frontend maps `code` to an i18n key and never shows `message`.
 - Auth: Argon2 passwords, opaque server-side sessions hashed at rest, HttpOnly cookie, CSRF synchroniser token in a response header. One implicit `user` role.
-- Backend tests are synchronous (TestClient / Typer `CliRunner`) and never build a real engine; warnings are errors.
+- Backend tests are synchronous (TestClient / Typer `CliRunner`) and never build a real engine, except opt-in tests marked `database`, which build one against a scratch Postgres database and skip cleanly when none answers (`make backend-test-db`, vs. plain `make backend-test`); warnings are errors.
 
 ## Infrastructure
 
