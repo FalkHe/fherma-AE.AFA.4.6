@@ -24,16 +24,30 @@ here. `dimensions`/`encoding_format` are never passed to `generate()`: the
 model's native width is what `EMBEDDING_DIMENSIONS` must be set to match
 (← AC5), and a returned vector of the wrong width raises rather than
 degrades - see `embed_texts()`'s own docstring.
+
+`generate_image()` (sprint 05) reuses the same client for
+`client.images.generate(...)` - images go direct through the OpenRouter
+SDK, never through LangChain (← D1): the SDK exposes `/images` directly and
+raises the same `openrouter.errors.*` types `classify()` already matches
+on. Only `model=`/`prompt=` are ever passed - never `n`, `stream`,
+`resolution`, `aspect_ratio` or `output_format`. It never returns a
+placeholder: every failure mode raises instead (← AC5) - choosing a
+fallback belongs to whatever calls this seam, not to the seam itself.
 """
 
+import base64
+import binascii
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import openrouter
+import structlog
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_openrouter import ChatOpenRouter
+from openrouter.components import ImageGenerationResponse
+from openrouter.components import ImageGenerationUsage as SdkImageUsage
 from openrouter.operations import CreateEmbeddingsResponseBody, CreateEmbeddingsUsage
 
 from app.core.llm.errors import (
@@ -45,6 +59,8 @@ from app.core.llm.errors import (
 )
 from app.core.llm.retry import call_with_retry, stream_with_retry
 from app.core.settings import get_settings
+
+logger = structlog.get_logger()
 
 DEFAULT_TEMPERATURE = 0.7
 REQUEST_TIMEOUT_MS = 60_000
@@ -61,6 +77,13 @@ class Usage:
 @dataclass(frozen=True)
 class EmbeddingResult:
     vectors: list[list[float]]
+    usage: Usage
+
+
+@dataclass(frozen=True)
+class ImageResult:
+    image_bytes: bytes
+    media_type: str
     usage: Usage
 
 
@@ -313,3 +336,104 @@ def embed_texts(texts: Sequence[str], *, model: str | None = None) -> EmbeddingR
         return EmbeddingResult(vectors=vectors, usage=usage)
 
     return call_with_retry(_attempt, label="embed")
+
+
+def _usage_of_image(usage: SdkImageUsage | None) -> Usage:
+    """Read token counts and USD cost off an image generation reply.
+
+    `usage.cost` is `OptionalNullable[float]` on the SDK's own model: when
+    absent it reads back as `Unset()`, not `None` (← research trap) - only
+    an actual `int`/`float` is coerced to `cost_usd`, anything else
+    (`Unset()`, `None`) degrades to `None`, matching
+    `_usage_of_embeddings()`. `usage is None` degrades the same way, to
+    zeros and `cost_usd=None`.
+    """
+    if usage is None:
+        return Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0, cost_usd=None)
+
+    cost = usage.cost
+    cost_usd = float(cost) if isinstance(cost, int | float) else None
+
+    return Usage(
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
+        cost_usd=cost_usd,
+    )
+
+
+def generate_image(prompt: str, *, model: str | None = None) -> ImageResult:
+    """Generate one portrait image and return its bytes, media type and
+    usage, translating provider failures.
+
+    `model` falls back to `get_settings().image_model` when omitted. A
+    blank `prompt` raises `LlmBadRequestError()` before any network call -
+    there is nothing to send. Otherwise the whole attempt runs through
+    `call_with_retry()` (← sprint 03), structured exactly like
+    `embed_texts()`: one `_attempt()` closure, rebuilt per attempt, so a
+    blank `OPENROUTER_API_KEY` raises `LlmConfigurationError()` on attempt 1
+    and is never retried; the provider call is wrapped in the same
+    `except Exception` / `classify()` / re-raise-unclassified shape
+    `embed_texts()` uses, so `classify()` and the retry layer work
+    unchanged - no parallel error path.
+
+    Only `model=`/`prompt=` are ever passed to `client.images.generate()`
+    (← AC5): `n`, `stream`, `resolution`, `aspect_ratio` and
+    `output_format` are never sent.
+
+    Never returns a substitute (← AC5): a return that is not an
+    `ImageGenerationResponse`, an empty `data`, a `b64_json` that fails to
+    decode (`binascii.Error`, otherwise unclassified and liable to escape
+    as a foreign exception), or a `b64_json` that decodes to zero bytes
+    all raise `LlmMalformedError()` - retryable, capped like every other
+    malformed reply. A `data[0]` missing `b64_json` entirely, or with it
+    `null`, never reaches this code: `b64_json` is a required `str` field
+    on the SDK's own response model, so the SDK's JSON parsing itself
+    raises a pydantic `ValidationError` first, which `classify()` already
+    maps to `LlmMalformedError()` - no parallel check needed here.
+    `media_type` is `data[0].media_type`, or `"image/png"` when the
+    provider omits it (the documented behaviour for standard raster
+    output).
+
+    A `logger.info("llm_image_request", ...)` line fires before the call,
+    with `url` derived from the client's own `get_server_details()` rather
+    than a hardcoded literal - the point is to prove the request goes to
+    OpenRouter, not to Google's own API (← AC3); a literal would assert
+    nothing.
+    """
+    if not prompt.strip():
+        raise LlmBadRequestError()
+
+    def _attempt() -> ImageResult:
+        settings = get_settings()
+        if not settings.openrouter_api_key.strip():
+            raise LlmConfigurationError()
+
+        requested_model = model if model is not None else settings.image_model
+        client = build_sdk_client(settings.openrouter_api_key)
+        server_url, _ = client.sdk_configuration.get_server_details()
+        logger.info("llm_image_request", url=f"{server_url}/images", model=requested_model)
+
+        try:
+            response = client.images.generate(model=requested_model, prompt=prompt)
+        except Exception as exc:
+            if (err := classify(exc)) is not None:
+                raise err from exc
+            raise
+
+        if not isinstance(response, ImageGenerationResponse) or not response.data:
+            raise LlmMalformedError()
+
+        try:
+            image_bytes = base64.b64decode(response.data[0].b64_json, validate=True)
+        except binascii.Error as exc:
+            raise LlmMalformedError() from exc
+
+        if not image_bytes:
+            raise LlmMalformedError()
+
+        media_type = response.data[0].media_type or "image/png"
+        usage = _usage_of_image(response.usage)
+        return ImageResult(image_bytes=image_bytes, media_type=media_type, usage=usage)
+
+    return call_with_retry(_attempt, label="image")
