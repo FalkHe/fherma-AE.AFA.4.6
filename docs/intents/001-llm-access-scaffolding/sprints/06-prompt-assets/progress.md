@@ -27,3 +27,5 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: **changes-requested** (note #86). AC4 failed: `_SEGMENT`/`VERSION_PATTERN` anchored with `$`, which in Python matches before a trailing newline — so `game/system/smoke\n` passed the grammar, built a `Path`, hit the filesystem and failed as NOT_FOUND/exit 3, defeating the design's "refused before any Path is built" claim. AC1 partial: `read_text()` translated CRLF to LF, so a prompt was not verbatim. Plus `list_versions` did not validate `capability`.
+Round 2: all three fixed (`re.fullmatch`, `read_bytes().decode()`, capability validated), each proven red-then-green; 486 passed. Lead re-verified live via CliRunner: both trailing-newline cases now exit 2 as invalid.
