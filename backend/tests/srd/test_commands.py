@@ -27,7 +27,9 @@ def test_status_on_empty_corpus_exits_1_with_stderr_naming_zero_rules_and_the_in
     monkeypatch,
 ):
     async def fake_corpus_status(db):
-        return CorpusStatus(rule_count=0, source_version=None, embedding_model=None, ingested_at=None)
+        return CorpusStatus(
+            rule_count=0, source_version=None, embedding_model=None, ingested_at=None
+        )
 
     monkeypatch.setattr(srd_service, "corpus_status", fake_corpus_status)
 

@@ -17,9 +17,11 @@ this module reaches the corpus directly (D1).
 
 ## Surface
 
-- Nothing yet — this work item lands the table shape only. Ingestion,
-  embedding, retrieval and status live in `service.py` and the `app srd …`
-  CLI, owned by later work items in this intent.
+- `app srd status` (`commands.py`): reports rule count, source version,
+  embedding model and ingest time on stdout; exits 1 with a stderr line
+  naming 0 rules and `app srd ingest` when the corpus is empty, or naming
+  both widths on a vector-width mismatch. Ingestion and retrieval are
+  owned by later work items in this intent.
 
 ## Notes
 

@@ -8,6 +8,7 @@ from app.core.logging import configure_logging
 from app.core.prompts.commands import prompt_app
 from app.main import create_app
 from app.modules.content.commands import content_app
+from app.modules.srd.commands import srd_app
 
 cli = typer.Typer()
 
@@ -30,3 +31,4 @@ cli.add_typer(content_app, name="content")
 cli.add_typer(checkpoint_app, name="checkpoint")
 cli.add_typer(llm_app, name="llm")
 cli.add_typer(prompt_app, name="prompt")
+cli.add_typer(srd_app, name="srd")
