@@ -175,9 +175,12 @@ def test_report_sums_tokens_and_the_costs_the_gateway_reported(matching_width, m
     assert report.token_count == total_chunks * 7
     assert report.chunk_count == total_chunks
     assert report.cost_usd == pytest.approx(0.85)
+    assert report.cost_complete is True
 
 
-def test_report_cost_is_none_when_the_gateway_priced_only_some_batches(matching_width, monkeypatch):
+def test_report_cost_is_the_partial_sum_and_flagged_incomplete_when_some_batches_priced(
+    matching_width, monkeypatch
+):
     total_chunks = srd_service.EMBED_BATCH_SIZE + 3
     chunks = _chunks(total_chunks)
     _stub_fetch_and_chunk(monkeypatch, chunks)
@@ -191,7 +194,25 @@ def test_report_cost_is_none_when_the_gateway_priced_only_some_batches(matching_
 
     report = asyncio.run(srd_service.ingest(db))
 
+    assert report.cost_usd == pytest.approx(0.75)
+    assert report.cost_complete is False
+
+
+def test_report_cost_is_none_and_complete_when_no_batch_priced(matching_width, monkeypatch):
+    total_chunks = srd_service.EMBED_BATCH_SIZE + 3
+    chunks = _chunks(total_chunks)
+    _stub_fetch_and_chunk(monkeypatch, chunks)
+
+    def _fake_embed(texts, *, model=None):
+        return _embed_result(len(texts), cost_usd=None)
+
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", _fake_embed)
+    db = FakeWriteSession()
+
+    report = asyncio.run(srd_service.ingest(db))
+
     assert report.cost_usd is None
+    assert report.cost_complete is True
 
 
 def test_a_failing_batch_writes_nothing_and_raises_before_any_db_call(matching_width, monkeypatch):

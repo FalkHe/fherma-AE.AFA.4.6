@@ -298,10 +298,13 @@ async def ingest(
     leaves the previous corpus untouched rather than half-replaced.
 
     `cost_usd` on the returned report is the sum of every batch's reported
-    cost, but only when every batch reported one -- if the gateway priced
-    only some of them, returning that partial sum would silently undercount
-    it, so the report carries `None` instead: `None` means "not a reliable
-    total", never "free".
+    cost, whether or not every batch actually reported one; `cost_complete`
+    is `False` when the gateway priced only some of the batches, so
+    `cost_usd` is a known lower bound rather than the true total -- the
+    operator still sees "it cost at least this much" instead of nothing.
+    `cost_usd` is `None` only when no batch reported a cost at all (there is
+    then genuinely no figure to show), in which case `cost_complete` stays
+    at its default `True`: nothing was left out of an empty sum.
     """
     check_vector_width()
 
@@ -313,18 +316,25 @@ async def ingest(
 
     vectors: list[list[float]] = []
     cost_total = 0.0
-    cost_complete = True
+    any_batch_priced = False
+    any_batch_unpriced = False
 
     for start in range(0, total, EMBED_BATCH_SIZE):
         batch = chunks[start : start + EMBED_BATCH_SIZE]
         result = llm_service.embed_texts([chunk.text for chunk in batch], model=embedding_model)
         vectors.extend(result.vectors)
         if result.usage.cost_usd is None:
-            cost_complete = False
+            any_batch_unpriced = True
         else:
             cost_total += result.usage.cost_usd
+            any_batch_priced = True
         if on_batch is not None:
             on_batch(len(vectors), total)
+
+    # Incomplete only in the mixed case: some batches priced, some did not.
+    # All-priced and none-priced both leave `cost_usd` telling the whole
+    # story it can (a full sum, or nothing), so neither counts as partial.
+    cost_complete = not (any_batch_priced and any_batch_unpriced)
 
     rows = [
         SrdRule(
@@ -352,5 +362,6 @@ async def ingest(
         source_bytes=path.stat().st_size,
         chunk_count=total,
         token_count=sum(chunk.token_count for chunk in chunks),
-        cost_usd=cost_total if cost_complete else None,
+        cost_usd=cost_total if any_batch_priced else None,
+        cost_complete=cost_complete,
     )
