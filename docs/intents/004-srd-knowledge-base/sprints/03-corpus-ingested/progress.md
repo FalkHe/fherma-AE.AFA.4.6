@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-16
 updated: 2026-09-16
-stage: draft
+stage: done
 ---
 # Progress: Sprint 03 — the corpus is ingested
 
@@ -24,10 +24,11 @@ Status: `open | running | done | failed`
 - The criterion for the live import is written as a human's own run with a real key. The key is configured here and the run costs about one US cent, so the sprint lead runs it rather than shipping two criteria unproven; the actual cost is reported.
 
 ## Backlog proposals
+- The approved module-structure attachment now under-lists what an import reports, since the report gained a way to say a cost figure is incomplete. The attachment is the human's to amend.
 - A latent fault was found and fixed while building this sprint: a test that drove the command left a database connection pointing at a scratch database that had since been dropped, and the resulting error surfaced later against whatever unrelated test happened to be running. It was test-only, but it made failures land on the wrong test.
 
 ## Gates
 Lint, both suites and the live-database run all pass (598 offline, 11 live, 53 frontend). The import was also run for real against the gateway: 2,132 passages and 502,818 tokens embedded for $0.010056, after which the corpus reported 2,132 rules against `openai/text-embedding-3-small` and exited 0.
 
 ## Verify
-<pending>
+Round 1: approved. Every criterion and decision held, and all five lead calls were judged acceptable. The verifier reproduced the live import independently and went beyond the suite on the no-half-filled-corpus promise, proving that a failure on a later batch leaves an already-loaded rulebook untouched, through both the service and the command. The formal approval click was blocked by a local permission rule, so the verdict is recorded as a note on the merge request instead.
