@@ -25,3 +25,17 @@ class RuleChunk(CamelModel):
     ordinal: int
     text: str
     token_count: int
+
+
+class IngestReport(CamelModel):
+    """What one `app srd ingest` run did (or would do, under `--dry-run`):
+    the source version fetched, how big the stored document is, how many
+    citable `RuleChunk`s it split into and their combined token count.
+    `cost_usd` is `None` when no embedding call was made -- always the case
+    under `--dry-run`, since embedding is a later sprint (WI3)."""
+
+    source_version: str
+    source_bytes: int
+    chunk_count: int
+    token_count: int
+    cost_usd: float | None = None

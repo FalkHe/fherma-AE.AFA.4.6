@@ -68,12 +68,18 @@ def test_dry_run_source_failure_prints_one_stderr_line_and_exits_1_with_no_trace
 
 
 def test_dry_run_opens_no_database_session(monkeypatch):
+    import app.modules.srd.commands as commands_module
+
+    def _forbidden():
+        raise AssertionError("ingest --dry-run must not open a DB session")
+
+    monkeypatch.setattr(commands_module, "get_sessionmaker", _forbidden)
     monkeypatch.setattr(srd_service, "fetch_source", lambda: Path("/dev/null"))
     monkeypatch.setattr(srd_service, "chunk_source", lambda path: [])
 
-    import app.modules.srd.commands as commands_module
+    result = runner.invoke(cli, ["srd", "ingest", "--dry-run"])
 
-    assert not hasattr(commands_module, "get_sessionmaker")
+    assert result.exit_code == 0, result.output
 
 
 def test_bare_ingest_without_dry_run_exits_1_saying_embedding_not_landed_yet():
