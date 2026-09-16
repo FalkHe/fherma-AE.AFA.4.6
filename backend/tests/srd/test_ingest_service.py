@@ -22,6 +22,11 @@ after a failed batch) use the `database`-marked `srd_db` fixture
 
 No `pytest-asyncio` in this suite (`AGENTS.md` gotchas): every async call
 is wrapped in a single `asyncio.run(...)` per test.
+
+WI3: `ingest` must hand the embedder `chunk.heading_path` joined to
+`chunk.text`, not `chunk.text` alone, so a passage embeds findable by its
+own name (a spell, a condition, a combat action) and not only by wording
+its body shares with every sibling section.
 """
 
 import asyncio
@@ -169,6 +174,44 @@ def test_no_batch_exceeds_the_request_cap(matching_width, monkeypatch, tmp_path)
     assert all(size <= srd_service.EMBED_BATCH_SIZE for size in batch_sizes)
     assert sum(batch_sizes) == total_chunks
     assert len(db.added) == total_chunks
+
+
+def test_embed_texts_receives_the_heading_trail_joined_to_the_body(
+    matching_width, monkeypatch, tmp_path
+):
+    # <- WI3: a passage's own name lives in its heading, not its body -- the
+    # gateway must see the trail together with the text, not the text alone.
+    chunks = [
+        RuleChunk(
+            heading_path="Spells › Fire Bolt", ordinal=0, text="A ray of fire.", token_count=99
+        ),
+        RuleChunk(
+            heading_path="Conditions › Poisoned", ordinal=0, text="Disadvantage.", token_count=99
+        ),
+    ]
+    _stub_fetch_and_chunk(monkeypatch, chunks, tmp_path=tmp_path)
+
+    sent: list[list[str]] = []
+
+    def _fake_embed(texts, *, model=None):
+        sent.append(list(texts))
+        return _embed_result(len(texts))
+
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", _fake_embed)
+    db = FakeWriteSession()
+
+    asyncio.run(srd_service.ingest(db))
+
+    assert sent == [
+        [
+            "Spells › Fire Bolt" + srd_service.EMBED_TRAIL_SEPARATOR + "A ray of fire.",
+            "Conditions › Poisoned" + srd_service.EMBED_TRAIL_SEPARATOR + "Disadvantage.",
+        ]
+    ]
+    # The stored row still gets `chunk.text` -- body only -- never the
+    # trail-joined text that was actually embedded.
+    stored_texts = {row.text for row in db.added}
+    assert stored_texts == {"A ray of fire.", "Disadvantage."}
 
 
 def test_on_batch_fires_after_each_batch_with_running_and_total_counts(
@@ -319,8 +362,11 @@ def test_ac3_rows_carry_every_field_chunk_order_and_a_full_width_vector(
         assert row.embedding_model == get_settings().embedding_model
         assert len(row.embedding) == EMBEDDING_WIDTH
         # Vector traced back to the right chunk -- no shuffling between the
-        # batched gateway call and the stored row (AC3).
-        assert row.embedding[0] == pytest.approx(float(len(chunk.text)))
+        # batched gateway call and the stored row (AC3). WI3: what was
+        # actually embedded is the trail-joined text, not `chunk.text`
+        # alone, so the trace compares against that.
+        embedded_text = chunk.heading_path + srd_service.EMBED_TRAIL_SEPARATOR + chunk.text
+        assert row.embedding[0] == pytest.approx(float(len(embedded_text)))
 
 
 @pytest.mark.database

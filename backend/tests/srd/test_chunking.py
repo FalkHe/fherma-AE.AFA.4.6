@@ -12,6 +12,12 @@ corpus regression test below reads the real, committed source file to prove
 this sprint's change leaves its shape unchanged. `tiktoken`'s BPE table is
 pre-warmed into the image at build time (`docker/backend.Dockerfile`), so
 `count_tokens` and `chunk_source` never reach it either.
+
+WI3: a passage's own name lives in its heading, not its body, so
+`RuleChunk.token_count` now covers the trail-joined text that actually goes
+to the embedder (`heading_path` + `EMBED_TRAIL_SEPARATOR` + `text`), while
+`RuleChunk.text` itself stays body-only -- that is what gets stored and
+quoted back as a citation.
 """
 
 import tiktoken
@@ -106,6 +112,59 @@ def test_count_tokens_matches_the_cl100k_base_encoding():
     assert service.count_tokens(text) == expected
 
 
+def test_token_count_honestly_includes_the_heading_trail_not_just_the_body(tmp_path):
+    # <- WI3: the reported token figure must describe what is actually sent
+    # to the embedder (heading trail + body), not the stored body alone.
+    markdown = "# Spells\n\n## Fire Bolt\n\nA ray of fire streaks toward a creature.\n"
+    chunks = service.chunk_source(_write(tmp_path, markdown))
+    (chunk,) = chunks
+
+    body_only_tokens = service.count_tokens(chunk.text)
+    embedded_tokens = service.count_tokens(
+        chunk.heading_path + service.EMBED_TRAIL_SEPARATOR + chunk.text
+    )
+
+    assert chunk.token_count == embedded_tokens
+    assert chunk.token_count > body_only_tokens
+
+
+def test_stored_text_stays_body_only_even_though_token_count_counts_the_trail(tmp_path):
+    # <- WI3: `SrdRule.text` is quoted back as a citation and must never
+    # carry the heading path a second time.
+    markdown = "# Conditions\n\n## Poisoned\n\nA poisoned creature has disadvantage.\n"
+    (chunk,) = service.chunk_source(_write(tmp_path, markdown))
+
+    assert chunk.text == "A poisoned creature has disadvantage."
+    assert chunk.heading_path not in chunk.text
+
+
+def test_oversized_section_split_parts_do_not_double_count_the_trail(tmp_path):
+    # <- WI3: every split part already carries the same `heading_path`
+    # (AC2/AC4); joining it once per part when computing `token_count` must
+    # not join it twice on any part, and must never push a part's actually-
+    # embedded token count past `MAX_CHUNK_TOKENS`.
+    body = " ".join(f"tok{i:05d}" for i in range(5000))
+    markdown = f"# Combat\n\n## Cover\n\n### Half Cover\n\n{body}\n"
+    chunks = service.chunk_source(_write(tmp_path, markdown))
+
+    heading_path = "Combat › Cover › Half Cover"
+    section_chunks = [c for c in chunks if c.heading_path == heading_path]
+    assert len(section_chunks) >= 2, "fixture section must force at least one split"
+
+    for chunk in section_chunks:
+        joined_once = chunk.heading_path + service.EMBED_TRAIL_SEPARATOR + chunk.text
+        joined_twice = (
+            chunk.heading_path
+            + service.EMBED_TRAIL_SEPARATOR
+            + chunk.heading_path
+            + service.EMBED_TRAIL_SEPARATOR
+            + chunk.text
+        )
+        assert chunk.token_count == service.count_tokens(joined_once)
+        assert chunk.token_count != service.count_tokens(joined_twice)
+        assert chunk.token_count <= service.MAX_CHUNK_TOKENS
+
+
 def test_headings_that_collapse_to_the_same_trail_produce_distinct_positions(tmp_path):
     # <- WI1/AC2: two headings differing only by an anchor disambiguator
     # (`{#fire-bolt}` / `{#fire-bolt-1}`) strip down to the same
@@ -131,7 +190,10 @@ def test_headings_that_collapse_to_the_same_trail_produce_distinct_positions(tmp
 def test_shipped_srd_source_yields_2132_passages_with_no_duplicate_citation():
     # <- WI1/AC2 regression: the fix must not change the real corpus's
     # shape. Reads the real, committed document (not a `tmp_path` fixture)
-    # -- see the module docstring.
+    # -- see the module docstring. WI3: also proves that reserving room for
+    # the heading trail keeps every chunk's actually-embedded token count
+    # at or under `MAX_CHUNK_TOKENS`, without needing an extra split
+    # anywhere in the real document.
     path = service.SRD_ROOT / service.SOURCE_VERSION / service.SOURCE_FILENAME
     chunks = service.chunk_source(path)
 
@@ -139,3 +201,6 @@ def test_shipped_srd_source_yields_2132_passages_with_no_duplicate_citation():
 
     pairs = [(c.heading_path, c.ordinal) for c in chunks]
     assert len(pairs) == len(set(pairs))
+
+    for chunk in chunks:
+        assert chunk.token_count <= service.MAX_CHUNK_TOKENS
