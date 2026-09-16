@@ -22,10 +22,12 @@ class _FakeResponse:
         self.content = content
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def srd_root(tmp_path, monkeypatch):
-    """Repoints `service.SRD_ROOT` at an empty `tmp_path` for every test in
-    this file, so nothing here ever touches the committed content tree."""
+    """Repoints `service.SRD_ROOT` at an empty `tmp_path`, requested by every
+    test that calls `fetch_source` here, so nothing touches the committed
+    content tree. Not requested by the one test that checks the constant's
+    own, unpatched value."""
     monkeypatch.setattr(service, "SRD_ROOT", tmp_path)
     return tmp_path
 
@@ -149,11 +151,18 @@ def test_fetch_source_never_touches_the_real_module_level_httpx(monkeypatch, srd
     assert calls == [service.SOURCE_URL]
 
 
-def test_srd_root_resolves_to_backend_content_srd():
-    """Sanity check on the constant itself, independent of the
-    `srd_root` monkeypatch: `SRD_ROOT` must be `backend/content/srd` from
-    the module's own location (WI1 brief)."""
+def test_srd_root_resolves_to_content_srd_under_the_backend_package_root():
+    """Sanity check on the constant itself, independent of the `srd_root`
+    monkeypatch: `SRD_ROOT` must be `<backend>/content/srd`, three levels
+    above `app/modules/srd/service.py` (WI1 brief). Checked structurally,
+    not by a hard-coded directory name, since the backend root is named
+    differently on the host (`backend/`) than inside its own container
+    (`/app`)."""
     from app.modules.srd import service as unpatched_service_module
 
-    backend_root = Path(unpatched_service_module.__file__).resolve().parents[3]
-    assert backend_root.name == "backend"
+    module_path = Path(unpatched_service_module.__file__).resolve()
+    assert module_path.parents[0].name == "srd"
+    assert module_path.parents[1].name == "modules"
+    assert module_path.parents[2].name == "app"
+    backend_root = module_path.parents[3]
+    assert backend_root / "content" / "srd" == unpatched_service_module.SRD_ROOT

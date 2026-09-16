@@ -11,7 +11,8 @@ this module reaches the corpus directly (D1).
   `embedding_model`, `embedding` (`VECTOR(EMBEDDING_WIDTH)`, `EMBEDDING_WIDTH
   = 1536`) — indexed by `ix_srd_rules_embedding`, an HNSW `vector_cosine_ops`
   index for nearest-neighbour lookup.
-- `SrdError` / `SrdCorpusEmptyError` / `SrdVectorWidthError` (`errors.py`).
+- `SrdError` / `SrdCorpusEmptyError` / `SrdVectorWidthError` / `SrdSourceError`
+  (`errors.py`).
 - The `vector` extension and the `srd_rules` table/index migration
   (`alembic/versions/0002_srd_rules.py`).
 
@@ -22,6 +23,11 @@ this module reaches the corpus directly (D1).
   naming 0 rules and `app srd ingest` when the corpus is empty, or naming
   both widths on a vector-width mismatch. Ingestion and retrieval are
   owned by later work items in this intent.
+- `service.fetch_source()` downloads `SOURCE_URL` and stores it at
+  `SRD_ROOT/<version>/SOURCE_FILENAME`, overwriting an existing copy in
+  place; a non-200 response, a timeout or an empty body raise
+  `SrdSourceError` and leave a previously stored file untouched (the
+  download lands in a temporary file first, then is moved into place).
 - `backend/content/srd/v1/` vendors the rules source (`SRD_CC_v5.1.md`) and
   its licence (`LICENSE.md`) that this module's ingest reads.
 
