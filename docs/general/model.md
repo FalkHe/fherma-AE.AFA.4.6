@@ -244,11 +244,12 @@ backend/content/campaigns/<campaign_id>/<version>/
                            # exits[] (a list, not a map), pressure?
 backend/content/srd/        # SRD 5.1 source for the ingest CLI
 
-backend/app/modules/game/prompts/
-    system/dm.md
-    personality/<id>.md     # the run's personality id references these
-    character_generation.md
-    adventure_generation.md
+backend/app/modules/<capability>/prompts/v<n>/<kind>/<id>.md
+    # e.g. modules/game/prompts/v1/system/dm.md
+    #      modules/game/prompts/v1/personality/<id>.md   # the run's personality id references these
+    # each capability owns its own prompts/ tree; there is no shared root, so a
+    # character-generation prompt lives under whichever capability owns that
+    # agent, never nested inside `game`
 
 /data/media/portraits/<id>.png       # Docker volume, never in git
 ```
@@ -268,9 +269,16 @@ adventures, so it lives in the campaign-scoped file.
   PRs. NPC prose fragments are Story and belong to the Campaign-Definition, not
   to the prompts directory; they may move to the database later, and nothing
   outside the content loader may assume a file.
-- **Prompts** live in the module that uses them, versioned in git. The dev
-  drawer selects known ids and may set a free-text override stored on the run;
-  it never edits a file.
+- **Prompts** live under the capability that uses them, versioned in git, and
+  an id resolves against its **owning capability's own prompt directory** —
+  never a shared root. An id is three lowercase-kebab segments,
+  `<capability>/<kind>/<id>`; resolution serves the highest `v<n>` present
+  unless a specific version is named, and the id grammar admits nothing but
+  well-formed segments, so a malformed or path-escaping id is refused outright
+  rather than resolved to a nearby file. A prompt file is plain Markdown with
+  no frontmatter — the resolver serves its text verbatim. The dev drawer
+  selects known ids and may set a free-text override stored on the run; it
+  never edits a file.
 - **Portraits** are downloaded once from the image API to the media volume and
   served by a static route, so a save does not break when a provider link
   expires. Only the relative path is stored.
