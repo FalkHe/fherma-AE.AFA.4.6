@@ -33,4 +33,4 @@ Status: `open | running | done | failed`
 Lint, both suites and the live-database run all pass (573 offline, 4 live, 53 frontend). The dry run was also executed for real against the public source: it fetched 1,878,072 bytes, reported 2,132 passages and 502,818 tokens, and left the working tree clean.
 
 ## Verify
-<pending>
+Round 1: changes-requested. Two failures. A download that answers but returns something that is not readable rules text replaced the good stored copy and then crashed with a raw error dump, so the promise that a failed import leaves the stored rules intact held only for outright download failures. And the rules component's own description still said that importing rules was a later sprint's work.
