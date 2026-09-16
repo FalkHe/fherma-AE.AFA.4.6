@@ -24,18 +24,20 @@ known 1536-wide basis vectors (`_vector`) and queries are fed a known,
 fixed "embedding" through the monkeypatched `embed_texts` -- what pgvector's
 own `cosine_distance` then does with them is exercised for real.
 
-`test_ac1`'s three-row recipe (`e0`/`e1`/`e2` rows against a `[6, 5, 4]`
-query) was updated for sprint 004/06 (`docs/intents/004-srd-knowledge-base/
-sprints/06-relevance-floor/brief.md`, AC4): that sprint drops any match
-scoring below the pinned `RELEVANCE_FLOOR` (`0.40`) entirely, so the
-original recipe's third row -- orthogonal to the query, scoring `0.0` --
-would now be dropped rather than ranked, which is a *different* claim
-(AC4, sprint 06's own new file, `test_acceptance_relevance_floor.py`) than
-what AC1 here is actually about: that passages which do come back are
-ordered best match first. The replacement keeps all three rows scoring
-comfortably above the floor (`~0.684 / ~0.570 / ~0.456`, each with at
-least `0.05` of margin over `0.40`) precisely so this test still exercises
-ordering, not the floor -- do not reintroduce a `0.0`-scoring row here.
+`test_ac1`'s three-row recipe (`e0`/`e1`/`e2` rows against a query built
+from `srd_service.RELEVANCE_FLOOR` itself) was updated for sprint 004/06
+(`docs/intents/004-srd-knowledge-base/sprints/06-relevance-floor/
+brief.md`, AC4): that sprint drops any match scoring below the pinned
+floor entirely, so the original recipe's third row -- orthogonal to the
+query, scoring `0.0` -- would now be dropped rather than ranked, which is
+a *different* claim (AC4, sprint 06's own file,
+`test_acceptance_relevance_floor.py`) than what AC1 here is actually
+about: that passages which do come back are ordered best match first. The
+replacement derives its query vector from the current floor at run time
+rather than restating a fixed clearance in prose against a value expected
+to move -- see the comment at `test_ac1` itself for how -- so a later
+re-measurement cannot silently erode the margin between these three
+scores and the floor; do not reintroduce a `0.0`-scoring row here.
 
 AC4 is explicitly a by-eye check against the real SRD corpus in one run
 (the brief's own words) -- untestable in CI without a real embedding call.
@@ -148,16 +150,17 @@ def _cli_uses_scratch_db():
 def test_ac1_search_prints_passages_most_relevant_first(srd_db, monkeypatch):
     # <- AC1: `app srd search "how does half cover work"` must print
     # passages, best match first. Ranking is proved with rows on basis
-    # vectors e0/e1/e2 against a `[6, 5, 4]` query -- real cosine distance
-    # against the real, migrated table then orders them by score
-    # ~0.684 / ~0.570 / ~0.456. All three sit comfortably above
-    # `RELEVANCE_FLOOR` (0.40, sprint 004/06): this recipe used to include
-    # a fourth, orthogonal (score 0.0) row to prove *everything* comes
-    # back, but sprint 06 deliberately drops anything below the floor, so
-    # that claim moved to `test_acceptance_relevance_floor.py`'s own AC4.
-    # What is left here is AC1's real claim -- ordering -- so every row
-    # must keep scoring well clear of the floor; do not add a low- or
-    # zero-scoring row back in, it would make this an AC4 test by accident.
+    # vectors e0/e1/e2 against a query vector derived below from
+    # `srd_service.RELEVANCE_FLOOR` itself, so all three scores clear the
+    # floor by construction -- not by a margin claimed in a comment, which
+    # sprint 06's own re-measurement (0.40 -> 0.43) already showed can go
+    # stale. This recipe used to include a fourth, orthogonal (score 0.0)
+    # row to prove *everything* comes back, but sprint 06 deliberately
+    # drops anything below the floor, so that claim moved to
+    # `test_acceptance_relevance_floor.py`'s own AC4. What is left here is
+    # AC1's real claim -- ordering -- so every row must keep scoring well
+    # clear of the floor; do not add a low- or zero-scoring row back in,
+    # it would make this an AC4 test by accident.
     e0_heading = "Combat › Cover › Half Cover"
     e1_heading = "Combat › Actions in Combat › Dash"
     e2_heading = "Equipment › Armor › Shields"
@@ -188,13 +191,26 @@ def test_ac1_search_prints_passages_most_relevant_first(srd_db, monkeypatch):
 
     asyncio.run(_seed())
 
-    # `[6, 5, 4]` against unit rows e0/e1/e2 -- cosine similarity is
-    # `component / ||query||` for a unit row, so scores are
-    # `6/sqrt(77) ~= 0.684`, `5/sqrt(77) ~= 0.570`, `4/sqrt(77) ~= 0.456`:
-    # strictly decreasing (proves ordering) and each at least `0.05` above
-    # `RELEVANCE_FLOOR` (0.40), so none of them is at risk of being dropped
-    # by sprint 06's floor -- this test is about order, not the floor.
-    blended_query_vector = [6.0, 5.0, 4.0] + [0.0] * (VECTOR_WIDTH - 3)
+    # Derived from `RELEVANCE_FLOOR`, not a literal: three raw components,
+    # each `CLEARANCE` further above the current floor than the next,
+    # fed as the query against unit rows e0/e1/e2. Cosine similarity
+    # against a unit basis row is `component / ||query||`; whenever the
+    # components' squares sum to under 1 (asserted below), `||query|| < 1`,
+    # so dividing by it only *raises* each score above its own raw value --
+    # the achieved scores end up at or above `floor + CLEARANCE`,
+    # `floor + 2 * CLEARANCE`, `floor + 3 * CLEARANCE` respectively,
+    # strictly decreasing (proves ordering) and each guaranteed clear of
+    # the floor however far the next re-measurement moves it. The
+    # assertion below fails loudly -- rather than silently shrinking the
+    # margin -- if a future floor ever leaves no room for this geometry.
+    floor = srd_service.RELEVANCE_FLOOR
+    clearance = 0.06
+    raw_components = [floor + 3 * clearance, floor + 2 * clearance, floor + clearance]
+    assert sum(component * component for component in raw_components) < 1, (
+        f"RELEVANCE_FLOOR={floor} leaves no room for three distinct, "
+        "ordered scores this far above it -- lower `clearance`"
+    )
+    blended_query_vector = raw_components + [0.0] * (VECTOR_WIDTH - 3)
     monkeypatch.setattr(llm_service, "embed_texts", _fake_embed_fixed(blended_query_vector))
 
     with _cli_uses_scratch_db():
