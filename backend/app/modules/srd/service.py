@@ -526,16 +526,17 @@ DEFAULT_LIMIT = 5
 # (`EMBEDDING_MODEL`) -- a model swap re-measures it, a deployment never
 # does (sprint 004/06).
 #
-# Measured against the real corpus: twelve in-corpus and eleven
-# out-of-corpus questions. The two groups overlap -- the weakest in-corpus
-# question scores 0.485 while four out-of-corpus questions score higher, up
-# to 0.631, each a near miss landing on a generic feature the SRD does
-# carry. 0.40 sits in the widest band containing no in-corpus question
-# (0.371 to 0.452): it keeps every in-corpus question with 0.085 of margin
-# and rejects every topically alien one with 0.029. It cannot reject a
-# D&D-flavoured question about material the SRD simply omits -- that is a
-# known, recorded limit, not something engineered around here.
-RELEVANCE_FLOOR = 0.40
+# Measured against the real corpus with the exact query strings recorded in
+# the module README: twelve in-corpus and eleven out-of-corpus questions.
+# The two groups overlap -- the weakest in-corpus question scores 0.526
+# while the strongest out-of-corpus question scores 0.668, each a near miss
+# landing on a generic feature the SRD does carry. 0.43 sits in the widest
+# band containing no question at all (0.397 to 0.456): it keeps every
+# in-corpus question with 0.096 of margin and rejects every topically alien
+# one with 0.033. It cannot reject a D&D-flavoured question about material
+# the SRD simply omits -- that is a known, recorded limit, not something
+# engineered around here.
+RELEVANCE_FLOOR = 0.43
 
 
 async def search_rules(

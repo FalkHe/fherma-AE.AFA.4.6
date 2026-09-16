@@ -103,7 +103,7 @@ this module reaches the corpus directly (D1).
 
 ## Relevance floor
 
-- `RELEVANCE_FLOOR = 0.40` (`service.py`) is a pinned module constant, not
+- `RELEVANCE_FLOOR = 0.43` (`service.py`) is a pinned module constant, not
   a setting — it carries no field on `Settings` and is never read from the
   environment, because it moves with the pinned embedding model
   (`EMBEDDING_MODEL`), not with a deployment; a model swap re-measures it.
@@ -118,7 +118,7 @@ this module reaches the corpus directly (D1).
   search *may* return, not a count of what it *will* — a below-floor row
   is dropped outright, so the result can be shorter than `limit`,
   including empty.
-- **How 0.40 was chosen**: twelve in-corpus and eleven out-of-corpus
+- **How 0.43 was chosen**: twelve in-corpus and eleven out-of-corpus
   questions, each the *exact* string measured — reproduce any row with
   `docker compose run --rm app-cli app srd search "<query>" --limit 1`
   against the real ingested corpus (`openai/text-embedding-3-small`,
@@ -160,31 +160,31 @@ this module reaches the corpus directly (D1).
   | How much XP do I get for good roleplaying? | 0.512 | Beyond 1st Level › Character Advancement |
   | How do I sharpen a kitchen knife? | 0.397 | Magic Items › Magic Item Descriptions › Sword of Sharpness |
 
-- **The finding**: the two groups overlap, more than the floor's headline
-  number suggests. The weakest in-corpus question scores 0.526 (fire
-  bolt); the strongest out-of-corpus question scores 0.668 (Hexblade
-  warlock's patron) — higher than *five* of the twelve in-corpus
-  questions, because it is a near miss landing on a real, generic SRD
-  feature (`Otherworldly Patrons`). Seven of the eleven out-of-corpus
-  questions score above 0.40 outright, for the same reason (a real
-  Otherworldly Patron sub-feature, the Character Advancement/XP table, a
-  real pantheon, the Wizard's own class-features section). 0.40 still
-  keeps every in-corpus question, with real margin: 0.526 − 0.40 = 0.126.
-  But the margin on the reject side has all but disappeared — the
-  highest-scoring rejected question (sharpen a kitchen knife, 0.397) sits
-  only **0.003** below the floor, not the comfortable band this section
-  previously claimed. **0.40 still does its one load-bearing job — it has
-  never been measured to drop a genuine match — but it is not, on this
-  measurement, sitting in a wide band clear of everything else; it is
-  sitting right at the edge of the closest near miss, with no real margin
-  on that side.**
+- **The finding**: the two groups overlap. The weakest in-corpus question
+  scores 0.526 (fire bolt); the strongest out-of-corpus question scores
+  0.668 (Hexblade warlock's patron) — higher than *five* of the twelve
+  in-corpus questions, because it is a near miss landing on a real,
+  generic SRD feature (`Otherworldly Patrons`). Seven of the eleven
+  out-of-corpus questions score above the floor outright, for the same
+  reason (a real Otherworldly Patron sub-feature, the Character
+  Advancement/XP table, a real pantheon, the Wizard's own class-features
+  section). Sorted, the out-of-corpus top scores are 0.180, 0.296, 0.350,
+  0.397, 0.456, 0.484, 0.489, 0.509, 0.512, 0.538, 0.668; the widest band
+  below the lowest in-corpus score (0.526) containing no question at all
+  — in either group — is 0.397 to 0.456. `0.43` sits in the middle of
+  that band: 0.033 above the highest-scoring rejected question (sharpen a
+  kitchen knife, 0.397) and 0.096 below the lowest-scoring kept one (fire
+  bolt, 0.526). It rejects the same four out-of-corpus questions 0.40
+  did — nothing about which questions pass or fail changes — but a small
+  rewording of any of the 23 measured questions is far less likely to
+  flip the outcome now.
 - **What it does not protect against**: a D&D-flavoured question about
   material the SRD simply omits still returns a plausible but wrong rule
   above the floor — a similarity score cannot tell "close topic, wrong
   rule" apart from "right rule", and this measurement shows that failure
   mode is the common case, not the exception: most alien-but-D&D-shaped
-  questions above scored above the floor. Known, recorded limit, not
-  something engineered around here.
+  questions scored above the floor. Known, recorded limit, not something
+  engineered around here.
 
 ## Notes
 
