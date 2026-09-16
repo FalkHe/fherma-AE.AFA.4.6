@@ -20,9 +20,10 @@ synthetic 1536-wide rows rather than a faked ordering (per the work item:
 query whose cosine similarity to each stored row is known exactly ahead of
 time: a row identical to the query direction scores 1.0, a row at 45
 degrees (`_diagonal`) scores ``1 / sqrt(2)`` (~0.707, above
-`RELEVANCE_FLOOR`'s 0.40), and an orthogonal row (`_basis`, any index other
-than the query's) scores 0.0 (below it) -- so every assertion is checked
-against a real, computed value, not a hand-picked stand-in.
+`RELEVANCE_FLOOR` regardless of where that constant is currently pinned),
+and an orthogonal row (`_basis`, any index other than the query's) scores
+0.0 (below it) -- so every assertion is checked against a real, computed
+value, not a hand-picked stand-in.
 
 No `pytest-asyncio` in this suite (`AGENTS.md` gotchas): every async call
 is wrapped in a single `asyncio.run(...)`. `filterwarnings = ["error"]`
@@ -241,7 +242,7 @@ def test_ac3_relevance_floor_is_a_pinned_module_constant():
     """AC3's code half: `RELEVANCE_FLOOR` lives beside `DEFAULT_LIMIT`, a
     plain module constant -- not read from settings/env, so this needs no
     fixture and no monkeypatch."""
-    assert srd_service.RELEVANCE_FLOOR == 0.40
+    assert srd_service.RELEVANCE_FLOOR == 0.43
 
 
 @pytest.mark.database
