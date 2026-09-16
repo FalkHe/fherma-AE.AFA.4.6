@@ -61,6 +61,11 @@ backend-test: ## Run backend pytest suite (app-cli service)
 	$(RUN_BACKEND) pytest
 .PHONY: backend-test
 
+backend-test-db: ## Run the database-backed backend pytest suite (starts postgres, app-cli joins its network)
+	$(COMPOSE) up -d postgres
+	$(COMPOSE) run --rm app-cli pytest -m database
+.PHONY: backend-test-db
+
 frontend-test: ## Run frontend Vitest suite (node-cli service)
 	$(RUN_NODE) pnpm test
 .PHONY: frontend-test
