@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import httpx
+import structlog
 import tiktoken
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,8 @@ from app.core.settings import get_settings
 from app.modules.srd.errors import SrdCorpusEmptyError, SrdSourceError, SrdVectorWidthError
 from app.modules.srd.models import EMBEDDING_WIDTH, SrdRule
 from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleChunk
+
+logger = structlog.get_logger()
 
 SRD_ROOT: Path = Path(__file__).resolve().parents[3] / "content" / "srd"
 SOURCE_URL = "https://raw.githubusercontent.com/palikhov/cc-srd5-1/main/cc-srd5.md"
@@ -128,6 +131,41 @@ def fetch_source(*, version: str = SOURCE_VERSION) -> Path:
         raise SrdSourceError(f"could not store SRD source at {dest_path}: {exc}") from exc
 
     return dest_path
+
+
+def _restore_previous_source(dest_path: Path, previous_bytes: bytes | None) -> None:
+    """Puts the stored SRD source back to how it was before this `ingest`
+    call's `fetch_source` replaced it, called once `ingest` has failed
+    somewhere after that replacement (AC4): `previous_bytes` byte-for-byte
+    when there was a previous file, no file at all (`dest_path` removed)
+    when there was not -- a failure must never leave a brand-new file
+    behind that no earlier successful ingest ever produced.
+
+    Restored the same temp-file-then-`os.replace` way `fetch_source` stores
+    a download, so the restore is itself atomic and never leaves a
+    half-written file in its place. Any failure while restoring is logged
+    and swallowed rather than raised: the caller is already unwinding a
+    real failure (a fetch/embed/db error), and a second, unrelated
+    filesystem error here must not replace or hide that original one."""
+    try:
+        if previous_bytes is None:
+            dest_path.unlink(missing_ok=True)
+            return
+
+        dest_dir = dest_path.parent
+        fd, tmp_name = tempfile.mkstemp(
+            dir=dest_dir, prefix=f".{dest_path.name}.", suffix=".restore.tmp"
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "wb") as tmp_file:
+                tmp_file.write(previous_bytes)
+            os.replace(tmp_path, dest_path)
+        except OSError:
+            tmp_path.unlink(missing_ok=True)
+            raise
+    except OSError:
+        logger.error("srd_source_restore_failed", dest_path=str(dest_path), exc_info=True)
 
 
 # `text-embedding-3-small` (the default `EMBEDDING_MODEL`) resolves to the
@@ -326,56 +364,75 @@ async def ingest(
     `cost_usd` is `None` only when no batch reported a cost at all (there is
     then genuinely no figure to show), in which case `cost_complete` stays
     at its default `True`: nothing was left out of an empty sum.
+
+    `fetch_source` already stores the new source atomically and leaves an
+    existing stored copy untouched on its own failure (AC5); the window
+    this function still has to guard is the one *after* that store
+    succeeds -- if chunking, embedding or the write below then fails, the
+    stored file would otherwise be the changed upstream source while the
+    corpus still serves the old one. So a failure anywhere in that window
+    restores the file `fetch_source` replaced back to what it held before
+    this call, byte-for-byte, before the exception is re-raised -- no file
+    at all when there was none to begin with (AC4).
     """
     check_vector_width()
 
+    dest_path = SRD_ROOT / version / SOURCE_FILENAME
+    previous_source_bytes = dest_path.read_bytes() if dest_path.exists() else None
+
     path = fetch_source(version=version)
-    chunks = chunk_source(path)
-
-    embedding_model = get_settings().embedding_model
-    total = len(chunks)
-
-    vectors: list[list[float]] = []
-    cost_total = 0.0
-    any_batch_priced = False
-    any_batch_unpriced = False
-
-    for start in range(0, total, EMBED_BATCH_SIZE):
-        batch = chunks[start : start + EMBED_BATCH_SIZE]
-        result = llm_service.embed_texts([chunk.text for chunk in batch], model=embedding_model)
-        vectors.extend(result.vectors)
-        if result.usage.cost_usd is None:
-            any_batch_unpriced = True
-        else:
-            cost_total += result.usage.cost_usd
-            any_batch_priced = True
-        if on_batch is not None:
-            on_batch(len(vectors), total)
-
-    # Incomplete only in the mixed case: some batches priced, some did not.
-    # All-priced and none-priced both leave `cost_usd` telling the whole
-    # story it can (a full sum, or nothing), so neither counts as partial.
-    cost_complete = not (any_batch_priced and any_batch_unpriced)
-
-    rows = [
-        SrdRule(
-            source_version=version,
-            heading_path=chunk.heading_path,
-            ordinal=chunk.ordinal,
-            text=chunk.text,
-            token_count=chunk.token_count,
-            embedding_model=embedding_model,
-            embedding=vector,
-        )
-        for chunk, vector in zip(chunks, vectors, strict=True)
-    ]
 
     try:
-        await db.execute(delete(SrdRule))
-        db.add_all(rows)
-        await db.commit()
+        chunks = chunk_source(path)
+
+        embedding_model = get_settings().embedding_model
+        total = len(chunks)
+
+        vectors: list[list[float]] = []
+        cost_total = 0.0
+        any_batch_priced = False
+        any_batch_unpriced = False
+
+        for start in range(0, total, EMBED_BATCH_SIZE):
+            batch = chunks[start : start + EMBED_BATCH_SIZE]
+            result = llm_service.embed_texts([chunk.text for chunk in batch], model=embedding_model)
+            vectors.extend(result.vectors)
+            if result.usage.cost_usd is None:
+                any_batch_unpriced = True
+            else:
+                cost_total += result.usage.cost_usd
+                any_batch_priced = True
+            if on_batch is not None:
+                on_batch(len(vectors), total)
+
+        # Incomplete only in the mixed case: some batches priced, some did
+        # not. All-priced and none-priced both leave `cost_usd` telling the
+        # whole story it can (a full sum, or nothing), so neither counts as
+        # partial.
+        cost_complete = not (any_batch_priced and any_batch_unpriced)
+
+        rows = [
+            SrdRule(
+                source_version=version,
+                heading_path=chunk.heading_path,
+                ordinal=chunk.ordinal,
+                text=chunk.text,
+                token_count=chunk.token_count,
+                embedding_model=embedding_model,
+                embedding=vector,
+            )
+            for chunk, vector in zip(chunks, vectors, strict=True)
+        ]
+
+        try:
+            await db.execute(delete(SrdRule))
+            db.add_all(rows)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
     except Exception:
-        await db.rollback()
+        _restore_previous_source(dest_path, previous_source_bytes)
         raise
 
     return IngestReport(
