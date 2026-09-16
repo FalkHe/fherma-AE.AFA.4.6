@@ -9,11 +9,11 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
-| 2 | open | |
+| 1 | done | the source downloads to a fixed path, replacing in place, and a failed download leaves the stored copy intact; 10 tests |
+| 2 | running | |
 | 3 | open | |
-| 4 | running | |
-| qa | running | |
+| 4 | done | the rules document and its licence ship in the repository; attribution in the project README |
+| qa | done | one acceptance test per criterion, AC1-AC6 |
 
 Status: `open | running | done | failed`
 
@@ -23,6 +23,8 @@ Status: `open | running | done | failed`
 - The passage size cap and overlap are proposals, not measurements; the first place the choice becomes testable is the relevance floor in backlog line 06. Small sections stay separate passages rather than being merged, because merging would blur the citation.
 - The criterion asking that no passage exceed the embedding window is hollow as written: the window is far larger than the largest section, so nothing would ever split. A deliberately smaller cap makes the split real and the citations usable.
 - `plan.md` is over its word cap for the same reason sprint 01's was: verbatim interface identifiers the parallel work items must share.
+
+- The project README was unreachable from inside the test container, which mounts only the backend directory, so the work item added a read-only mount of that one file to make the attribution criterion checkable. It is the sprint's only infrastructure change.
 
 ## Backlog proposals
 <none yet>
