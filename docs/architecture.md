@@ -12,7 +12,7 @@ skeletons and username/password authentication exist. The game agent does not.
 
 - Python 3.12 · FastAPI · Typer (`app` CLI) · SQLAlchemy 2 (async) · Alembic · Pydantic 2 · structlog
 - PostgreSQL (pgvector) → application state; SRD rule chunks for RAG once ingest lands
-- OpenRouter → every LLM call, through the `core/llm/` seam; LangChain carries chat, images go direct through the OpenRouter SDK, LangGraph is not wired yet
+- OpenRouter → every LLM call, through the `core/llm/` seam; LangChain carries chat, images go direct through the OpenRouter SDK, LangGraph provides the checkpointer that persists agent state
 - TypeScript · React 19 · Material UI 9 · Vite · TanStack Query · React Router · react-i18next
 - Tooling: `uv` + ruff + pytest (backend), `pnpm` + ESLint + `tsc` + Vitest (frontend)
 - No background job runner and no Redis: every operation is request-scoped or a CLI one-off
