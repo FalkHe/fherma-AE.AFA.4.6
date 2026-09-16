@@ -20,6 +20,7 @@ Status: `open | running | done | failed`
 - Research measured retrieval against the real rulebook before anything was built, and found a defect worth knowing about: a rule could not reliably be found by its own name. Asking what Fire Bolt does ranked the actual spell 47th, behind a fire elemental and a red dragon, because only a passage's body was ever learned and a spell's name lives in its heading — so every spell looked like an interchangeable block of casting time and components. Conditions and combat actions already ranked first. One criterion here requires a spell lookup to work, so this sprint fixes what gets learned and re-imports, at about a cent.
 - That fix makes one line of the approved structure note slightly untrue: a passage's stored text is what gets quoted, but no longer exactly what gets learned. The note is the human's to amend.
 - Five results by default, the sprint lead's choice.
+- A sprint-lead mistake: staging everything at once swept one work item's implementation into a documentation commit, so that change is invisible in the history and appears to precede its own tests.
 - Two agents were cut off part-way by a usage limit. The search work survived intact and was checked and committed by the sprint lead; the acceptance tests were resumed. Nothing was lost.
 - Fifth merge request in an unmerged chain.
 
@@ -35,4 +36,4 @@ Lint, both suites and the live-database run all pass (634 offline, 27 live, 53 f
 By-eye check against the real rulebook after re-importing (2,132 passages, 529,572 tokens, $0.010591): "how does half cover work" returns Combat > Cover first, "what does the poisoned condition do" returns the Poisoned condition first, "how does grappling work" returns Grappling first, and "what does fire bolt do" now returns Fire Bolt first, where before the fix it ranked 47th.
 
 ## Verify
-<pending>
+Round 1: changes-requested. Two items: asking for a negative number of answers crashed with a raw error dump instead of one plain sentence, and the rules component's own description still said searching was a later sprint's work. A latent fault was also flagged and closed: the passage splitter's stride no longer matched its window after the embedding change, which could have silently dropped rules text under a very long heading trail.
