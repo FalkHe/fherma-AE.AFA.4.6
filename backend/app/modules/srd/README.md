@@ -162,16 +162,18 @@ this module reaches the corpus directly (D1).
 
 - **The finding**: the two groups overlap. The weakest in-corpus question
   scores 0.526 (fire bolt); the strongest out-of-corpus question scores
-  0.668 (Hexblade warlock's patron) — higher than *five* of the twelve
+  0.668 (Hexblade warlock's patron) — higher than *seven* of the twelve
   in-corpus questions, because it is a near miss landing on a real,
   generic SRD feature (`Otherworldly Patrons`). Seven of the eleven
   out-of-corpus questions score above the floor outright, for the same
   reason (a real Otherworldly Patron sub-feature, the Character
   Advancement/XP table, a real pantheon, the Wizard's own class-features
   section). Sorted, the out-of-corpus top scores are 0.180, 0.296, 0.350,
-  0.397, 0.456, 0.484, 0.489, 0.509, 0.512, 0.538, 0.668; the widest band
-  below the lowest in-corpus score (0.526) containing no question at all
-  — in either group — is 0.397 to 0.456. `0.43` sits in the middle of
+  0.397, 0.456, 0.484, 0.489, 0.509, 0.512, 0.538, 0.668. The widest
+  empty band of all is 0.180 to 0.296, but a floor there would reject
+  only the mortgage question; 0.397 to 0.456 is the widest band that
+  still rejects every topically alien question while staying clear of
+  the lowest in-corpus score (0.526). `0.43` sits in the middle of
   that band: 0.033 above the highest-scoring rejected question (sharpen a
   kitchen knife, 0.397) and 0.096 below the lowest-scoring kept one (fire
   bolt, 0.526). It rejects the same four out-of-corpus questions 0.40
