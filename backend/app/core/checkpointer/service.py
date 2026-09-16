@@ -57,7 +57,7 @@ async def ensure_schema() -> None:
     """`CREATE SCHEMA IF NOT EXISTS` for `CHECKPOINTER_SCHEMA` - the step
     `AsyncPostgresSaver.setup()` never performs itself."""
     conn_string = checkpointer_conn_string(get_settings().database_url)
-    async with psycopg.AsyncConnection.connect(conn_string) as conn:
+    async with await psycopg.AsyncConnection.connect(conn_string) as conn:
         await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {CHECKPOINTER_SCHEMA}")
 
 
