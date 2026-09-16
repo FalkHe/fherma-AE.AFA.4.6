@@ -10,10 +10,12 @@ and the code disagree, the code wins.
 FastAPI (app factory `app.main:create_app`) on uvicorn, Pydantic v2 and
 pydantic-settings, SQLAlchemy 2 async over psycopg 3, Alembic, Typer (console
 script `app`), argon2-cffi, structlog. LangChain (`langchain-core`,
-`langchain-openrouter`) is declared and reached through the `core/llm/` seam;
-LangGraph is not wired yet. Versions and floors live in
-`backend/pyproject.toml` and the committed `backend/uv.lock`; Python is
-pinned to 3.12.
+`langchain-openrouter`) is declared and reached through the `core/llm/` seam.
+LangGraph is wired for its Postgres checkpointer only (`langgraph`,
+`langgraph-checkpoint-postgres`, `app/core/checkpointer/`): `AsyncPostgresSaver`
+persists agent state in its own `checkpoints` schema; no agent graph exists
+yet. Versions and floors live in `backend/pyproject.toml` and the committed
+`backend/uv.lock`; Python is pinned to 3.12.
 
 Two packaging consequences of `uv sync --locked`, which installs the project
 plus default dependency *groups* and no extras: dev dependencies (pytest,

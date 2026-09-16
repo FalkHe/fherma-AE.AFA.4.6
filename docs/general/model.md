@@ -226,10 +226,21 @@ discriminator.
 
 ### The checkpointer is the library's, not ours
 
-LangGraph's `AsyncPostgresSaver` creates its own tables through its own
-`setup()`, in a dedicated **`checkpoints` schema** in the same database.
-Alembic owns `public` only and must be configured to ignore that schema, or a
-stray autogenerate will try to drop it.
+LangGraph's `AsyncPostgresSaver` creates its own tables — `checkpoints`,
+`checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations` — through its
+own `setup()`. The saver has no schema option: the table names it emits are
+unqualified, so they land wherever the connection's `search_path` points them.
+The connection string used to build the saver sets that `search_path` to a
+dedicated **`checkpoints` schema**, which `CREATE SCHEMA IF NOT EXISTS` must
+create beforehand — `setup()` does not create the schema itself, only the
+tables inside whichever one it is pointed at.
+
+Alembic owns `public` only. It is configured to ignore the checkpointer's
+tables deliberately: `include_schemas=True` so autogenerate reflects every
+schema including `checkpoints`, paired with an `include_object` predicate that
+rejects anything in it. Without both, autogenerate never looks at
+`checkpoints` in the first place, and the exclusion is incidental rather than
+enforced — a stray autogenerate could still try to drop it.
 
 ## Static files
 
