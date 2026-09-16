@@ -4,6 +4,7 @@ import typer
 
 from app.core.llm.commands import llm_app
 from app.core.logging import configure_logging
+from app.core.prompts.commands import prompt_app
 from app.main import create_app
 from app.modules.content.commands import content_app
 
@@ -26,3 +27,4 @@ def export() -> None:
 
 cli.add_typer(content_app, name="content")
 cli.add_typer(llm_app, name="llm")
+cli.add_typer(prompt_app, name="prompt")
