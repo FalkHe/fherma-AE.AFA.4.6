@@ -530,8 +530,12 @@ DEFAULT_LIMIT = 5
 # the module README: twelve in-corpus and eleven out-of-corpus questions.
 # The two groups overlap -- the weakest in-corpus question scores 0.526
 # while the strongest out-of-corpus question scores 0.668, each a near miss
-# landing on a generic feature the SRD does carry. 0.43 sits in the widest
-# band containing no question at all (0.397 to 0.456): it keeps every
+# landing on a generic feature the SRD does carry. The widest empty band of
+# all, 0.180 to 0.296, would reject only one out-of-corpus question (the
+# mortgage one) -- not chosen. 0.397 to 0.456 is instead the widest empty
+# band that still rejects every topically alien question while staying
+# clear of the lowest in-corpus score (0.526); re-measuring after a model
+# swap should pick the same way. 0.43 sits mid-band: it keeps every
 # in-corpus question with 0.096 of margin and rejects every topically alien
 # one with 0.033. It cannot reject a D&D-flavoured question about material
 # the SRD simply omits -- that is a known, recorded limit, not something
