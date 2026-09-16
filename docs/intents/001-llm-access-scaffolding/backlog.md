@@ -17,7 +17,7 @@ Sprint outcomes, dependency-ordered. Status: `open | running | done`.
 | 04 | `app llm embed "<text>"` returns a vector of `EMBEDDING_DIMENSIONS` values together with that call's token count and USD cost | 02 | #4 | done |
 | 05 | `app llm image "<prompt>" --out <file>` writes a portrait PNG that opens, and prints that call's USD cost | 02 | #5 | done |
 | 06 | `app prompt show <capability>/<kind>/<id>` prints the text of a named prompt version; an unknown id and a malformed id fail differently | – | #6 | done |
-| 07 | A value checkpointed under a `thread_id` by one CLI run is read back by the next, out of the checkpointer's own schema, which Alembic leaves untouched | – | #7 | open |
+| 07 | A value checkpointed under a `thread_id` by one CLI run is read back by the next, out of the checkpointer's own schema, which Alembic leaves untouched | – | #7 | running |
 
 ## Notes
 
