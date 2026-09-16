@@ -1,11 +1,18 @@
-"""WI3: `app srd ingest [--dry-run]` (`app/modules/srd/commands.py`).
+"""`app srd ingest [--dry-run]` (`app/modules/srd/commands.py`) -- sprint
+004-02 WI3 landed `--dry-run`; sprint 004-03 WI2 adds the real, DB-backed
+bare path.
 
 Driven through `typer.testing.CliRunner` against the real `cli`
-(`app.cli.cli`), per `tests/srd/test_commands.py`'s style. `srd_service.
-fetch_source` and `srd_service.chunk_source` are the only seams faked --
-module attributes, never name imports, so the monkeypatch takes -- and the
-network is never touched. No DB seam is faked because none should be
-opened: neither branch of this command imports `app.core.db`.
+(`app.cli.cli`), per `tests/srd/test_commands.py`'s style. `--dry-run`
+fakes only `srd_service.fetch_source` / `srd_service.chunk_source` --
+module attributes, never name imports, so the monkeypatch takes -- and
+opens no DB session at all. The bare path fakes `srd_service.ingest`
+itself (its own behaviour is `tests/srd/test_ingest_service.py`'s job);
+`get_sessionmaker` is left real, exactly like `test_commands.py`'s
+`status` tests -- it only builds a lazy `AsyncEngine` that never opens a
+socket until a statement runs, and the faked `ingest` never issues one.
+The network is never touched either way, and no real embedding call is
+ever made.
 """
 
 from pathlib import Path
@@ -13,9 +20,10 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from app.cli import cli
+from app.core.llm.errors import LlmRateLimitError
 from app.modules.srd import service as srd_service
-from app.modules.srd.errors import SrdSourceError
-from app.modules.srd.schemas import RuleChunk
+from app.modules.srd.errors import SrdSourceError, SrdVectorWidthError
+from app.modules.srd.schemas import IngestReport, RuleChunk
 
 runner = CliRunner()
 
@@ -82,22 +90,143 @@ def test_dry_run_opens_no_database_session(monkeypatch):
     assert result.exit_code == 0, result.output
 
 
-def test_bare_ingest_without_dry_run_exits_1_saying_embedding_not_landed_yet():
+def test_bare_ingest_prints_one_progress_line_per_batch_then_the_full_report(monkeypatch):
+    async def fake_ingest(db, *, version=srd_service.SOURCE_VERSION, on_batch=None):
+        on_batch(2, 5)
+        on_batch(5, 5)
+        return IngestReport(
+            source_version="v1",
+            source_bytes=1234,
+            chunk_count=5,
+            token_count=999,
+            cost_usd=0.05,
+            cost_complete=True,
+        )
+
+    monkeypatch.setattr(srd_service, "ingest", fake_ingest)
+
+    result = runner.invoke(cli, ["srd", "ingest"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    progress_lines = [line for line in result.stdout.splitlines() if "2/5" in line or "5/5" in line]
+    assert len(progress_lines) == 2, result.stdout
+    assert "v1" in result.stdout
+    assert "1234" in result.stdout
+    assert "5" in result.stdout  # chunk count
+    assert "999" in result.stdout
+    assert "0.05" in result.stdout
+
+
+def test_bare_ingest_reports_a_complete_cost_as_the_total(monkeypatch):
+    async def fake_ingest(db, *, version=srd_service.SOURCE_VERSION, on_batch=None):
+        return IngestReport(
+            source_version="v1",
+            source_bytes=1,
+            chunk_count=1,
+            token_count=1,
+            cost_usd=1.5,
+            cost_complete=True,
+        )
+
+    monkeypatch.setattr(srd_service, "ingest", fake_ingest)
+
+    result = runner.invoke(cli, ["srd", "ingest"])
+
+    assert result.exit_code == 0, result.output
+    assert "1.500000" in result.stdout
+    assert "total" in result.stdout.lower()
+    assert "at least" not in result.stdout.lower()
+
+
+def test_bare_ingest_reports_an_incomplete_cost_as_a_labelled_lower_bound(monkeypatch):
+    async def fake_ingest(db, *, version=srd_service.SOURCE_VERSION, on_batch=None):
+        return IngestReport(
+            source_version="v1",
+            source_bytes=1,
+            chunk_count=1,
+            token_count=1,
+            cost_usd=1.5,
+            cost_complete=False,
+        )
+
+    monkeypatch.setattr(srd_service, "ingest", fake_ingest)
+
+    result = runner.invoke(cli, ["srd", "ingest"])
+
+    assert result.exit_code == 0, result.output
+    assert "1.500000" in result.stdout
+    assert "at least" in result.stdout.lower()
+
+
+def test_bare_ingest_reports_no_priced_batch_as_unavailable(monkeypatch):
+    async def fake_ingest(db, *, version=srd_service.SOURCE_VERSION, on_batch=None):
+        return IngestReport(
+            source_version="v1",
+            source_bytes=1,
+            chunk_count=1,
+            token_count=1,
+            cost_usd=None,
+            cost_complete=True,
+        )
+
+    monkeypatch.setattr(srd_service, "ingest", fake_ingest)
+
+    result = runner.invoke(cli, ["srd", "ingest"])
+
+    assert result.exit_code == 0, result.output
+    assert "unavailable" in result.stdout.lower()
+
+
+def test_bare_ingest_gateway_failure_prints_one_stderr_line_naming_its_code_and_exits_1(
+    monkeypatch,
+):
+    async def failing_ingest(db, *, version=srd_service.SOURCE_VERSION, on_batch=None):
+        on_batch(1, 5)  # a batch may already have succeeded before the failure
+        raise LlmRateLimitError("simulated rate limit mid-ingest")
+
+    monkeypatch.setattr(srd_service, "ingest", failing_ingest)
+
+    result = runner.invoke(cli, ["srd", "ingest"])
+
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    stderr_lines = [line for line in result.stderr.splitlines() if line.strip()]
+    assert len(stderr_lines) == 1, result.stderr
+    assert "LLM_RATE_LIMIT" in result.stderr
+
+
+def test_bare_ingest_source_failure_prints_one_stderr_line_and_exits_1_with_no_traceback(
+    monkeypatch,
+):
+    async def failing_ingest(db, *, version=srd_service.SOURCE_VERSION, on_batch=None):
+        raise SrdSourceError("could not reach SRD source https://example.invalid: boom")
+
+    monkeypatch.setattr(srd_service, "ingest", failing_ingest)
+
     result = runner.invoke(cli, ["srd", "ingest"])
 
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert "embedding" in result.stderr.lower()
-    assert "not" in result.stderr.lower()
+    assert "Traceback" not in result.output
+    stderr_lines = [line for line in result.stderr.splitlines() if line.strip()]
+    assert len(stderr_lines) == 1, result.stderr
+    assert "could not reach SRD source" in result.stderr
 
 
-def test_bare_ingest_opens_no_database_session(monkeypatch):
-    calls: list[str] = []
-    monkeypatch.setattr(
-        srd_service, "fetch_source", lambda: calls.append("fetch_source") or Path("/dev/null")
-    )
+def test_bare_ingest_vector_width_failure_prints_one_stderr_line_and_exits_1(monkeypatch):
+    async def failing_ingest(db, *, version=srd_service.SOURCE_VERSION, on_batch=None):
+        raise SrdVectorWidthError(
+            "configured embedding width 4 does not match the srd_rules column width 1536"
+        )
+
+    monkeypatch.setattr(srd_service, "ingest", failing_ingest)
 
     result = runner.invoke(cli, ["srd", "ingest"])
 
     assert result.exit_code == 1
-    assert calls == []
+    assert "Traceback" not in result.output
+    stderr_lines = [line for line in result.stderr.splitlines() if line.strip()]
+    assert len(stderr_lines) == 1, result.stderr
+    assert "4" in result.stderr
+    assert "1536" in result.stderr
