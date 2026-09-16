@@ -31,9 +31,17 @@ this module reaches the corpus directly (D1).
   stores it and splits it into citable chunks, then prints the stored
   path, byte count, chunk count, total token count and a sample of heading
   paths — fetch + store + chunk only, no database and no embedding call.
-  The bare `app srd ingest` (no flag) exits 1 today, saying embedding has
-  not landed; embedding, storing rows and searching are later work items
-  in this intent.
+- `app srd ingest` (no flag, `commands.py`): runs `service.ingest` for
+  real — one progress line per embed batch, then the report (source
+  version, bytes, chunk count, token count, cost). A gateway failure
+  (`LlmError`) or a source/vector-width failure (`SrdError`) prints one
+  stderr line and exits 1, never a traceback; searching is a later work
+  item in this intent.
+- `service.ingest(db, *, version, on_batch)` (`service.py`): fetches,
+  stores, chunks, embeds in `EMBED_BATCH_SIZE`-sized batches and replaces
+  `srd_rules` wholesale in one transaction opened only after every vector
+  is in hand; `on_batch(chunks_done, chunks_total)` fires after each batch
+  for a caller's progress reporting — the service itself never prints.
 - `service.fetch_source()` downloads `SOURCE_URL` and stores it at
   `SRD_ROOT/<version>/SOURCE_FILENAME`, overwriting an existing copy in
   place; a non-200 response, a timeout/connection failure or an empty body
