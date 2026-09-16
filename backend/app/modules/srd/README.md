@@ -119,37 +119,72 @@ this module reaches the corpus directly (D1).
   is dropped outright, so the result can be shorter than `limit`,
   including empty.
 - **How 0.40 was chosen**: twelve in-corpus and eleven out-of-corpus
-  questions, measured against the real ingested corpus with
-  `openai/text-embedding-3-small`, top score each (in-corpus: every one
-  the correct passage).
+  questions, each the *exact* string measured — reproduce any row with
+  `docker compose run --rm app-cli app srd search "<query>" --limit 1`
+  against the real ingested corpus (`openai/text-embedding-3-small`,
+  2,132 rules). For a query whose top score falls below the floor, that
+  exact command prints `no relevant rule found for this query` rather
+  than a score — the score and heading below are the same underlying
+  nearest-neighbour result, read before `RELEVANCE_FLOOR` drops it.
 
-  | in-corpus question | top score | out-of-corpus question | top score |
-  |---|---|---|---|
-  | poisoned condition | 0.599 | reload a plasma rifle | 0.295 |
-  | grappling | 0.638 | Hexblade warlock patron | 0.631 |
-  | half cover | 0.485 | spell Silvery Barbs | 0.468 |
-  | fire bolt | 0.514 | Forgotten Realms deities | 0.504 |
-  | rogue's sneak attack | 0.740 | Bladesinging wizard | 0.484 |
-  | owlbear claw damage | 0.704 | thirty-year mortgage rate | 0.186 |
-  | plate armor cost/AC | 0.620 | fate points in Fate Core | 0.482 |
-  | hide/stealth check | 0.661 | Pathfinder action economy | 0.452 |
-  | long rest recovery | 0.629 | bribing a city guard | 0.329 |
-  | opportunity attack | 0.649 | XP for good roleplaying | 0.538 |
-  | concentration | 0.692 | sharpen a kitchen knife | 0.371 |
-  | dropping to 0 hp | 0.772 | | |
+  In-corpus (every one the correct passage):
 
-- **The finding**: the two groups overlap. The weakest in-corpus question
-  scores 0.485, while four out-of-corpus questions score higher still —
-  up to 0.631 — because each is a near miss landing on a generic feature
-  the SRD does carry (Otherworldly Patron, Experience Points, the Norse
-  pantheon, Arcane Tradition). 0.40 sits in the widest band containing no
-  in-corpus question, 0.371 to 0.452 — 0.085 of margin below the lowest
-  kept score, 0.029 above the highest rejected one.
+  | query | top score | top match |
+  |---|---|---|
+  | What happens when a creature is poisoned? | 0.661 | Adventuring › Conditions › Blinded › Poisoned |
+  | How does grappling work in combat? | 0.716 | Combat › Making an Attack › Melee Attacks › Grappling |
+  | How does half cover work? | 0.531 | Combat › Cover |
+  | How much damage does fire bolt deal? | 0.526 | Spell Lists › Spell Descriptions › Acid Arrow › Fire Bolt |
+  | How does a rogue's sneak attack work? | 0.740 | Classes › Rogue › Sneak Attack |
+  | How much damage does an owlbear's claw attack do? | 0.722 | Monsters › Monster Descriptions › Uncategorized › Owlbear › Actions |
+  | How much does plate armor cost and what AC does it give? | 0.661 | Equipment › Armor |
+  | How do I make a hide check to stay stealthy? | 0.622 | Combat › Actions in Combat › Hide |
+  | How much do I recover from a long rest? | 0.597 | Adventuring › Resting › Long Rest |
+  | What is an opportunity attack? | 0.567 | Combat › Making an Attack › Melee Attacks › Opportunity Attacks |
+  | How does concentration work for spells? | 0.697 | Spellcasting › Casting a Spell › Duration › Concentration |
+  | What happens when I drop to 0 hit points? | 0.797 | Combat › Damage and Healing › Dropping to 0 Hit Points |
+
+  Out-of-corpus:
+
+  | query | top score | top match |
+  |---|---|---|
+  | How do I reload a plasma rifle? | 0.296 | Classes › Eldritch Invocations › Agonizing Blast › Thief of Five Fates |
+  | What is a Hexblade warlock's patron? | 0.668 | Classes › Otherworldly Patrons |
+  | What does the spell Silvery Barbs do? | 0.456 | Spell Lists › Spell Descriptions › Acid Arrow › Antilife Shell |
+  | Who are the deities of the Forgotten Realms? | 0.509 | Pantheons › The Celtic Pantheon |
+  | How does Bladesinging work for a wizard? | 0.484 | Classes › Wizard › Class Features |
+  | What's a good interest rate for a thirty-year mortgage? | 0.180 | Beyond 1st Level › Character Advancement |
+  | How do fate points work in Fate Core? | 0.489 | Classes › Otherworldly Patrons › The Fiend › Dark One's Own Luck |
+  | How does action economy work in Pathfinder? | 0.538 | Combat › Actions in Combat |
+  | How do I bribe a city guard? | 0.350 | Equipment › Services |
+  | How much XP do I get for good roleplaying? | 0.512 | Beyond 1st Level › Character Advancement |
+  | How do I sharpen a kitchen knife? | 0.397 | Magic Items › Magic Item Descriptions › Sword of Sharpness |
+
+- **The finding**: the two groups overlap, more than the floor's headline
+  number suggests. The weakest in-corpus question scores 0.526 (fire
+  bolt); the strongest out-of-corpus question scores 0.668 (Hexblade
+  warlock's patron) — higher than *five* of the twelve in-corpus
+  questions, because it is a near miss landing on a real, generic SRD
+  feature (`Otherworldly Patrons`). Seven of the eleven out-of-corpus
+  questions score above 0.40 outright, for the same reason (a real
+  Otherworldly Patron sub-feature, the Character Advancement/XP table, a
+  real pantheon, the Wizard's own class-features section). 0.40 still
+  keeps every in-corpus question, with real margin: 0.526 − 0.40 = 0.126.
+  But the margin on the reject side has all but disappeared — the
+  highest-scoring rejected question (sharpen a kitchen knife, 0.397) sits
+  only **0.003** below the floor, not the comfortable band this section
+  previously claimed. **0.40 still does its one load-bearing job — it has
+  never been measured to drop a genuine match — but it is not, on this
+  measurement, sitting in a wide band clear of everything else; it is
+  sitting right at the edge of the closest near miss, with no real margin
+  on that side.**
 - **What it does not protect against**: a D&D-flavoured question about
   material the SRD simply omits still returns a plausible but wrong rule
   above the floor — a similarity score cannot tell "close topic, wrong
-  rule" apart from "right rule". Known, recorded limit, not something
-  engineered around here.
+  rule" apart from "right rule", and this measurement shows that failure
+  mode is the common case, not the exception: most alien-but-D&D-shaped
+  questions above scored above the floor. Known, recorded limit, not
+  something engineered around here.
 
 ## Notes
 
