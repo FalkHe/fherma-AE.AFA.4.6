@@ -8,11 +8,11 @@ created: 2026-09-15
 ## Facts
 
 **Codebase.** No LangChain/LangGraph/Langfuse dependency exists (`backend/pyproject.toml:6`-`17`);
-`docs/general/backend-stack.md:12` claims otherwise and is logged as wrong (`docs/roadmap/Stage-01/README.md:338`).
+`docs/general/backend-stack.md:12` claims otherwise and is logged as wrong (`docs/roadmap/Stage-01/README.md:375`).
 `Settings` declares five fields, none about models (`backend/app/core/settings.py:10`), and `extra="ignore"`
 (`:8`) lets `.env.dist` document unread vars — it already pins `OPENROUTER_API_KEY`, `CHAT_MODEL`,
 `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` (`.env.dist:30`-`42`). **There is no image-model entry, and
-`.env.dist` is owner-only** (`…/README.md:273`). Langfuse creds and a bundled stack exist
+`.env.dist` is owner-only** (`…/README.md:310`). Langfuse creds and a bundled stack exist
 (`.env.dist:60`, `compose.langfuse.yaml`); wiring is phase 11.
 
 Postgres runs `pgvector/pgvector:pg16` (`compose.yaml:76`) but no extension and no vector column exist —
@@ -20,7 +20,7 @@ Postgres runs `pgvector/pgvector:pg16` (`compose.yaml:76`) but no extension and 
 scope here.** Already ruled, not open: the checkpointer is LangGraph's `AsyncPostgresSaver` in its own `checkpoints`
 schema, which Alembic must ignore (`docs/general/model.md:227`-`231`); prompts are git-versioned files under the
 module that uses them (`:247`, `:271`), and the pinned root `modules/game/prompts/` is a logged error — an id
-resolves against its **owning capability's** prompt dir (`…/README.md:334`). Precedent for resolve-by-id:
+resolves against its **owning capability's** prompt dir (`…/README.md:374`). Precedent for resolve-by-id:
 `backend/app/modules/content/service.py:16`,`:51`-`80` (root constant, `v<n>` dirs, id regex) with the
 `NotFound`/`Invalid` split at `…/content/errors.py:5`,`:11`. Failures reach the wire via
 `ErrorCode`/`_ERROR_INFO`/`ApiError` (`backend/app/core/errors.py:17`,`:30`,`:48`). Tests pin env before import,
@@ -84,7 +84,7 @@ re-implement `Command(resume=…)`.
 **6 — Proving it.** Fakes for the classification (a stub raising each status suits the suite's monkeypatch style)
 plus **one Typer command per call kind** as the live round-trip, run by hand. Cassettes pin a recorded provider
 shape into a warning-clean suite; live CI calls need a key. The register's failure-injection seam
-(`…/README.md:274`) falls out of settings: an override base URL and a bogus model id.
+(`…/README.md:311`) falls out of settings: an override base URL and a bogus model id.
 
 ## Open questions
 

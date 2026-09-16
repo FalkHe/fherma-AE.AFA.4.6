@@ -242,10 +242,11 @@ class Attack(ContentModel):
 
 `to_hit` is the **complete** bonus already baked in by the author — phase 1
 carries no proficiency bonus and no level to derive one from (§10.4).
-`damage` is passed verbatim to phase 3's dice parser through phase 8's
-`roll_dice` binding; phase 1 does **not** validate the expression, because
-phase 3's parser is the single authority on that grammar and does not exist yet
-(§10.1).
+`damage` is passed verbatim to the dice parser through phase 8's `roll_dice`
+binding; phase 1 does **not** validate the expression, because that parser is
+the single authority on that grammar and does not exist yet (§10.1). *The
+parser was phase 3's when this was written; plan version 3 moved dice into
+phase 5, inside the transition that records a roll.*
 
 ### 3.3 `StatBlock`
 
@@ -1166,9 +1167,10 @@ a control — without a register row, phase 8 ships the leak and phase 9 finds i
 
 ## 10. Known gaps, recorded not solved
 
-1. **A `damage` dice expression is not validated at load time** — phase 3's
-   parser is the single authority on that grammar and lands in parallel. A
-   malformed expression surfaces as a tool error during a turn, not at load.
+1. **A `damage` dice expression is not validated at load time** — the dice
+   parser is the single authority on that grammar and lands later (phase 3 when
+   this was written, phase 5 since plan version 3). A malformed expression
+   surfaces as a tool error during a turn, not at load.
 2. **An exit `condition` is prose and is therefore unverifiable** — the accepted
    consequence of `model.md`'s "situational facts have no flag store", already
    recorded there as known gap 2.

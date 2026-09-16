@@ -1,7 +1,7 @@
 ---
 title: "Stage-01 — Phases"
 stage: 1
-version: 2
+version: 3
 created: 2026-09-11
 ---
 
@@ -14,6 +14,17 @@ before steps can be written), and its **Steps** (the work, one line each).
 This is a rough plan. How anything is built — modules, routes, schemas,
 payloads, file layout — is decided in the next planning level, when each phase
 is written out, and by the implementing agents. Nothing of that belongs here.
+
+**Numbers 3 and 5 were reassigned in version 3.** Game state is now built in
+two phases — the model and its tables (3), then the services that change them
+(5) — because a mechanic is a state transition and cannot be built or tested
+before the state it acts on exists. The former "Game Mechanics" phase is
+dissolved into phase 5: dice are arithmetic over a roll that gets recorded, not
+a layer of their own. Phases 1, 2 and 4 keep their numbers and their scope.
+**An older document saying "phase 5" means today's phase 3 where it speaks of
+tables, columns, entities or the ownership model, and today's phase 5 where it
+speaks of lifecycle, writes, advancing or accounting; "phase 3" in an older
+document means dice, which is today's phase 5.**
 
 ---
 
@@ -31,7 +42,7 @@ starting character) is authored against it, loadable and validated.
 - Author the first campaign against it (human in the loop)
 - Prove the authored set is valid and readable
 
-**Depends on:** nothing. Parallel with phases 2 and 3.
+**Depends on:** nothing. Parallel with phase 2.
 
 ---
 
@@ -55,19 +66,31 @@ plumbing the later agents will sit on.
 
 ---
 
-## Phase 3 — Game Mechanics
+## Phase 3 — Game State
 
-**Goal:** Dice expressions parse and resolve deterministically, with a
-visible/hidden distinction, and invalid input is rejected.
+**Goal:** The state of a playthrough exists as real tables: a run that pins a
+content version and belongs to an owner, its position in the adventure, the
+objects instantiated from the content's definitions with their promoted stats,
+the per-run settings, and an append-only event stream with room for visibility
+and cost. Every table is reachable by migration and round-trips a read.
 
-**Preparation:** Define the mechanics the game actually needs.
+**Preparation:** Settle the business model — what a run, its progress, an
+object and an event are, how they relate, and who owns a run — then pin the
+data model onto it. This is the phase that closes the model's open decisions;
+it does not defer them to whoever writes the first service.
 
 **Steps:**
-- Decide the mechanic set and its architecture
-- One step per mechanic
-- Prove determinism by test
+- Decide the business model: run, progress, object state, event, settings, and
+  the ownership model
+- Pin the data model onto it and place it in modules
+- Implement the run, its content-version pin and its progress
+- Implement object state, with the stats promoted to columns
+- Implement the event stream and the per-run settings store
+- Land the migration and prove each table round-trips a read
+- Correct the general docs this model invalidates
 
-**Depends on:** nothing. Parallel with phases 1 and 2.
+**Depends on:** phase 1 — objects are instantiated from content definitions, so
+the schema has to exist first. Parallel with phase 2.
 
 ---
 
@@ -86,28 +109,38 @@ the embeddings.
 - Provide the retrieval service
 - Handle re-ingestion and the empty-corpus case
 
-**Depends on:** phase 2. Parallel with phase 5.
+**Depends on:** phase 2. Parallel with phases 3 and 5.
 
 ---
 
-## Phase 5 — Runs and Game State
+## Phase 5 — Game State Services
 
-**Goal:** A playthrough exists: it pins a content version, owns validated
-object state and a scene position, records an append-only event stream with
-cost, and is listable, archivable and resumable — all per owner.
+**Goal:** Every change to game state goes through a service that validates it.
+A run starts, lists, opens, archives, unarchives and resumes; objects change
+only through a validated write path that rejects an illegal write; a scene
+advances on an exit; events append with their visibility, and cost is a sum
+over them; dice parse and resolve deterministically, visible or hidden, as part
+of recording the roll. Access is per owner throughout, and nothing edits a
+state row any other way.
 
-**Preparation:** Investigate how run, progress, object state and events relate,
-and what the ownership model is.
+**Preparation:** Define the mechanics the game actually needs and name the
+state transition each one is. A mechanic that changes nothing is arithmetic
+inside the service that records its result, not a service of its own — so this
+preparation produces a list of transitions, not a layer.
 
 **Steps:**
-- Decide the state and event model
-- Implement runs and their lifecycle
-- Implement object state with a validated write path
+- Decide the service surface and which mechanic belongs to which transition
+- Implement the run lifecycle
+- Implement the validated object write path, rejection included
 - Implement scene placement and advancing on an exit
-- Implement the event stream with visibility filtering and cost accounting
+- Implement the event append path with visibility filtering and cost accounting
+- Implement dice — expression parse, RNG, visible/hidden — inside the
+  transition that records the roll
 - Enforce per-owner access
+- Prove determinism and rejection by test
 
-**Depends on:** phase 1. Parallel with phase 4.
+**Depends on:** phase 3 — a service that changes state needs the state.
+Parallel with phase 4.
 
 ---
 
