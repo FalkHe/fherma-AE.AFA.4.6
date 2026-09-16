@@ -55,10 +55,14 @@ this module reaches the corpus directly (D1).
   first — its heading trail, ordinal and score on one line, the passage
   text indented below. `--limit` caps how many come back, defaulting to
   `service.DEFAULT_LIMIT` when omitted; a non-positive `--limit` is
-  rejected by hand with one stderr line before any query runs. An empty
-  corpus (`SrdCorpusEmptyError`) prints the same empty-corpus message
-  `status` uses; any other `SrdError` or a gateway failure (`LlmError`)
-  prints one stderr line and exits 1, never a traceback.
+  rejected by hand with one stderr line before any query runs. Two
+  outcomes both look like "nothing to show" but are told apart by exit
+  code: nothing scoring at or above `RELEVANCE_FLOOR` prints `no relevant
+  rule found for this query` to stdout and exits 0 — a successful search
+  that found nothing, not a failure; an empty corpus
+  (`SrdCorpusEmptyError`) prints the same empty-corpus message `status`
+  uses, to stderr, and exits 1. Any other `SrdError` or a gateway failure
+  (`LlmError`) prints one stderr line and exits 1, never a traceback.
 - `service.ingest(db, *, version, on_batch)` (`service.py`): fetches,
   stores, chunks, embeds in `EMBED_BATCH_SIZE`-sized batches and replaces
   `srd_rules` wholesale in one transaction opened only after every vector
@@ -74,13 +78,12 @@ this module reaches the corpus directly (D1).
   restore itself only ever swallows its own filesystem error, never the
   failure that triggered it.
 - `service.search_rules(db, query, *, limit=DEFAULT_LIMIT)` (`service.py`):
-  embeds `query` through the shared gateway and returns the `limit` closest
-  `srd_rules` rows by cosine distance, best first, as `RuleMatch`es.
-  `require_corpus` runs first, so an empty corpus raises
-  `SrdCorpusEmptyError` before `query` ever reaches the gateway. No
-  relevance floor is applied — a query with no genuinely close match still
-  returns its `limit` nearest rows; a floor and a "no relevant rule" signal
-  are a later sprint's job.
+  embeds `query` through the shared gateway, orders `srd_rules` by cosine
+  distance and takes the closest `limit` rows, then drops every one
+  scoring below `RELEVANCE_FLOOR` before returning the rest as
+  `RuleMatch`es, best first (see "Relevance floor" below). `require_corpus`
+  runs first, so an empty corpus raises `SrdCorpusEmptyError` before
+  `query` ever reaches the gateway.
 - `service.fetch_source()` downloads `SOURCE_URL` and stores it at
   `SRD_ROOT/<version>/SOURCE_FILENAME`, overwriting an existing copy in
   place; a non-200 response, a timeout/connection failure or an empty body
@@ -97,6 +100,56 @@ this module reaches the corpus directly (D1).
   at 0.
 - `backend/content/srd/v1/` vendors the rules source (`SRD_CC_v5.1.md`) and
   its licence (`LICENSE.md`) that `fetch_source`/`chunk_source` read.
+
+## Relevance floor
+
+- `RELEVANCE_FLOOR = 0.40` (`service.py`) is a pinned module constant, not
+  a setting — it carries no field on `Settings` and is never read from the
+  environment, because it moves with the pinned embedding model
+  (`EMBEDDING_MODEL`), not with a deployment; a model swap re-measures it.
+  `search_rules` applies it in Python, after the query is already ordered
+  and `LIMIT`-applied, never as a SQL `WHERE` on the distance: `EXPLAIN
+  ANALYZE` on the real corpus gives `Index Scan` at 0.996 ms for the query
+  as it stands; adding a `WHERE` on the distance drops the planner to
+  `Seq Scan` + `Sort` at 8.475 ms, because a condition on the ordering
+  expression itself defeats the reason to reach for the HNSW index at
+  all, while filtering after the same ordered, limited query keeps it at
+  0.367 ms. Consequence: `DEFAULT_LIMIT` (and any `--limit`) caps what a
+  search *may* return, not a count of what it *will* — a below-floor row
+  is dropped outright, so the result can be shorter than `limit`,
+  including empty.
+- **How 0.40 was chosen**: twelve in-corpus and eleven out-of-corpus
+  questions, measured against the real ingested corpus with
+  `openai/text-embedding-3-small`, top score each (in-corpus: every one
+  the correct passage).
+
+  | in-corpus question | top score | out-of-corpus question | top score |
+  |---|---|---|---|
+  | poisoned condition | 0.599 | reload a plasma rifle | 0.295 |
+  | grappling | 0.638 | Hexblade warlock patron | 0.631 |
+  | half cover | 0.485 | spell Silvery Barbs | 0.468 |
+  | fire bolt | 0.514 | Forgotten Realms deities | 0.504 |
+  | rogue's sneak attack | 0.740 | Bladesinging wizard | 0.484 |
+  | owlbear claw damage | 0.704 | thirty-year mortgage rate | 0.186 |
+  | plate armor cost/AC | 0.620 | fate points in Fate Core | 0.482 |
+  | hide/stealth check | 0.661 | Pathfinder action economy | 0.452 |
+  | long rest recovery | 0.629 | bribing a city guard | 0.329 |
+  | opportunity attack | 0.649 | XP for good roleplaying | 0.538 |
+  | concentration | 0.692 | sharpen a kitchen knife | 0.371 |
+  | dropping to 0 hp | 0.772 | | |
+
+- **The finding**: the two groups overlap. The weakest in-corpus question
+  scores 0.485, while four out-of-corpus questions score higher still —
+  up to 0.631 — because each is a near miss landing on a generic feature
+  the SRD does carry (Otherworldly Patron, Experience Points, the Norse
+  pantheon, Arcane Tradition). 0.40 sits in the widest band containing no
+  in-corpus question, 0.371 to 0.452 — 0.085 of margin below the lowest
+  kept score, 0.029 above the highest rejected one.
+- **What it does not protect against**: a D&D-flavoured question about
+  material the SRD simply omits still returns a plausible but wrong rule
+  above the floor — a similarity score cannot tell "close topic, wrong
+  rule" apart from "right rule". Known, recorded limit, not something
+  engineered around here.
 
 ## Notes
 
