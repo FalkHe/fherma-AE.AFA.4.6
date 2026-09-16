@@ -86,3 +86,18 @@ def test_embedding_index_uses_hnsw_and_vector_cosine_ops():
     assert [column.name for column in index.columns] == ["embedding"]
     assert index.dialect_kwargs["postgresql_using"] == "hnsw"
     assert index.dialect_kwargs["postgresql_ops"] == {"embedding": "vector_cosine_ops"}
+
+
+def test_source_version_heading_path_ordinal_is_unique():
+    # <- WI1/AC2: no two stored passages can claim the same citation -- the
+    # database refuses a duplicate `(source_version, heading_path, ordinal)`
+    # rather than trusting the splitter. Named per `Base.metadata`'s
+    # `NAMING_CONVENTION` (`app/core/db.py`), matching the `0003` migration.
+    constraints = {c.name: c for c in SrdRule.__table__.constraints}
+    unique = constraints["uq_srd_rules_source_version"]
+
+    assert [column.name for column in unique.columns] == [
+        "source_version",
+        "heading_path",
+        "ordinal",
+    ]

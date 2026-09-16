@@ -1,10 +1,17 @@
 """WI2: the stored SRD document becomes citable `RuleChunk`s (AC2, AC4).
 
+WI1 (sprint 04): no two stored passages can claim the same citation --
+`ordinal` is numbered per `heading_path` across the whole document, not
+restarted per markdown section, so a collided heading trail continues the
+sequence instead of duplicating position 0.
+
 Engine-free and offline throughout: every fixture is a small markdown
 document written to `tmp_path` by the test itself -- never the real 1.9 MB
-corpus, never the network. `tiktoken`'s BPE table is pre-warmed into the
-image at build time (`docker/backend.Dockerfile`), so `count_tokens` and
-`chunk_source` never reach it either.
+corpus, never the network -- with one deliberate exception: the shipped-
+corpus regression test below reads the real, committed source file to prove
+this sprint's change leaves its shape unchanged. `tiktoken`'s BPE table is
+pre-warmed into the image at build time (`docker/backend.Dockerfile`), so
+`count_tokens` and `chunk_source` never reach it either.
 """
 
 import tiktoken
@@ -97,3 +104,38 @@ def test_count_tokens_matches_the_cl100k_base_encoding():
     expected = len(tiktoken.get_encoding("cl100k_base").encode(text))
 
     assert service.count_tokens(text) == expected
+
+
+def test_headings_that_collapse_to_the_same_trail_produce_distinct_positions(tmp_path):
+    # <- WI1/AC2: two headings differing only by an anchor disambiguator
+    # (`{#fire-bolt}` / `{#fire-bolt-1}`) strip down to the same
+    # `heading_path`. Numbering ordinal per section would give both
+    # position 0 -- the exact duplicate citation the fix rules out.
+    markdown = (
+        "# Spells\n\n"
+        "## Fire Bolt {#fire-bolt}\n\n"
+        "A first version of this spell's description.\n\n"
+        "## Fire Bolt {#fire-bolt-1}\n\n"
+        "A second, differently-worded version of the same spell.\n"
+    )
+    chunks = service.chunk_source(_write(tmp_path, markdown))
+
+    matching = [c for c in chunks if c.heading_path == "Spells › Fire Bolt"]
+    assert len(matching) == 2
+    assert sorted(c.ordinal for c in matching) == [0, 1]
+
+    pairs = [(c.heading_path, c.ordinal) for c in chunks]
+    assert len(pairs) == len(set(pairs))
+
+
+def test_shipped_srd_source_yields_2132_passages_with_no_duplicate_citation():
+    # <- WI1/AC2 regression: the fix must not change the real corpus's
+    # shape. Reads the real, committed document (not a `tmp_path` fixture)
+    # -- see the module docstring.
+    path = service.SRD_ROOT / service.SOURCE_VERSION / service.SOURCE_FILENAME
+    chunks = service.chunk_source(path)
+
+    assert len(chunks) == 2132
+
+    pairs = [(c.heading_path, c.ordinal) for c in chunks]
+    assert len(pairs) == len(set(pairs))
