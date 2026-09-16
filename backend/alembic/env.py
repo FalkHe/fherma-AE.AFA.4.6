@@ -5,6 +5,7 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+from app.core.checkpointer.schema import include_object
 from app.core.db import Base
 from app.core.settings import get_settings
 
@@ -34,6 +35,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_schemas=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -41,7 +44,12 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_schemas=True,
+        include_object=include_object,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
