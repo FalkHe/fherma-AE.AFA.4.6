@@ -61,3 +61,4 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
 testpaths = ["tests"]
 filterwarnings = ["error"]
 addopts = "-q"
+markers = ["database: needs a reachable Postgres"]
