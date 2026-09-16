@@ -439,3 +439,59 @@ def test_wi2_a_failure_with_no_previous_file_leaves_no_file_behind(
         asyncio.run(srd_service.ingest(db))
 
     assert not dest_path.exists()
+
+
+def test_wi2_a_keyboard_interrupt_during_embedding_still_restores_the_previous_file(
+    matching_width, monkeypatch, tmp_path
+):
+    # An operator's Ctrl-C mid-embed is a `BaseException`, not an
+    # `Exception` -- the restore must not be skipped just because of that.
+    dest_path = tmp_path / srd_service.SOURCE_VERSION / srd_service.SOURCE_FILENAME
+    dest_path.parent.mkdir(parents=True)
+    old_content = b"# Old\n\nOld body.\n"
+    dest_path.write_bytes(old_content)
+
+    new_content = b"# New\n\nUpstream changed, but the operator interrupts.\n"
+    _stub_fetch_writes(monkeypatch, tmp_path, new_content, _chunks(2))
+
+    def _interrupted_embed(texts, *, model=None):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", _interrupted_embed)
+    db = FakeWriteSession()
+
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(srd_service.ingest(db))
+
+    assert dest_path.read_bytes() == old_content
+    assert db.committed is False
+
+
+def test_wi2_a_restore_failure_does_not_mask_the_original_gateway_error(
+    matching_width, monkeypatch, tmp_path
+):
+    from app.core.llm.errors import LlmRateLimitError
+
+    dest_path = tmp_path / srd_service.SOURCE_VERSION / srd_service.SOURCE_FILENAME
+    dest_path.parent.mkdir(parents=True)
+    dest_path.write_bytes(b"# Old\n\nOld body.\n")
+
+    new_content = b"# New\n\nUpstream changed, but the embed below fails.\n"
+    _stub_fetch_writes(monkeypatch, tmp_path, new_content, _chunks(2))
+
+    def _fail_embed(texts, *, model=None):
+        raise LlmRateLimitError("simulated failure mid-embed")
+
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", _fail_embed)
+
+    def _broken_replace(*args, **kwargs):
+        raise OSError("simulated disk failure while restoring")
+
+    # Only `_restore_previous_source`'s own `os.replace` call is reachable
+    # here -- `fetch_source` is stubbed and never calls it -- so this
+    # breaks the restore itself, not the (already-succeeded) store.
+    monkeypatch.setattr(srd_service.os, "replace", _broken_replace)
+    db = FakeWriteSession()
+
+    with pytest.raises(LlmRateLimitError):
+        asyncio.run(srd_service.ingest(db))
