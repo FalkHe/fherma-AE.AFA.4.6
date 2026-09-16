@@ -521,12 +521,28 @@ async def ingest(
 
 DEFAULT_LIMIT = 5
 
+# Pinned beside `DEFAULT_LIMIT`, not a setting and never read from the
+# environment: this moves with the embedding model, which is itself pinned
+# (`EMBEDDING_MODEL`) -- a model swap re-measures it, a deployment never
+# does (sprint 004/06).
+#
+# Measured against the real corpus: twelve in-corpus and eleven
+# out-of-corpus questions. The two groups overlap -- the weakest in-corpus
+# question scores 0.485 while four out-of-corpus questions score higher, up
+# to 0.631, each a near miss landing on a generic feature the SRD does
+# carry. 0.40 sits in the widest band containing no in-corpus question
+# (0.371 to 0.452): it keeps every in-corpus question with 0.085 of margin
+# and rejects every topically alien one with 0.029. It cannot reject a
+# D&D-flavoured question about material the SRD simply omits -- that is a
+# known, recorded limit, not something engineered around here.
+RELEVANCE_FLOOR = 0.40
+
 
 async def search_rules(
     db: AsyncSession, query: str, *, limit: int = DEFAULT_LIMIT
 ) -> list[RuleMatch]:
-    """Answers `query` with the `limit` closest `SrdRule` passages, best
-    first (AC2, AC5).
+    """Answers `query` with up to `limit` closest `SrdRule` passages, best
+    first, every one of them at or above `RELEVANCE_FLOOR` (AC2, AC4, AC5).
 
     `require_corpus` runs first, so an empty corpus raises
     `SrdCorpusEmptyError` before `query` is ever sent to the embedding
@@ -539,13 +555,30 @@ async def search_rules(
 
     The nearest-neighbour query orders by `SrdRule.embedding.
     cosine_distance(vector)` *with* the `LIMIT` applied in the same
-    statement -- that combination is what lets Postgres use the `hnsw`
-    index (`ix_srd_rules_embedding`) instead of a full sequential scan plus
-    sort (research.md); the distance expression is selected alongside each
-    row, once, so it does not have to be recomputed to derive `score`.
-    `score = 1 - cosine_distance`: higher is a closer match. No relevance
-    floor is applied here -- that is sprint 06's job; this returns whatever
-    the `limit` gives back, in similarity order.
+    statement, exactly as before -- that combination is what lets Postgres
+    use the `hnsw` index (`ix_srd_rules_embedding`) instead of a full
+    sequential scan plus sort (research.md); the distance expression is
+    selected alongside each row, once, so it does not have to be
+    recomputed to derive `score`. `score = 1 - cosine_distance`: higher is
+    a closer match.
+
+    `RELEVANCE_FLOOR` is applied *after* that query returns, in Python, on
+    the already-ordered, already-limited rows -- never as a SQL `WHERE` on
+    the distance. Measured on the real corpus: `EXPLAIN ANALYZE` gives
+    `Index Scan` at 0.996 ms for the query above; adding a `WHERE` on the
+    distance drops it to `Seq Scan` + `Sort` at 8.475 ms, because a
+    condition on the ordering expression itself defeats the planner's
+    reason to reach for the HNSW index at all, while filtering after this
+    same ordered, limited query keeps it at 0.367 ms. A weak match is
+    dropped outright, never returned with a warning and never as a best
+    effort (AC4): a query whose every match falls under the floor returns
+    an empty list, not a lower-confidence guess.
+
+    Consequence of filtering after the `LIMIT` rather than before it:
+    `limit` (`DEFAULT_LIMIT` when the caller does not pass one) caps what
+    *may* come back, not a count of what *will* -- some, or all, of the
+    `limit` rows the query fetched can still fall under the floor and be
+    dropped, and the result can be shorter than `limit`, including empty.
     """
     await require_corpus(db)
 
@@ -556,7 +589,7 @@ async def search_rules(
     distance = SrdRule.embedding.cosine_distance(query_vector).label("distance")
     result = await db.execute(select(SrdRule, distance).order_by(distance).limit(limit))
 
-    return [
+    matches = [
         RuleMatch(
             heading_path=rule.heading_path,
             ordinal=rule.ordinal,
@@ -565,3 +598,4 @@ async def search_rules(
         )
         for rule, rule_distance in result.all()
     ]
+    return [match for match in matches if match.score >= RELEVANCE_FLOOR]
