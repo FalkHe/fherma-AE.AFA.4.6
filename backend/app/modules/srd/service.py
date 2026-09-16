@@ -266,12 +266,19 @@ def _split_section(heading_path: str, body: str, *, start_ordinal: int) -> list[
     stays honest about what gets embedded. A window's own body is therefore
     capped at `MAX_CHUNK_TOKENS` minus the heading trail's own token cost --
     not at `MAX_CHUNK_TOKENS` itself -- so the trail-joined text handed to
-    the embedder never exceeds `MAX_CHUNK_TOKENS` either. The stride between
-    windows (`step`) stays exactly `MAX_CHUNK_TOKENS - CHUNK_OVERLAP_TOKENS`
-    regardless of that reservation: only the window's own ceiling shrinks,
-    the walk through `body` does not, so an already-oversized section still
-    splits into exactly as many windows as it did before the trail was
-    counted (real corpus regression: still 2,132 passages overall).
+    the embedder never exceeds `MAX_CHUNK_TOKENS` either.
+
+    The stride between windows (`step`) is `MAX_CHUNK_TOKENS -
+    CHUNK_OVERLAP_TOKENS`, same as before the trail was counted, *unless*
+    that would outrun the (now possibly smaller) window: `step` is clamped
+    to never exceed `window_cap`, so a window can never start past where the
+    previous one ended -- the one outcome that must be impossible is a gap
+    that silently drops body text between two windows. Every heading trail
+    in the shipped corpus is far short of `CHUNK_OVERLAP_TOKENS` (100)
+    tokens, so the clamp never engages there and an already-oversized
+    section still splits into exactly as many windows as it did before the
+    trail was counted (real corpus regression: still 2,132 passages
+    overall) -- it only guards a heading trail long enough to matter.
 
     `start_ordinal` lets `chunk_source` continue the numbering for a
     `heading_path` that a later markdown section shares -- e.g. two headings
@@ -280,6 +287,11 @@ def _split_section(heading_path: str, body: str, *, start_ordinal: int) -> list[
     citation (AC2)."""
     prefix_tokens = count_tokens(_embed_text(heading_path, ""))
     window_cap = MAX_CHUNK_TOKENS - prefix_tokens
+    if window_cap < 1:
+        raise SrdSourceError(
+            f"heading trail {heading_path!r} alone takes {prefix_tokens} tokens, leaving no "
+            f"room for a body chunk under MAX_CHUNK_TOKENS ({MAX_CHUNK_TOKENS})"
+        )
 
     tokens = _encoding().encode(body)
     total = len(tokens)
@@ -293,7 +305,7 @@ def _split_section(heading_path: str, body: str, *, start_ordinal: int) -> list[
             )
         ]
 
-    step = MAX_CHUNK_TOKENS - CHUNK_OVERLAP_TOKENS
+    step = min(MAX_CHUNK_TOKENS - CHUNK_OVERLAP_TOKENS, window_cap)
     chunks: list[RuleChunk] = []
     start = 0
     ordinal = start_ordinal
