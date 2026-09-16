@@ -27,6 +27,21 @@ class RuleChunk(CamelModel):
     token_count: int
 
 
+class RuleMatch(CamelModel):
+    """One passage returned by `service.search_rules` (AC2, AC5):
+    `heading_path`/`ordinal` are the same citation pair `RuleChunk` carries,
+    identifying which stored `SrdRule` row this is; `score` is `1 -
+    cosine_distance` against the query embedding, so higher is a closer
+    match. Results are ordered best-first; no relevance floor is applied
+    here (that is a later sprint) -- callers get whatever the requested
+    `limit` returns."""
+
+    heading_path: str
+    ordinal: int
+    text: str
+    score: float
+
+
 class IngestReport(CamelModel):
     """What one `app srd ingest` run did (or would do, under `--dry-run`):
     the source version fetched, how big the stored document is, how many

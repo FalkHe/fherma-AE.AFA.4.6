@@ -15,7 +15,7 @@ from app.core.llm import service as llm_service
 from app.core.settings import get_settings
 from app.modules.srd.errors import SrdCorpusEmptyError, SrdSourceError, SrdVectorWidthError
 from app.modules.srd.models import EMBEDDING_WIDTH, SrdRule
-from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleChunk
+from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleChunk, RuleMatch
 
 logger = structlog.get_logger()
 
@@ -452,3 +452,51 @@ async def ingest(
         cost_usd=cost_total if any_batch_priced else None,
         cost_complete=cost_complete,
     )
+
+
+DEFAULT_LIMIT = 5
+
+
+async def search_rules(
+    db: AsyncSession, query: str, *, limit: int = DEFAULT_LIMIT
+) -> list[RuleMatch]:
+    """Answers `query` with the `limit` closest `SrdRule` passages, best
+    first (AC2, AC5).
+
+    `require_corpus` runs first, so an empty corpus raises
+    `SrdCorpusEmptyError` before `query` is ever sent to the embedding
+    gateway -- an empty corpus can never usefully answer anything, and a
+    spent gateway call for it would be pure waste (AC6). `query` is then
+    embedded through `llm_service.embed_texts`, called attribute-style
+    (`from app.core.llm import service as llm_service`, then
+    `llm_service.embed_texts(...)`) so tests can monkeypatch it, same as
+    `ingest` above.
+
+    The nearest-neighbour query orders by `SrdRule.embedding.
+    cosine_distance(vector)` *with* the `LIMIT` applied in the same
+    statement -- that combination is what lets Postgres use the `hnsw`
+    index (`ix_srd_rules_embedding`) instead of a full sequential scan plus
+    sort (research.md); the distance expression is selected alongside each
+    row, once, so it does not have to be recomputed to derive `score`.
+    `score = 1 - cosine_distance`: higher is a closer match. No relevance
+    floor is applied here -- that is sprint 06's job; this returns whatever
+    the `limit` gives back, in similarity order.
+    """
+    await require_corpus(db)
+
+    embedding_model = get_settings().embedding_model
+    embedded = llm_service.embed_texts([query], model=embedding_model)
+    query_vector = embedded.vectors[0]
+
+    distance = SrdRule.embedding.cosine_distance(query_vector).label("distance")
+    result = await db.execute(select(SrdRule, distance).order_by(distance).limit(limit))
+
+    return [
+        RuleMatch(
+            heading_path=rule.heading_path,
+            ordinal=rule.ordinal,
+            text=rule.text,
+            score=1 - rule_distance,
+        )
+        for rule, rule_distance in result.all()
+    ]
