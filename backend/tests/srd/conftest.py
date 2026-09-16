@@ -19,13 +19,32 @@ fixture:
    subprocess inherits the pinned env vars (`DATABASE_URL` first, `env.py`
    reads it via `get_settings()` at run time) but has its own, disposable
    logging config;
-4. yields an `AsyncSession` bound to its own `create_async_engine` -- never
-   the app's cached `get_engine()`/`get_sessionmaker()`, which are pinned to
-   `DATABASE_URL` at first call and must never see the scratch database;
-5. tears down: closes the session and disposes the engine, restores the
-   environment (and the settings cache) exactly as found, then drops the
-   scratch database with `WITH (FORCE)` so a still-open connection from a
-   failed test never leaves it behind.
+4. yields an `AsyncSession` bound to its own `create_async_engine` -- the
+   fixture's own reads/writes never go through the app's cached
+   `get_engine()`/`get_sessionmaker()`;
+5. clears the app's cached `get_engine()`/`get_sessionmaker()` before
+   yielding and again in teardown (see below) -- a test that drives the
+   real CLI (`typer.testing.CliRunner` against `app.cli.cli`) needs those
+   caches to build an engine against *this* scratch database, not
+   whatever `DATABASE_URL` happened to be pinned the first time anything
+   in the process called `get_engine()` (it is `@lru_cache`d for the
+   whole process, so without this it would keep returning that first
+   engine forever, scratch database or not);
+6. tears down: closes the session and disposes the engine, disposes and
+   clears the cached `get_engine()`/`get_sessionmaker()` too (whichever
+   test used them, CLI-driven or not -- this fixture does not know), then
+   restores the environment (and the settings cache) exactly as found,
+   then drops the scratch database with `WITH (FORCE)` so a still-open
+   connection from a failed test never leaves it behind.
+
+Step 5/6's cache handling exists because a CLI-driven test that forgets it
+must be done at both ends leaves a real bug behind: the app's cached engine
+survives the test with a pooled connection to a database this fixture is
+about to drop, that connection's `__del__` fires whenever the garbage
+collector next gets to it -- often during a *later, unrelated* test -- and
+pytest's unraisable-exception hook blames whichever test happened to be
+running at that moment. Handling both ends here, once, for every consumer
+of this fixture removes the need for each such test to remember it itself.
 
 No `pytest-asyncio` in this suite (`AGENTS.md` gotchas): every test wraps
 its own async calls in a single `asyncio.run(...)`; only the teardown here
@@ -42,6 +61,7 @@ import psycopg
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.core.db import get_engine, get_sessionmaker
 from app.core.settings import get_settings
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -100,6 +120,13 @@ def srd_db():
     os.environ["DATABASE_URL"] = scratch_url
     os.environ["EMBEDDING_DIMENSIONS"] = _MIGRATED_VECTOR_WIDTH
     get_settings.cache_clear()
+    # A CLI invocation during this test (e.g. `runner.invoke(cli, ["srd",
+    # "ingest"])`) opens its DB session via `get_sessionmaker()`, which is
+    # `@lru_cache`d for the whole process -- clear it here so that call
+    # builds a fresh engine against `scratch_url` rather than reusing
+    # whatever engine a previous test happened to leave cached.
+    get_engine.cache_clear()
+    get_sessionmaker.cache_clear()
 
     engine = None
     session = None
@@ -124,6 +151,21 @@ def srd_db():
             asyncio.run(session.close())
         if engine is not None:
             asyncio.run(engine.dispose())
+
+        # Mirror the setup-time clear: if the test (or anything it called
+        # into, e.g. the CLI) built and cached an app-level engine, it is
+        # bound to `scratch_url`, dropped below -- dispose its pooled
+        # connection now, while the database it points at still exists,
+        # rather than leaving that to the garbage collector's own schedule
+        # (`BaseConnection.__del__`, raised as an unraisable exception
+        # pytest then blames on whatever unrelated test is running when the
+        # collector finally gets to it). `cache_info().currsize` tells us
+        # whether `get_engine()` actually built one, so a test that never
+        # touched it doesn't pay for constructing one just to dispose it.
+        if get_engine.cache_info().currsize:
+            asyncio.run(get_engine().dispose())
+        get_engine.cache_clear()
+        get_sessionmaker.cache_clear()
 
         if old_database_url is None:
             os.environ.pop("DATABASE_URL", None)
