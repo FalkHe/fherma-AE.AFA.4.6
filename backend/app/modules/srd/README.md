@@ -10,7 +10,9 @@ this module reaches the corpus directly (D1).
   `source_version`, `heading_path`, `ordinal`, `text`, `token_count`,
   `embedding_model`, `embedding` (`VECTOR(EMBEDDING_WIDTH)`, `EMBEDDING_WIDTH
   = 1536`) — indexed by `ix_srd_rules_embedding`, an HNSW `vector_cosine_ops`
-  index for nearest-neighbour lookup.
+  index for nearest-neighbour lookup, and constrained unique on
+  `(source_version, heading_path, ordinal)` — the database itself refuses a
+  duplicate citation, independent of `chunk_source`'s own numbering.
 - `RuleChunk` / `IngestReport` (`schemas.py`): a `RuleChunk` is one citable
   passage `service.chunk_source` produced — `heading_path`, `ordinal`,
   `text`, `token_count`; an `IngestReport` is what one `app srd ingest` run
@@ -23,7 +25,9 @@ this module reaches the corpus directly (D1).
 - `SrdError` / `SrdCorpusEmptyError` / `SrdVectorWidthError` / `SrdSourceError`
   (`errors.py`).
 - The `vector` extension and the `srd_rules` table/index migration
-  (`alembic/versions/0002_srd_rules.py`).
+  (`alembic/versions/0002_srd_rules.py`), plus the
+  `(source_version, heading_path, ordinal)` unique constraint
+  (`alembic/versions/0003_srd_rules_unique_citation.py`).
 
 ## Surface
 
@@ -45,7 +49,12 @@ this module reaches the corpus directly (D1).
   stores, chunks, embeds in `EMBED_BATCH_SIZE`-sized batches and replaces
   `srd_rules` wholesale in one transaction opened only after every vector
   is in hand; `on_batch(chunks_done, chunks_total)` fires after each batch
-  for a caller's progress reporting — the service itself never prints.
+  for a caller's progress reporting — the service itself never prints. Any
+  failure after the new source file replaces the old one — chunking,
+  embedding or the write — restores the previous file byte-for-byte (or
+  removes it entirely when there was none) before re-raising, so the
+  stored file and the corpus can never disagree; the restore itself only
+  ever swallows its own filesystem error, never the failure that triggered it.
 - `service.fetch_source()` downloads `SOURCE_URL` and stores it at
   `SRD_ROOT/<version>/SOURCE_FILENAME`, overwriting an existing copy in
   place; a non-200 response, a timeout/connection failure or an empty body
@@ -56,6 +65,10 @@ this module reaches the corpus directly (D1).
   splitting an oversized section on token boundaries with overlap so a
   citation at a split still reads in context (`MAX_CHUNK_TOKENS`,
   `CHUNK_OVERLAP_TOKENS`); a heading with no body text yields no chunk.
+  `ordinal` numbers passages per heading trail across the whole document,
+  not per markdown section, so two headings that collapse to the same
+  anchor-free trail continue one shared sequence instead of both starting
+  at 0.
 - `backend/content/srd/v1/` vendors the rules source (`SRD_CC_v5.1.md`) and
   its licence (`LICENSE.md`) that `fetch_source`/`chunk_source` read.
 
