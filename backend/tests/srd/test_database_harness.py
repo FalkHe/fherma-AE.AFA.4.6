@@ -26,10 +26,7 @@ def test_srd_db_yields_a_migrated_database_with_the_vector_extension_and_srd_rul
         assert extension.scalar() == "vector"
 
         table = await srd_db.execute(
-            text(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_name = 'srd_rules'"
-            )
+            text("SELECT table_name FROM information_schema.tables WHERE table_name = 'srd_rules'")
         )
         assert table.scalar() == "srd_rules"
 
