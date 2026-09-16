@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-16
 updated: 2026-09-16
-stage: draft
+stage: done
 ---
 # Progress: Sprint 02 — fetch and chunk
 
@@ -27,10 +27,13 @@ Status: `open | running | done | failed`
 - The project README was unreachable from inside the test container, which mounts only the backend directory, so the work item added a read-only mount of that one file to make the attribution criterion checkable. It is the sprint's only infrastructure change.
 
 ## Backlog proposals
-<none yet>
+- The rules text is a volunteer conversion of the publisher's original, carrying its own "work in progress, no guarantees" warning. Nothing this sprint puts it in front of a player, so no decision is needed today; the forcing point is the first sprint that lets rules text reach a player's screen. Carried onto backlog line 05 as a named precondition.
+- A failed download now names an internal temporary file the operator will never find, rather than the source it tried to read. Cosmetic.
+- The rules document is read and counted twice per rehearsal, once to check it is usable and once to report on it. Harmless at this size; worth reusing the first pass when the real import lands.
 
 ## Gates
 Lint, both suites and the live-database run all pass (573 offline, 4 live, 53 frontend). The dry run was also executed for real against the public source: it fetched 1,878,072 bytes, reported 2,132 passages and 502,818 tokens, and left the working tree clean.
 
 ## Verify
 Round 1: changes-requested. Two failures. A download that answers but returns something that is not readable rules text replaced the good stored copy and then crashed with a raw error dump, so the promise that a failed import leaves the stored rules intact held only for outright download failures. And the rules component's own description still said that importing rules was a later sprint's work.
+Round 2: approved. Both failures fixed and re-checked by running the behaviour: a download that answers with something other than rules is now refused before it can replace the good copy, and the component's own description matches what it does. No regressions.
