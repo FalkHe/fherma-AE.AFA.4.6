@@ -204,6 +204,23 @@ def count_tokens(text: str) -> int:
     return len(_encoding().encode(text))
 
 
+# WI3: a passage's own name lives in its heading, never in its body -- a
+# spell's "Casting Time / Range / Components" block reads the same for
+# every spell. Joined once, blank-line-separated, ahead of the body it
+# names -- the same shape the source markdown itself uses for a heading
+# followed by its text -- so the embedder learns the name together with
+# what it does, not the body alone (research: "Fire Bolt" ranked 47th
+# without it). `SrdRule.text`/`RuleChunk.text` stay body-only throughout;
+# this exists only to build what actually goes to `embed_texts`.
+EMBED_TRAIL_SEPARATOR = "\n\n"
+
+
+def _embed_text(heading_path: str, body: str) -> str:
+    """The text actually handed to the embedder for one passage: `heading_path`
+    joined once to `body` (WI3, see `EMBED_TRAIL_SEPARATOR`)."""
+    return f"{heading_path}{EMBED_TRAIL_SEPARATOR}{body}"
+
+
 def _clean_heading_text(raw: str) -> str:
     """Strips a trailing `{#anchor}` suffix so the citable heading path
     never carries markdown-anchor syntax (AC2)."""
@@ -237,23 +254,42 @@ def _sections(text: str) -> list[tuple[str, str]]:
 
 
 def _split_section(heading_path: str, body: str, *, start_ordinal: int) -> list[RuleChunk]:
-    """One `RuleChunk` per `MAX_CHUNK_TOKENS`-token window of `body`, sharing
-    `heading_path` and gaining ascending ordinals from `start_ordinal`, each
-    window overlapping the previous by `CHUNK_OVERLAP_TOKENS` tokens so a
-    citation at a split boundary still reads in context (AC4). A section
-    within the cap yields exactly one chunk.
+    """One `RuleChunk` per window of `body`, sharing `heading_path` and
+    gaining ascending ordinals from `start_ordinal`, each window overlapping
+    the previous by (up to) `CHUNK_OVERLAP_TOKENS` tokens so a citation at a
+    split boundary still reads in context (AC4). A section within the cap
+    yields exactly one chunk.
+
+    `token_count` on every returned chunk is `count_tokens(_embed_text(
+    heading_path, chunk.text))` -- what the trail-joined text actually sent
+    to `embed_texts` encodes to (WI3), not `chunk.text` alone, so the figure
+    stays honest about what gets embedded. A window's own body is therefore
+    capped at `MAX_CHUNK_TOKENS` minus the heading trail's own token cost --
+    not at `MAX_CHUNK_TOKENS` itself -- so the trail-joined text handed to
+    the embedder never exceeds `MAX_CHUNK_TOKENS` either. The stride between
+    windows (`step`) stays exactly `MAX_CHUNK_TOKENS - CHUNK_OVERLAP_TOKENS`
+    regardless of that reservation: only the window's own ceiling shrinks,
+    the walk through `body` does not, so an already-oversized section still
+    splits into exactly as many windows as it did before the trail was
+    counted (real corpus regression: still 2,132 passages overall).
 
     `start_ordinal` lets `chunk_source` continue the numbering for a
     `heading_path` that a later markdown section shares -- e.g. two headings
     that collapse to the same anchor-stripped trail -- rather than letting
     every section restart at 0 and risk two passages claiming the same
     citation (AC2)."""
+    prefix_tokens = count_tokens(_embed_text(heading_path, ""))
+    window_cap = MAX_CHUNK_TOKENS - prefix_tokens
+
     tokens = _encoding().encode(body)
     total = len(tokens)
-    if total <= MAX_CHUNK_TOKENS:
+    if total <= window_cap:
         return [
             RuleChunk(
-                heading_path=heading_path, ordinal=start_ordinal, text=body, token_count=total
+                heading_path=heading_path,
+                ordinal=start_ordinal,
+                text=body,
+                token_count=count_tokens(_embed_text(heading_path, body)),
             )
         ]
 
@@ -262,14 +298,15 @@ def _split_section(heading_path: str, body: str, *, start_ordinal: int) -> list[
     start = 0
     ordinal = start_ordinal
     while start < total:
-        end = min(start + MAX_CHUNK_TOKENS, total)
+        end = min(start + window_cap, total)
         window = tokens[start:end]
+        window_text = _encoding().decode(window)
         chunks.append(
             RuleChunk(
                 heading_path=heading_path,
                 ordinal=ordinal,
-                text=_encoding().decode(window),
-                token_count=len(window),
+                text=window_text,
+                token_count=count_tokens(_embed_text(heading_path, window_text)),
             )
         )
         if end == total:

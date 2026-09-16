@@ -10,7 +10,7 @@ stage: draft
 | WI | Status | Note |
 |---|---|---|
 | 1 | done | search returns the closest passages best first, refusing an empty rulebook before spending a call; index use confirmed |
-| 2 | running | |
+| 2 | done | `srd search` prints citation, score and passage, best first, with a cap flag |
 | 3 | running | |
 | qa | done | one acceptance test per criterion, AC1-AC6 |
 
@@ -22,6 +22,8 @@ Status: `open | running | done | failed`
 - Five results by default, the sprint lead's choice.
 - Two agents were cut off part-way by a usage limit. The search work survived intact and was checked and committed by the sprint lead; the acceptance tests were resumed. Nothing was lost.
 - Fifth merge request in an unmerged chain.
+
+- Passages carry the raw HTML tables the source document uses, so a table-heavy rule prints as markup rather than readable text. Harmless for matching, but it will need handling before a player sees a quoted rule.
 
 ## Backlog proposals
 - Citation trails read oddly where the rules text skips a heading level: a rule can appear nested under a sibling rather than its real parent, as in "Acid Arrow › Fire Bolt". Still accurate enough to cite, but it will look wrong to a player once citations are shown.
