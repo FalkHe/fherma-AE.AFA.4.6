@@ -1,8 +1,8 @@
-"""`app srd status` and `app srd ingest` -- sprint 004-01 WI3
-(`status`, binding interface in
+"""`app srd status`, `app srd ingest` and `app srd search` -- sprint 004-01
+WI3 (`status`, binding interface in
 `docs/intents/004-srd-knowledge-base/sprints/01-empty-corpus-status/plan.md`,
-I3), sprint 004-02 WI3 (`ingest --dry-run`) and sprint 004-03 WI2 (`ingest`'s
-real, DB-backed path).
+I3), sprint 004-02 WI3 (`ingest --dry-run`), sprint 004-03 WI2 (`ingest`'s
+real, DB-backed path) and sprint 004-05 WI2 (`search`).
 
 Thin CLI over `srd/service.py`. `status` opens its own DB session via
 `app.core.db.get_sessionmaker` -- the same helper FastAPI's
@@ -30,7 +30,23 @@ operator (and a test) can tell which of the seam's eight failure classes
 fired without the provider detail ever reaching the terminal. The empty-
 corpus case is not an exception -- `corpus_status` returns `rule_count ==
 0` -- so the CLI spells out "0 rules" and the ingest command itself
-(decided wording, sprint plan)."""
+(decided wording, sprint plan).
+
+`search` is a thin printer over `srd_service.search_rules` (sprint 05 WI2):
+it opens its own session the same way `status`/`ingest` do, never builds a
+query itself. `search_rules` already calls `require_corpus` before any
+gateway call, so a `SrdCorpusEmptyError` is caught ahead of the general
+`SrdError` branch and reported with the same `EMPTY_CORPUS_MESSAGE`
+`status` already uses on an empty corpus, rather than the exception's own
+wording -- one consistent "corpus is empty, run ingest" message across both
+commands. `LlmError` (a gateway failure mid-search) is handled first, same
+as `ingest`, with the same `[{exc.code}]` idiom; any other `SrdError`
+(e.g. `SrdVectorWidthError`) falls through to the generic branch and is
+echoed as-is. Each `RuleMatch` is printed as a numbered entry --
+`heading_path`, `ordinal` and `score` on one line (the citation and how
+confident the match is, both required to be visible), the passage text
+indented on the line(s) below it, and a blank line between entries so
+multiple results stay readable in a terminal."""
 
 import asyncio
 
@@ -40,8 +56,13 @@ from app.core.db import get_sessionmaker
 from app.core.errors import ErrorCode
 from app.core.llm.errors import LlmError
 from app.modules.srd import service as srd_service
-from app.modules.srd.errors import SrdError, SrdSourceError, SrdVectorWidthError
-from app.modules.srd.schemas import CorpusStatus, IngestReport
+from app.modules.srd.errors import (
+    SrdCorpusEmptyError,
+    SrdError,
+    SrdSourceError,
+    SrdVectorWidthError,
+)
+from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleMatch
 
 srd_app = typer.Typer()
 
@@ -150,3 +171,43 @@ def ingest(dry_run: bool = typer.Option(False, "--dry-run")) -> None:
     typer.echo(f"chunks: {report.chunk_count}")
     typer.echo(f"tokens: {report.token_count}")
     typer.echo(f"sample headings: {', '.join(heading_sample)}")
+
+
+async def _search_rules(query: str, limit: int) -> list[RuleMatch]:
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as db:
+        return await srd_service.search_rules(db, query, limit=limit)
+
+
+def _print_match(position: int, match: RuleMatch) -> None:
+    """One numbered entry: the citation trail with its ordinal and the
+    match's score on the heading line -- both required to be visible (AC2)
+    -- then the passage text indented below it, so an operator can read the
+    rule directly rather than having to go look it up."""
+    typer.echo(f"{position}. {match.heading_path} #{match.ordinal} (score {match.score:.3f})")
+    for line in match.text.splitlines() or [""]:
+        typer.echo(f"   {line}")
+    typer.echo("")
+
+
+@srd_app.command("search")
+def search(
+    query: str = typer.Argument(..., help="The rules question to search for."),
+    limit: int = typer.Option(
+        srd_service.DEFAULT_LIMIT, "--limit", help="How many passages to return, best first."
+    ),
+) -> None:
+    try:
+        matches = asyncio.run(_search_rules(query, limit))
+    except LlmError as exc:
+        typer.echo(_llm_error_line(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    except SrdCorpusEmptyError as exc:
+        typer.echo(EMPTY_CORPUS_MESSAGE, err=True)
+        raise typer.Exit(code=1) from exc
+    except SrdError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    for position, match in enumerate(matches, start=1):
+        _print_match(position, match)
