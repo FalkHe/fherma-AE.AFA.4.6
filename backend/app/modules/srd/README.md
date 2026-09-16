@@ -22,6 +22,8 @@ this module reaches the corpus directly (D1).
   naming 0 rules and `app srd ingest` when the corpus is empty, or naming
   both widths on a vector-width mismatch. Ingestion and retrieval are
   owned by later work items in this intent.
+- `backend/content/srd/v1/` vendors the rules source (`SRD_CC_v5.1.md`) and
+  its licence (`LICENSE.md`) that this module's ingest reads.
 
 ## Notes
 

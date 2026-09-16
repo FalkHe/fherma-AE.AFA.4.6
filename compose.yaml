@@ -53,6 +53,10 @@ services:
       - .env
     volumes:
       - ./backend:/app
+      # Read-only so `tests/srd/test_shipped_tree.py` can check the
+      # repository root README states the SRD attribution (AC6) — the image
+      # and the ./backend bind mount above never otherwise expose it.
+      - ./README.md:/README.md:ro
     # The image's entrypoint runs migrations + uvicorn; the CLI runs whatever
     # command is passed to `docker compose run` instead.
     entrypoint: []
