@@ -97,6 +97,35 @@ def test_omitted_limit_falls_back_to_default_limit(monkeypatch):
     assert captured["limit"] == srd_service.DEFAULT_LIMIT
 
 
+def test_no_matches_above_the_floor_prints_no_relevant_rule_on_stdout_and_exits_0(monkeypatch):
+    async def fake_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        return []
+
+    monkeypatch.setattr(srd_service, "search_rules", fake_search_rules)
+
+    result = runner.invoke(cli, ["srd", "search", "how do I reload a plasma rifle"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert "no relevant rule" in result.stdout.lower()
+
+
+def test_no_matches_above_the_floor_output_carries_no_hint_of_a_dropped_match(monkeypatch):
+    async def fake_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        return []
+
+    monkeypatch.setattr(srd_service, "search_rules", fake_search_rules)
+
+    result = runner.invoke(cli, ["srd", "search", "how do I reload a plasma rifle"])
+
+    assert result.exit_code == 0, result.output
+    for match in _matches():
+        assert match.heading_path not in result.stdout
+        assert match.text not in result.stdout
+    assert "score" not in result.stdout.lower()
+    assert commands_module.EMPTY_CORPUS_MESSAGE not in result.stdout
+
+
 def test_empty_corpus_exits_nonzero_with_the_empty_corpus_message(monkeypatch):
     async def fake_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
         raise SrdCorpusEmptyError("the SRD corpus holds no rules; run `app srd ingest` first")
