@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-16
 updated: 2026-09-16
-stage: draft
+stage: done
 ---
 # Progress: Sprint 05 — a rules question comes back with passages we can cite
 
@@ -37,3 +37,4 @@ By-eye check against the real rulebook after re-importing (2,132 passages, 529,5
 
 ## Verify
 Round 1: changes-requested. Two items: asking for a negative number of answers crashed with a raw error dump instead of one plain sentence, and the rules component's own description still said searching was a later sprint's work. A latent fault was also flagged and closed: the passage splitter's stride no longer matched its window after the embedding change, which could have silently dropped rules text under a very long heading trail.
+Round 2: approved. Both fixes and the splitter guard re-checked, the guard mutation-tested to prove it really holds, and no regressions. All four rules questions still answer correctly.
