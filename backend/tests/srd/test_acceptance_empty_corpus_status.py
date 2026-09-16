@@ -180,9 +180,7 @@ def test_ac5_database_marker_is_registered_and_the_existing_suite_stays_green():
     # fixture's documented contract, exercised live by AC1/AC2/AC4 whenever
     # a database *is* reachable, as here.
     pyproject = tomllib.loads((BACKEND_ROOT / "pyproject.toml").read_text())
-    markers = pyproject.get("tool", {}).get("pytest", {}).get("ini_options", {}).get(
-        "markers", []
-    )
+    markers = pyproject.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("markers", [])
     assert any(marker.split(":")[0].strip() == "database" for marker in markers), markers
 
     result = subprocess.run(
