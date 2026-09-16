@@ -23,6 +23,7 @@ os.environ["OPENROUTER_API_KEY"] = "test-key"
 os.environ["CHAT_MODEL"] = "test/model"
 os.environ["EMBEDDING_MODEL"] = "test/embedding-model"
 os.environ["EMBEDDING_DIMENSIONS"] = "4"
+os.environ["IMAGE_MODEL"] = "test/image-model"
 
 import pytest  # noqa: E402
 import structlog  # noqa: E402
