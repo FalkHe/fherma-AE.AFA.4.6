@@ -55,7 +55,27 @@ def test_shipped_prompt_is_reachable_c_wi3(path: Path):
     except PromptError as exc:
         pytest.fail(f"shipped prompt does not resolve: {relative} ({exc})")
 
-    assert resolved.text == path.read_text(), (
+    raw_bytes = path.read_bytes()
+
+    # The resolver reads bytes and decodes explicitly (never `Path.read_text()`,
+    # which performs universal-newline translation) so a CRLF prompt round-trips
+    # verbatim per AC1. Match that contract here, not `path.read_text()`, or
+    # this guard would fail on a CRLF file with a message that blames the
+    # resolver when the resolver is actually right.
+    assert resolved.text == raw_bytes.decode("utf-8"), (
         f"resolved text does not match the shipped file verbatim: {relative}"
     )
     assert resolved.version == version, f"resolved to the wrong version: {relative}"
+
+    # AC1 is a fidelity guarantee: the resolver must never silently strip a
+    # BOM, so the only place left to reject one is here, over what we ship.
+    # Likewise CRLF: the resolver preserves it verbatim rather than
+    # normalising it, so a CRLF file would otherwise ship silently. Both are
+    # bugs in the *file*, not the resolver -- say so explicitly rather than
+    # leaving the reader to infer it from a text-mismatch failure above.
+    assert b"\r\n" not in raw_bytes, (
+        f"shipped prompt file has CRLF line endings, fix the file: {relative}"
+    )
+    assert not raw_bytes.startswith(b"\xef\xbb\xbf"), (
+        f"shipped prompt file has a UTF-8 BOM, fix the file: {relative}"
+    )
