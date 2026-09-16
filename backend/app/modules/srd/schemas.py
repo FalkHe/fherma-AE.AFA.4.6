@@ -12,3 +12,16 @@ class CorpusStatus(CamelModel):
     source_version: str | None
     embedding_model: str | None
     ingested_at: datetime | None
+
+
+class RuleChunk(CamelModel):
+    """One citable passage produced by `service.chunk_source` (AC2, AC4):
+    `heading_path` is the ` › `-joined trail of headings the passage sits
+    under, with any `{#anchor}` suffix stripped; `ordinal` is its position
+    (from 0) among the passages of the same section, ascending when a
+    section had to be split; `token_count` is `service.count_tokens(text)`."""
+
+    heading_path: str
+    ordinal: int
+    text: str
+    token_count: int

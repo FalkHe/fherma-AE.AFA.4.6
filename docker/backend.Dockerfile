@@ -11,13 +11,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     # Keep the virtualenv outside /app so the dev bind mount cannot shadow it.
     UV_PROJECT_ENVIRONMENT=/opt/venv \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    # tiktoken (srd/service.py's count_tokens/chunk_source) downloads its
+    # cl100k_base BPE table over HTTPS on first use, caching it only via this
+    # variable. Pre-warmed below so the table is baked into the image and
+    # the test suite never touches the network for it.
+    TIKTOKEN_CACHE_DIR=/opt/tiktoken-cache
 
 WORKDIR /app
 
 # Dependencies first: this layer is cached until the lock file changes.
 COPY backend/pyproject.toml backend/uv.lock backend/.python-version ./
 RUN uv sync --locked --no-install-project
+# Pre-warm the cl100k_base BPE table into TIKTOKEN_CACHE_DIR at build time.
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
 COPY backend/ ./
 RUN uv sync --locked

@@ -1,15 +1,18 @@
 import os
+import re
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 
 import httpx
+import tiktoken
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import get_settings
 from app.modules.srd.errors import SrdCorpusEmptyError, SrdSourceError, SrdVectorWidthError
 from app.modules.srd.models import EMBEDDING_WIDTH, SrdRule
-from app.modules.srd.schemas import CorpusStatus
+from app.modules.srd.schemas import CorpusStatus, RuleChunk
 
 SRD_ROOT: Path = Path(__file__).resolve().parents[3] / "content" / "srd"
 SOURCE_URL = "https://raw.githubusercontent.com/palikhov/cc-srd5-1/main/cc-srd5.md"
@@ -103,3 +106,123 @@ def fetch_source(*, version: str = SOURCE_VERSION) -> Path:
         raise SrdSourceError(f"could not store SRD source at {dest_path}: {exc}") from exc
 
     return dest_path
+
+
+# `text-embedding-3-small` (the default `EMBEDDING_MODEL`) resolves to the
+# `cl100k_base` BPE encoding (research.md, "`tiktoken` is not a dependency").
+# `EMBEDDING_WINDOW_TOKENS` is the model's own input limit; `MAX_CHUNK_TOKENS`
+# is deliberately far below it so an oversized section actually splits and
+# citations stay short enough to be useful (research.md, "Consequence for
+# AC4" -- do not raise this toward the window).
+EMBEDDING_WINDOW_TOKENS = 8192
+MAX_CHUNK_TOKENS = 800
+CHUNK_OVERLAP_TOKENS = 100
+
+_ENCODING_NAME = "cl100k_base"
+
+# A markdown ATX heading, level 1-6, e.g. "## Cover" or "### Half Cover {#half-cover}".
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+# The `{#anchor}` suffix some headings carry, stripped so the citable path
+# never leaks markdown syntax (124 headings in the shipped document).
+_ANCHOR_SUFFIX_RE = re.compile(r"\s*\{#[^}]*\}\s*$")
+
+HEADING_PATH_SEPARATOR = " › "
+
+
+@lru_cache(maxsize=1)
+def _encoding() -> tiktoken.Encoding:
+    """Loads the `cl100k_base` BPE table once per process. `tiktoken` would
+    otherwise download it over HTTPS on first use; the image pre-warms
+    `TIKTOKEN_CACHE_DIR` at build time (`docker/backend.Dockerfile`) so this
+    never touches the network at test or run time."""
+    return tiktoken.get_encoding(_ENCODING_NAME)
+
+
+def count_tokens(text: str) -> int:
+    """How many `cl100k_base` tokens `text` encodes to -- the unit both
+    `MAX_CHUNK_TOKENS` and `EMBEDDING_WINDOW_TOKENS` are measured in."""
+    return len(_encoding().encode(text))
+
+
+def _clean_heading_text(raw: str) -> str:
+    """Strips a trailing `{#anchor}` suffix so the citable heading path
+    never carries markdown-anchor syntax (AC2)."""
+    return _ANCHOR_SUFFIX_RE.sub("", raw).strip()
+
+
+def _sections(text: str) -> list[tuple[str, str]]:
+    """Splits `text` into `(heading_path, body)` pairs, one per markdown
+    heading in document order. `heading_path` is the ` › `-joined trail of
+    headings the line sits under, anchor-free (AC2); `body` is the raw text
+    directly under that heading, up to (not including) the next heading at
+    any level, stripped of leading/trailing blank lines. Text before the
+    first heading has no heading path to carry and is discarded."""
+    stack: list[str] = []
+    sections: list[tuple[str, list[str]]] = []
+    current_body: list[str] | None = None
+
+    for line in text.splitlines():
+        match = _HEADING_RE.match(line)
+        if match:
+            level = len(match.group(1))
+            heading_text = _clean_heading_text(match.group(2))
+            stack = [*stack[: level - 1], heading_text]
+            current_body = []
+            sections.append((HEADING_PATH_SEPARATOR.join(stack), current_body))
+            continue
+        if current_body is not None:
+            current_body.append(line)
+
+    return [(heading_path, "\n".join(body_lines).strip()) for heading_path, body_lines in sections]
+
+
+def _split_section(heading_path: str, body: str) -> list[RuleChunk]:
+    """One `RuleChunk` per `MAX_CHUNK_TOKENS`-token window of `body`, sharing
+    `heading_path` and gaining ascending ordinals from 0, each window
+    overlapping the previous by `CHUNK_OVERLAP_TOKENS` tokens so a citation
+    at a split boundary still reads in context (AC4). A section within the
+    cap yields exactly one chunk."""
+    tokens = _encoding().encode(body)
+    total = len(tokens)
+    if total <= MAX_CHUNK_TOKENS:
+        return [RuleChunk(heading_path=heading_path, ordinal=0, text=body, token_count=total)]
+
+    step = MAX_CHUNK_TOKENS - CHUNK_OVERLAP_TOKENS
+    chunks: list[RuleChunk] = []
+    start = 0
+    ordinal = 0
+    while start < total:
+        end = min(start + MAX_CHUNK_TOKENS, total)
+        window = tokens[start:end]
+        chunks.append(
+            RuleChunk(
+                heading_path=heading_path,
+                ordinal=ordinal,
+                text=_encoding().decode(window),
+                token_count=len(window),
+            )
+        )
+        if end == total:
+            break
+        ordinal += 1
+        start += step
+
+    return chunks
+
+
+def chunk_source(path: Path) -> list[RuleChunk]:
+    """Reads the stored SRD document at `path` and splits it into citable
+    `RuleChunk`s: one per heading section, further split on token
+    boundaries when a section exceeds `MAX_CHUNK_TOKENS` (AC2, AC4). A
+    heading with no body text (72 of them in the shipped document) yields
+    no chunk -- an empty citation would not be usable; merging it into a
+    neighbour would blur which heading the text actually belongs to
+    (research.md, "Open questions").
+    """
+    text = path.read_text(encoding="utf-8")
+    chunks: list[RuleChunk] = []
+    for heading_path, body in _sections(text):
+        if not body:
+            continue
+        chunks.extend(_split_section(heading_path, body))
+    return chunks
