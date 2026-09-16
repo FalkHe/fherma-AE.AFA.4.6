@@ -45,4 +45,4 @@ Sprint outcomes, dependency-ordered. Status: `open | running | done`.
 
 ## Proposals
 
-- Before any sprint lets SRD text reach a player's screen (05 onwards), decide whether we ship on the volunteer transcription of the publisher's PDF or budget a fidelity spot-check against the original first. The transcription carries its own "work in progress, no guarantees" warning. This is a decision for `decisions.md`, not a sprint's to make.
+- Decide whether we ship on the volunteer transcription of the publisher's PDF or budget a fidelity spot-check against the original first. The transcription carries its own "work in progress, no guarantees" warning. The forcing point is the first time the DM quotes a rule to a player, so it is tracked as issue #14 against the DM turn phase and assigned to the human.
