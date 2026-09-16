@@ -336,7 +336,12 @@ def chunk_source(path: Path) -> list[RuleChunk]:
     A `path` that cannot be read, or whose bytes are not valid UTF-8 text
     (a damaged stored file, however it got that way), raises
     `SrdSourceError` rather than letting `OSError`/`UnicodeDecodeError`
-    escape as a raw traceback (AC5)."""
+    escape as a raw traceback (AC5).
+
+    `token_count` on each returned chunk covers what actually gets sent to
+    the embedder -- `heading_path` joined to `text`, not `text` alone (WI3,
+    see `_split_section`) -- so it stays an honest figure even though `text`
+    itself is body-only throughout."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -355,11 +360,12 @@ def chunk_source(path: Path) -> list[RuleChunk]:
     return chunks
 
 
-# The gateway's own per-request cap is 300,000 tokens; chunks cap at
+# The gateway's own per-request cap is 300,000 tokens; the text actually
+# embedded per chunk -- heading trail joined to body (WI3) -- still caps at
 # `MAX_CHUNK_TOKENS` (800), so 256 * 800 = 204,800 stays comfortably under it
 # while 512 would not (decisions, "Decisions already made for you"). The
-# shipped corpus -- 2,132 chunks / 502,818 tokens -- takes 9 requests at
-# this size.
+# shipped corpus -- 2,132 chunks / 529,572 tokens once the trail is counted
+# -- takes 9 requests at this size.
 EMBED_BATCH_SIZE = 256
 
 
@@ -384,6 +390,15 @@ async def ingest(
     (AC4). `on_batch(chunks_done, chunks_total)` fires after each batch
     completes, for a caller that wants progress; this function itself never
     prints -- that is the command's job.
+
+    What is actually sent to `embed_texts` is `_embed_text(chunk.heading_path,
+    chunk.text)` -- the passage's heading trail joined to its body (WI3), not
+    `chunk.text` alone: a spell's own name lives in its heading, never in its
+    body, so leaving the trail out of what gets embedded makes every spell's
+    "Casting Time / Range / Components" block embed as an interchangeable
+    match for every other spell. The stored row's own `text` (below) stays
+    `chunk.text` -- body only -- unchanged: that is what a citation quotes
+    back, and it must never carry the heading a second time.
 
     The write is one short transaction: delete every existing row, insert
     the newly embedded ones, commit. It is never opened until every vector
@@ -435,7 +450,8 @@ async def ingest(
 
         for start in range(0, total, EMBED_BATCH_SIZE):
             batch = chunks[start : start + EMBED_BATCH_SIZE]
-            result = llm_service.embed_texts([chunk.text for chunk in batch], model=embedding_model)
+            texts = [_embed_text(chunk.heading_path, chunk.text) for chunk in batch]
+            result = llm_service.embed_texts(texts, model=embedding_model)
             vectors.extend(result.vectors)
             if result.usage.cost_usd is None:
                 any_batch_unpriced = True
