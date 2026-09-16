@@ -20,6 +20,7 @@ to the embedder (`heading_path` + `EMBED_TRAIL_SEPARATOR` + `text`), while
 quoted back as a citation.
 """
 
+import pytest
 import tiktoken
 
 from app.modules.srd import service
@@ -163,6 +164,41 @@ def test_oversized_section_split_parts_do_not_double_count_the_trail(tmp_path):
         assert chunk.token_count == service.count_tokens(joined_once)
         assert chunk.token_count != service.count_tokens(joined_twice)
         assert chunk.token_count <= service.MAX_CHUNK_TOKENS
+
+
+def test_a_long_heading_trail_never_lets_the_stride_skip_past_the_window(tmp_path):
+    # <- verification: the stride between windows (`step`) is a fixed
+    # `MAX_CHUNK_TOKENS - CHUNK_OVERLAP_TOKENS`, while the window's own
+    # ceiling shrinks with the heading trail's token cost -- a trail long
+    # enough (> `CHUNK_OVERLAP_TOKENS` tokens) would let `step` outrun the
+    # window and silently skip body tokens between two windows if nothing
+    # clamped it. This heading trail is deliberately far longer than any in
+    # the real corpus, to actually force that clamp.
+    long_heading = " ".join(f"headingword{i:05d}" for i in range(120))
+    body_words = [f"tok{i:05d}" for i in range(1500)]
+    body = " ".join(body_words)
+    markdown = f"# {long_heading}\n\n{body}\n"
+    chunks = service.chunk_source(_write(tmp_path, markdown))
+
+    assert len(chunks) >= 2, "fixture must force at least one split"
+    # No separator: each chunk's text is itself an exact decode of a token
+    # window, so back-to-back concatenation reconstructs every covered
+    # token faithfully (an inserted separator could itself split a body
+    # token that straddles a window boundary and falsely look "missing").
+    covered = "".join(c.text for c in chunks)
+    missing = [word for word in body_words if word not in covered]
+    assert missing == [], f"{len(missing)} body tokens were dropped between windows"
+
+
+def test_a_heading_trail_that_alone_exceeds_max_chunk_tokens_fails_loudly(tmp_path):
+    # <- verification: leaving zero room for any body text must never
+    # silently produce an empty or truncated passage -- it is a source the
+    # module cannot chunk at all.
+    huge_heading = " ".join(f"headingword{i:05d}" for i in range(1000))
+    markdown = f"# {huge_heading}\n\nShort body.\n"
+
+    with pytest.raises(service.SrdSourceError):
+        service.chunk_source(_write(tmp_path, markdown))
 
 
 def test_headings_that_collapse_to_the_same_trail_produce_distinct_positions(tmp_path):
