@@ -16,7 +16,7 @@ screen somebody can use, and the honest one — this phase ships constraints, ve
 
 | # | Outcome (one verifiable statement) | Depends on | Issue | Status |
 |---|---|---|---|---|
-| 01 | The scratch-database fixture SRD shipped becomes a shared one: `tests/srd` keeps passing unchanged over it, and a second module reaches a real, migrated database through the same helper | – | #20 | open |
+| 01 | The scratch-database fixture SRD shipped becomes a shared one: `tests/srd` keeps passing unchanged over it, and a second module reaches a real, migrated database through the same helper | – | #20 | running |
 | 02 | A campaign run and its owner survive a migration round trip: on a fresh database `upgrade head` accepts a campaign run with an owner row, an untitled run and a third run of the same campaign for the same user, while refusing the same user twice in one run and an unknown status — and `downgrade base` leaves the baseline exactly as it was | 01 | #15 | open |
 | 03 | Adventure progress cannot contradict itself: a campaign run records one row per adventure entered, refuses the same adventure twice, refuses a second *active* adventure beside the first, and refuses a row marked completed with no completion time | 02 | #16 | open |
 | 04 | The world's objects hold what the authored content declares and nothing it does not: a creature carries hit points and armour class, an item attempting either is refused, hit points above the maximum are refused, a carried item cannot also stand in a scene, a character's position names the adventure run that scopes its scene, and one member may hold two characters | 02, 03 | #17 | open |
