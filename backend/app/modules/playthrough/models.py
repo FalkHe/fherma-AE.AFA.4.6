@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -173,3 +174,39 @@ class GameObject(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class Event(Base):
+    """One narration, player action, dice roll, tool call or error recorded
+    in a campaign run's transcript. `visibility` splits what the player sees
+    from DM-only bookkeeping; `actor_member_id` is cleared, not cascaded,
+    when the acting member is removed, so the event itself survives.
+    `turn_id` has no referent yet -- no turn concept exists in this codebase
+    -- so it is a bare column with no foreign key. Immutable once written:
+    no `updated_at`. No ORM relationship."""
+
+    __tablename__ = "events"
+    __table_args__ = (
+        CheckConstraint(
+            "type IN ('narration','player_action','roll','tool_call','error')", name="type"
+        ),
+        CheckConstraint("visibility IN ('player','dm')", name="visibility"),
+        Index("ix_events_campaign_run_id_visibility_id", "campaign_run_id", "visibility", "id"),
+        Index("ix_events_campaign_run_id_turn_id", "campaign_run_id", "turn_id"),
+    )
+
+    id: Mapped[str] = mapped_column(ID_TYPE, primary_key=True, default=generate_id)
+    campaign_run_id: Mapped[str] = mapped_column(
+        ID_TYPE, ForeignKey("campaign_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_member_id: Mapped[str | None] = mapped_column(
+        ID_TYPE, ForeignKey("campaign_run_members.id", ondelete="SET NULL"), nullable=True
+    )
+    turn_id: Mapped[str | None] = mapped_column(ID_TYPE, nullable=True)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    visibility: Mapped[str] = mapped_column(String(8), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

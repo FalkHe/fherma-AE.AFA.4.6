@@ -47,6 +47,20 @@ Owns a player's playthrough of a campaign and who may act in it.
   deletes an `adventure_runs` row, so this is a defended edge, not a live
   path.
 
+- The `events` table (`models.py`): one row per narration, player action,
+  dice roll, tool call or error recorded in a campaign run's transcript --
+  `campaign_run_id` (`ON DELETE CASCADE`) and an optional `actor_member_id`
+  (`ON DELETE SET NULL` -- the event outlives the member); an optional
+  `turn_id` with no foreign key, since no turn concept exists yet; a `type`
+  limited to `narration` / `player_action` / `roll` / `tool_call` / `error`
+  and a `visibility` limited to `player` / `dm`; a non-nullable `payload`
+  JSONB column with no default; optional `prompt_tokens`,
+  `completion_tokens` and `cost_usd` (an exact `NUMERIC(12,6)`, never a
+  float); `created_at` only -- an event is never edited after it is
+  written. Indexed by `(campaign_run_id, visibility, id)` and by
+  `(campaign_run_id, turn_id)`; no unique constraint and no ORM
+  relationship.
+
 ## Surface
 
 No service, route, schema or CLI yet — this sprint delivers the tables
