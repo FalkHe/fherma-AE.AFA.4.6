@@ -2,14 +2,35 @@
 value sets, the one-member-per-run uniqueness and both `ON DELETE CASCADE`
 foreign keys, plus `AdventureRun`'s column shape, its two-value status set,
 one row per adventure, at most one adventure in progress per run, the
-finished/unfinished `completed_at` pairing and its cascade (`research.md`
-"Interfaces"). Engine-free -- everything here is read off the declarative
-model's `Table`, never a real connection."""
+finished/unfinished `completed_at` pairing and its cascade, plus
+`GameObject`'s column shape, the three-value `kind` set, the four fighting
+stats being present on a creature and nothing else, health staying within
+its maximum, position being whole or absent, a carried thing never also
+having a position, one thing per key per campaign run and no limit on how
+many things a member holds (`research.md` "Interfaces"). Engine-free --
+everything here is read off the declarative model's `Table`, never a real
+connection."""
 
-from sqlalchemy import CHAR, CheckConstraint, Index, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CHAR,
+    Boolean,
+    CheckConstraint,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import DateTime
 
-from app.modules.playthrough.models import AdventureRun, CampaignRun, CampaignRunMember
+from app.modules.playthrough.models import (
+    AdventureRun,
+    CampaignRun,
+    CampaignRunMember,
+    GameObject,
+)
 
 
 def _column(model, name):
@@ -291,3 +312,236 @@ def test_adventure_run_allows_only_one_active_adventure_per_campaign_run():
 def test_adventure_run_completed_at_is_set_exactly_when_status_is_completed():
     constraint = _check_constraint(AdventureRun, "ck_adventure_runs_completed_at")
     assert str(constraint.sqltext) == "(status = 'completed') = (completed_at IS NOT NULL)"
+
+
+def test_objects_table_name():
+    assert GameObject.__tablename__ == "objects"
+
+
+def test_object_id_is_the_shared_id_type_primary_key():
+    column = _column(GameObject, "id")
+    assert isinstance(column.type, CHAR)
+    assert column.type.length == 26
+    assert column.primary_key
+    assert column.default is not None
+
+
+def test_object_campaign_run_id_cascades_on_delete_and_is_indexed():
+    column = _column(GameObject, "campaign_run_id")
+    assert isinstance(column.type, CHAR)
+    assert column.type.length == 26
+    assert column.nullable is False
+    assert column.index is True
+    (fk,) = column.foreign_keys
+    assert fk.column.table.name == "campaign_runs"
+    assert fk.column.name == "id"
+    assert fk.ondelete == "CASCADE"
+
+
+def test_object_member_id_is_nullable_cascades_on_delete_and_is_indexed():
+    column = _column(GameObject, "member_id")
+    assert isinstance(column.type, CHAR)
+    assert column.type.length == 26
+    assert column.nullable is True
+    assert column.index is True
+    (fk,) = column.foreign_keys
+    assert fk.column.table.name == "campaign_run_members"
+    assert fk.column.name == "id"
+    assert fk.ondelete == "CASCADE"
+
+
+def test_object_member_id_has_no_unique_constraint_so_a_member_may_hold_many_things():
+    for constraint in GameObject.__table__.constraints:
+        if isinstance(constraint, UniqueConstraint):
+            assert [column.name for column in constraint.columns] != ["member_id"]
+    for index in GameObject.__table__.indexes:
+        assert not (index.unique and [column.name for column in index.columns] == ["member_id"])
+
+
+def test_object_kind_is_a_non_nullable_varchar_16_with_no_default():
+    column = _column(GameObject, "kind")
+    assert isinstance(column.type, String)
+    assert column.type.length == 16
+    assert column.nullable is False
+    assert column.default is None
+    assert column.server_default is None
+
+
+def test_object_kind_accepts_exactly_three_values():
+    constraint = _check_constraint(GameObject, "ck_objects_kind")
+    assert str(constraint.sqltext) == "kind IN ('creature','item','fixture')"
+
+
+def test_object_template_id_is_a_non_nullable_varchar_64_with_no_fk():
+    column = _column(GameObject, "template_id")
+    assert isinstance(column.type, String)
+    assert column.type.length == 64
+    assert column.nullable is False
+    assert not column.foreign_keys
+
+
+def test_object_instance_key_is_a_non_nullable_varchar_160():
+    column = _column(GameObject, "instance_key")
+    assert isinstance(column.type, String)
+    assert column.type.length == 160
+    assert column.nullable is False
+
+
+def test_object_name_is_a_non_nullable_varchar_120():
+    column = _column(GameObject, "name")
+    assert isinstance(column.type, String)
+    assert column.type.length == 120
+    assert column.nullable is False
+
+
+def test_object_source_adventure_id_is_a_nullable_varchar_64_with_no_fk():
+    column = _column(GameObject, "source_adventure_id")
+    assert isinstance(column.type, String)
+    assert column.type.length == 64
+    assert column.nullable is True
+    assert not column.foreign_keys
+
+
+def test_object_source_scene_id_is_a_nullable_varchar_64_with_no_fk():
+    column = _column(GameObject, "source_scene_id")
+    assert isinstance(column.type, String)
+    assert column.type.length == 64
+    assert column.nullable is True
+    assert not column.foreign_keys
+
+
+def test_object_adventure_run_id_is_nullable_sets_null_on_delete_and_is_not_indexed():
+    column = _column(GameObject, "adventure_run_id")
+    assert isinstance(column.type, CHAR)
+    assert column.type.length == 26
+    assert column.nullable is True
+    assert column.index is not True
+    (fk,) = column.foreign_keys
+    assert fk.column.table.name == "adventure_runs"
+    assert fk.column.name == "id"
+    assert fk.ondelete == "SET NULL"
+
+
+def test_object_scene_id_is_a_nullable_varchar_64():
+    column = _column(GameObject, "scene_id")
+    assert isinstance(column.type, String)
+    assert column.type.length == 64
+    assert column.nullable is True
+
+
+def test_object_owner_object_id_is_nullable_self_fk_cascades_on_delete_and_is_indexed():
+    column = _column(GameObject, "owner_object_id")
+    assert isinstance(column.type, CHAR)
+    assert column.type.length == 26
+    assert column.nullable is True
+    assert column.index is True
+    (fk,) = column.foreign_keys
+    assert fk.column.table.name == "objects"
+    assert fk.column.name == "id"
+    assert fk.ondelete == "CASCADE"
+
+
+def test_object_current_hp_is_a_nullable_integer():
+    column = _column(GameObject, "current_hp")
+    assert isinstance(column.type, Integer)
+    assert column.nullable is True
+
+
+def test_object_max_hp_is_a_nullable_integer():
+    column = _column(GameObject, "max_hp")
+    assert isinstance(column.type, Integer)
+    assert column.nullable is True
+
+
+def test_object_armour_class_is_a_nullable_integer():
+    column = _column(GameObject, "armour_class")
+    assert isinstance(column.type, Integer)
+    assert column.nullable is True
+
+
+def test_object_is_alive_is_a_nullable_boolean_with_no_default():
+    column = _column(GameObject, "is_alive")
+    assert isinstance(column.type, Boolean)
+    assert column.nullable is True
+    assert column.default is None
+    assert column.server_default is None
+
+
+def test_object_the_four_fighting_stats_are_present_on_a_creature_and_nothing_else():
+    constraint = _check_constraint(GameObject, "ck_objects_stats_creature_only")
+    assert str(constraint.sqltext) == (
+        "(kind = 'creature') = (current_hp IS NOT NULL) AND "
+        "(kind = 'creature') = (max_hp IS NOT NULL) AND "
+        "(kind = 'creature') = (armour_class IS NOT NULL) AND "
+        "(kind = 'creature') = (is_alive IS NOT NULL)"
+    )
+
+
+def test_object_health_stays_within_its_maximum():
+    constraint = _check_constraint(GameObject, "ck_objects_hp_range")
+    assert str(constraint.sqltext) == (
+        "(current_hp IS NULL AND max_hp IS NULL) OR "
+        "(current_hp IS NOT NULL AND max_hp IS NOT NULL AND "
+        "current_hp >= 0 AND current_hp <= max_hp)"
+    )
+
+
+def test_object_state_is_a_non_nullable_jsonb_column_defaulting_to_an_empty_object():
+    column = _column(GameObject, "state")
+    assert isinstance(column.type, JSONB)
+    assert column.nullable is False
+    assert column.server_default is not None
+    assert "{}" in str(column.server_default.arg)
+
+
+def test_object_created_at_is_a_timezone_aware_datetime_with_server_default():
+    column = _column(GameObject, "created_at")
+    assert isinstance(column.type, DateTime)
+    assert column.type.timezone is True
+    assert column.nullable is False
+    assert column.server_default is not None
+
+
+def test_object_updated_at_has_a_server_default_and_a_model_side_onupdate():
+    column = _column(GameObject, "updated_at")
+    assert isinstance(column.type, DateTime)
+    assert column.type.timezone is True
+    assert column.nullable is False
+    assert column.server_default is not None
+    assert column.onupdate is not None
+
+
+def test_object_allows_one_thing_per_key_per_campaign_run():
+    for constraint in GameObject.__table__.constraints:
+        if (
+            isinstance(constraint, UniqueConstraint)
+            and constraint.name == "uq_objects_campaign_run_id"
+        ):
+            assert [column.name for column in constraint.columns] == [
+                "campaign_run_id",
+                "instance_key",
+            ]
+            return
+    raise AssertionError("no UniqueConstraint named uq_objects_campaign_run_id")
+
+
+def test_object_position_is_whole_or_absent():
+    constraint = _check_constraint(GameObject, "ck_objects_position")
+    assert str(constraint.sqltext) == "(adventure_run_id IS NULL) = (scene_id IS NULL)"
+
+
+def test_object_a_carried_thing_has_no_position():
+    constraint = _check_constraint(GameObject, "ck_objects_carried")
+    assert str(constraint.sqltext) == (
+        "owner_object_id IS NULL OR (adventure_run_id IS NULL AND scene_id IS NULL)"
+    )
+
+
+def test_object_position_columns_are_indexed_together():
+    index = _index(GameObject, "ix_objects_adventure_run_id_scene_id")
+    assert isinstance(index, Index)
+    assert [column.name for column in index.columns] == ["adventure_run_id", "scene_id"]
+
+
+def test_objects_has_no_orm_relationship():
+    assert GameObject.__mapper__.relationships.keys() == []
