@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-17
 updated: 2026-09-17
-stage: draft
+stage: done
 ---
 # Progress: Sprint 01
 
@@ -23,8 +23,13 @@ Status: `open | running | done | failed`
 ## Issues
 - WI2 returned without writing anything — it blocked waiting for WI1's file instead of coding against the fixed interface; one retry, then done.
 - WI1 wrote its own behaviour tests at `backend/tests/test_database.py`; qa moved them to the plan's path and, in trimming, dropped AC1's "skips when no server answers" and the `test_<hex>` naming assertion. One retry restored both.
+- One intermediate commit was red: the acceptance test for the second module landed before the package it consumes. Both are on the branch, which is green, but the work items were committed out of order.
 - Carried from research, unchanged by this sprint: the `database` tests skip under `make backend-test` because `--no-deps` leaves no server reachable, not because the marker deselects them. On a machine with the dev stack up they run for real and pass. AC3 forbids redefining the target, so the behaviour stands.
 
 ## Backlog proposals
 
 ## Verify
+Round 1: changes-requested — the contributor guide still named the old fixture location.
+Round 2: approve — guide corrected, all gates re-run green. Approval posted as a note; GitLab refuses self-approval when author and reviewer are the same account.
+
+MR: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/17
