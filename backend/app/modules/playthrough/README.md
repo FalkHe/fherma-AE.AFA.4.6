@@ -26,6 +26,26 @@ Owns a player's playthrough of a campaign and who may act in it.
   `campaign_run_id` (a partial unique index, not a constraint). No scene
   column and no ORM relationship.
 - The `adventure_runs` migration (`alembic/versions/0004_adventure_runs.py`).
+- The `objects` table (`models.py`, class `GameObject` -- `Object` shadows a
+  builtin): a creature, item or fixture instantiated within a campaign run.
+  `campaign_run_id` (`ON DELETE CASCADE`, indexed) and an optional
+  `member_id` (`ON DELETE CASCADE`, indexed, never unique -- a member may
+  hold any number of things); a `kind` limited to `creature` / `item` /
+  `fixture`; `template_id`, `instance_key` and `name`; provenance
+  (`source_adventure_id`, `source_scene_id`, no FK, written once) kept
+  separate from position (`adventure_run_id` `ON DELETE SET NULL`,
+  `scene_id`, written on entry and every move) -- both columns of a pair or
+  neither; an optional self-referential `owner_object_id`
+  (`ON DELETE CASCADE`, indexed) for a carried thing, which then has no
+  position of its own; the four fighting stats `current_hp`, `max_hp`,
+  `armour_class`, `is_alive`, present if and only if `kind` is `creature`,
+  with `current_hp` always between `0` and `max_hp`; a `state` JSONB column
+  (`server_default '{}'`); `created_at` / `updated_at`. One row per
+  `(campaign_run_id, instance_key)` pair. No ORM relationship. Deleting an
+  `adventure_runs` row that a positioned object still points at is rejected
+  by the position check, not silently cleared -- nothing in this codebase
+  deletes an `adventure_runs` row, so this is a defended edge, not a live
+  path.
 
 ## Surface
 
