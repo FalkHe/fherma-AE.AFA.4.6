@@ -109,7 +109,7 @@ def test_ac1_migration_creates_adventure_runs_with_its_columns_and_no_scene_colu
             "updated_at",
         }
         assert expected <= column_names, column_names
-        assert "scene" not in column_names
+        assert not any("scene" in name for name in column_names), column_names
 
     asyncio.run(_inspect())
 
@@ -119,23 +119,49 @@ def test_ac2_repeat_adventure_in_the_same_campaign_run_violates_unique_constrain
     playthrough_db,
 ):
     # <- AC2: one row per adventure entered -- a second row for the same
-    # `(campaign_run_id, adventure_id)` raises.
+    # `(campaign_run_id, adventure_id)` raises on the *composite* unique
+    # constraint specifically. The second row is `completed` (not `active`),
+    # so the partial `uq_adventure_runs_active` index -- which only ever
+    # looks at `active` rows -- cannot be the one objecting; the error is
+    # asserted to name the composite constraint itself, so dropping it while
+    # leaving the partial index in place still fails this test.
     async def _scenario():
+        constraint_rows = await playthrough_db.execute(
+            text(
+                "SELECT constraint_name FROM information_schema.table_constraints "
+                "WHERE table_name = 'adventure_runs' AND constraint_type = 'UNIQUE'"
+            )
+        )
+        constraint_names = {row.constraint_name for row in constraint_rows}
+        assert len(constraint_names) == 1, constraint_names
+        composite_unique_constraint = next(iter(constraint_names))
+
         campaign_run_id = generate_id()
         await _insert_campaign_run(playthrough_db, campaign_run_id, campaign_id="ac2-campaign")
         await playthrough_db.commit()
 
         await _insert_adventure_run(
-            playthrough_db, generate_id(), campaign_run_id, adventure_id="ac2-adventure"
+            playthrough_db,
+            generate_id(),
+            campaign_run_id,
+            adventure_id="ac2-adventure",
+            status="active",
         )
         await playthrough_db.commit()
 
-        with pytest.raises((IntegrityError, DBAPIError)):
+        with pytest.raises((IntegrityError, DBAPIError)) as exc_info:
             await _insert_adventure_run(
-                playthrough_db, generate_id(), campaign_run_id, adventure_id="ac2-adventure"
+                playthrough_db,
+                generate_id(),
+                campaign_run_id,
+                adventure_id="ac2-adventure",
+                status="completed",
+                completed_at="2026-01-01T00:00:00+00:00",
             )
             await playthrough_db.commit()
         await playthrough_db.rollback()
+
+        assert composite_unique_constraint in str(exc_info.value)
 
     asyncio.run(_scenario())
 
