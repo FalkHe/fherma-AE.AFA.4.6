@@ -27,24 +27,25 @@ CONTENT  (static JSON in git, read-only at runtime)
       └── campaign.json lists its adventures, in order
 
 RUN  (Postgres, mutable)
-  User ──< PlaythroughMember >── Playthrough ──> campaign_id + content_version
-                                     ├──< AdventureRun ──> adventure_id
-                                     │        └──< Encounter
-                                     ├──< Object   (creature, item, fixture)
-                                     ├──< Event    (what happened)
-                                     └──< JournalEntry (what is true)   -- the journal
+  User ──< campaign_run_members >── campaign_runs ──> campaign_id + content_version
+                                        ├──< adventure_runs ──> adventure_id
+                                        ├──< objects  (creature, item, fixture)
+                                        ├──< events   (what happened)
+                                        └──< JournalEntry (what is true)  -- phase 6
 
 KNOWLEDGE
   SrdRule  (pgvector, owned by nobody, built by an ingest CLI)
 ```
 
-- A **Playthrough is one run of one campaign**, not of one adventure. The
+- A **campaign run is one run of one campaign**, not of one adventure. The
   player plays adventure after adventure inside it with the same character, so
-  the character, the objects and the journal all hang off the Playthrough and
+  the character, the objects and the journal all hang off the campaign run and
   survive adventure boundaries.
-- **Everything under a Playthrough cascades from it.** AdventureRun, Object,
-  Event and JournalEntry are owned rows with no independent existence; Encounter
-  hangs off AdventureRun. Deleting the run deletes them all.
+- **Everything under a campaign run cascades from it.** `adventure_runs`,
+  `objects`, `events` and the phase-6 journal are owned rows with no independent
+  existence. Nothing is ever deleted in normal operation (see Lifecycle); the
+  cascades are declared so that referential integrity holds if an operator purge
+  ever lands.
 - **Campaign is a full domain entity** with a stable id — it just lives in a
   file rather than a table. Campaign-Definition ids carry **no foreign key**;
   their referential integrity is loader-time validation, not a database
@@ -54,7 +55,7 @@ KNOWLEDGE
   returns in adventure 3 — is the normal shape of a campaign, and a monster
   stat block is reusable anywhere. So a Scene *references* a definition by id;
   it does not own one. This is the Campaign-Definition mirror of objects hanging
-  off the Playthrough: definition above the adventure, instance above the
+  off the campaign run: definition above the adventure, instance above the
   adventure run, and nothing about a returning character is per-adventure.
 - **SrdRule belongs to no run.** It is global knowledge, rebuilt by a CLI, and
   survives every playthrough. Entities are named for what they hold, never for
@@ -78,7 +79,7 @@ the backend's business, not a modelling decision.
 
 ### Content lives in git, runs pin a version
 
-A playthrough names the content revision it started with. Loaders serve exactly
+A campaign run names the content revision it started with. Loaders serve exactly
 that revision, so editing a scene never mutates a save in progress, and a
 campaign extended with a fourth adventure ships as a new version that only new
 runs pick up. Existing runs finish what they started — which is why objects can
@@ -90,21 +91,24 @@ served whole by the loader and never edited in place.
 ### Settings live on the run
 
 Model, temperature, DM personality and any system-prompt override belong to the
-Playthrough, so a save replays with the tone it was played at. There is no
+campaign run, so a save replays with the tone it was played at. There is no
 user-level settings row and no override chain. Personality is referenced by the
 id of a prompt file, never as stored prompt text.
 
 ### Ownership lives on the membership row
 
-Ownership is a role on `PlaythroughMember`; the Playthrough deliberately
+Ownership is a role on `campaign_run_members`; the campaign run deliberately
 carries no owner column, so there is one source of truth and authorisation is a
-join. One member row per run today; the table is the only concession the model
-makes to the multiplayer capstone (the second being one character per member).
+join. One member row per run today, and the membership table is the model's one
+concession to the multiplayer capstone. The count of characters is not a second
+concession but a plain consequence: the model lets a user control several
+characters in one campaign run; Stage-01 gameplay assumes one, and no constraint
+enforces it.
 
 ### One generic `objects` table, campaign-scoped
 
 Every interactable thing — the player character, allies, monsters, items,
-fixtures — is one row in `objects`, owned by the **Playthrough**, so a goblin
+fixtures — is one row in `objects`, owned by the **campaign run**, so a goblin
 that lost an arm in adventure 1 still has one arm in adventure 2. Instance keys
 are deterministic and stable across a run, so a Campaign-Definition can name an
 instance without a lookup table.
@@ -158,15 +162,21 @@ in [modules/content.md](../modules/content.md).
 
 ### Position
 
-The player's creature holds the scene it is in, and **that is the party's
-position** — there is no second copy on the adventure run. The active adventure
-is the AdventureRun whose status says so.
+**Position belongs to the creature, not the party**: the pair
+`(adventure_run_id, scene_id)` on its own `objects` row. No row claims a party
+position — splitting the party is ordinary play, so two creatures may stand in
+two scenes, and "who is here" is a query over `objects`, never stored. The
+adventure run scopes the scene id, which is unique only inside its adventure
+file; the active adventure is the `adventure_runs` row whose status says so.
 
 ### Combat
 
-Hit points and conditions already live on object rows, so an Encounter only
-holds what is transient to one fight: an ordered participant list, a round
-counter and a turn pointer. Participant state is never duplicated into it.
+**Deferred to the DM-turn phase; this phase builds no combat state.** There is
+no encounter row and no stored initiative order. Hit points and conditions
+already live on `objects` rows, so what a fight would add is only what is
+transient to it — an ordered participant list, a round counter and a turn
+pointer — and that shape is fixed by the phase that builds the turn loop driving
+it, not before.
 
 ### Situational facts have no flag store
 
@@ -216,11 +226,11 @@ the similarity operator and the cost line. Each vector row records which model
 embedded it, so a re-embed is detectable.
 
 They do **not** share a table. A shared pipeline is not a shared shape: a
-journal entry is owned by a playthrough, cascades with it, points at an object
+journal entry is owned by a campaign run, cascades with it, points at an object
 and is classified; an SRD rule is owned by nobody, is replaced wholesale by a
 re-ingest, and cites a section and a position within it. *Rejected alternative
 — one `embeddings` table with a scope key.* Every column above turns nullable,
-the foreign key to the playthrough stops being enforceable, and two lifecycles
+the foreign key to the campaign run stops being enforceable, and two lifecycles
 — cascade-with-the-run versus rebuild-the-corpus — hide behind a
 discriminator.
 
@@ -298,25 +308,23 @@ adventures, so it lives in the campaign-scoped file.
 
 | Action | Effect |
 |---|---|
-| Start a playthrough | Pin the campaign and content version; create the owner member row; instantiate **all** objects the pinned Campaign-Definition declares; generate the player's creature |
-| Start an adventure | Create an AdventureRun; put the player's creature in the entry scene |
+| Start a campaign run | Pin the campaign and content version; create the owner member row; instantiate **all** objects the pinned Campaign-Definition declares; generate the player's creature |
+| Start an adventure | Create an `adventure_runs` row; place that adventure's cast — the player's creature among them — in the scenes the content puts them in |
 | Archive | The player-facing removal gesture — a status change; nothing is deleted |
-| Purge | A Typer CLI command hard-deletes archived runs: cascade across members, adventure runs, objects, encounters, events and journal entries, plus the checkpointer thread and the portrait file |
 
-There is no `DELETE /playthroughs/{id}`. Real removal is an operator action.
+**Nothing is ever deleted**: archiving is a status change, there is no delete
+route and no purge command, so the event stream and the cost record it carries
+survive a run the player has put away.
 
 ## Known gaps
 
 Recorded, not solved:
 
-1. **Party position is undefined for multiplayer.** Position lives on the
-   player's creature; two characters can be in different scenes. The first thing
-   multiplayer must answer.
-2. **A mis-retrieved journal entry can contradict established canon**, because
+1. **A mis-retrieved journal entry can contradict established canon**, because
    situational facts have no deterministic flag store. Accepted trade for
    keeping the Adventure-Definition declarative.
-3. **Campaign-Definition integrity is loader-enforced, not database-enforced.**
+2. **Campaign-Definition integrity is loader-enforced, not database-enforced.**
    A typo in a scene's exits is caught at load time or not at all.
-4. **Object state correctness rests entirely on the per-kind Pydantic models.**
+3. **Object state correctness rests entirely on the per-kind Pydantic models.**
    If one write path bypasses them, the mechanics layer is no longer
    deterministic.

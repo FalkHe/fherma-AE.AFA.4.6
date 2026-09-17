@@ -20,8 +20,9 @@ human-in-the-loop — not game design. Everything else stays minimal: the
 smallest thing that makes the agent work and can be seen working.
 
 **Single player only.** Multiplayer is a capstone candidate, and the data
-model concedes exactly two things to it: a `playthrough_members` table as the
-ownership root, and one character per member. Rolls carry a visibility flag
+model concedes exactly one thing to it: a `campaign_run_members` table as the
+ownership root. The model also lets a user control several characters in one
+campaign run; Stage-01 gameplay assumes one. Rolls carry a visibility flag
 because hidden information is needed today, not because of multiplayer.
 
 ## The three domain layers
@@ -73,9 +74,10 @@ runs before it and rejects prompt injection and out-of-band state changes
 | `add_journal_entry()` / `search_journal()` | Long-term memory |
 | `ask_player(prompt, options)` | Human-in-the-loop interrupt |
 
-**Web client** — narration pane, state panel (HP, AC, inventory, turn order),
-filtered agent trace with roll log and rule citations, token and cost display,
-playthrough list, and a developer drawer (model, temperature, system prompt,
+**Web client** — narration pane, state panel (HP, AC, inventory; turn order is
+deferred to the DM-turn phase, which is where combat state gets built), filtered
+agent trace with roll log and rule citations, token and cost display, a
+campaign-run list, and a developer drawer (model, temperature, system prompt,
 DM personality) kept separate from the player UI.
 
 ## Deployment shape

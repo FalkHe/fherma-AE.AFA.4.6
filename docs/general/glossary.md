@@ -14,6 +14,8 @@ defined here — in code, in content and in the UI.
 - **Passive check** — `10 + bonus` against a DC, with no roll. Used for
   noticing hidden things without leaking that there was something to notice.
 - **Initiative** — `d20 + Dexterity bonus`, determines turn order in combat.
+  Combat is deferred to the DM-turn phase; this phase builds no combat state, so
+  nothing in the run model records an initiative order.
 - **SRD** — System Reference Document; the freely licensed subset of the D&D
   5e rules (SRD 5.1, CC-BY-4.0). The only corpus behind RAG here.
 
@@ -48,20 +50,27 @@ whole, where no ambiguity is possible.
   it. Template and instance are different things with different lifetimes:
   *creature* is the instance's word, *object template* is the blueprint's.
 - **Content version** — pinned-revision jargon: the revision of a campaign a
-  playthrough is pinned to. A campaign is extended by publishing a new version,
+  campaign run is pinned to. A campaign is extended by publishing a new version,
   never by editing one in place.
 
 ## Run terms
 
 Mutable state in Postgres. See [model.md](model.md).
 
-- **Playthrough** — one player's run of one campaign, spanning all of its
-  adventures with the same character. Deliberately not called a "session",
-  which is reserved for browser/HTTP sessions.
-- **Adventure run** — the progress of one adventure inside a playthrough.
-- **Object** — any interactable thing in a run: creature, item or fixture. The
-  player character is a creature.
+- **Campaign run** (`campaign_runs`) — one player's run of one campaign,
+  spanning all of its adventures with the same character; the row everything
+  else in a run hangs off. Not a "session" (reserved for browser/HTTP sessions)
+  and not a "playthrough", which names the activity and the module, never the
+  entity.
+- **Adventure run** (`adventure_runs`) — one adventure being played inside a
+  campaign run: which adventure was entered, when, and whether it is done.
+- **Object** (`objects`) — any interactable thing in a run: creature, item or
+  fixture. The player character is a creature.
+- **Seed player character** — the authored fixture a campaign run instantiates
+  the player's creature from until the generation agent lands.
 - **Encounter** — one fight: participant order, round counter, turn pointer.
+  Deferred to the DM-turn phase; this phase builds no combat state, so no run
+  entity carries it.
 - **Event** — *what happened*. The append-only stream of narration, player
   input, rolls, tool calls, errors and cost.
 - **Journal entry** — *what is true*. Agent-written, embedded durable canon,

@@ -46,12 +46,13 @@ date.
 2. **Play by saying what you do.** Free-form input each turn. The agent
    narrates, asks when it needs a decision, and resolves anything uncertain
    with a roll.
-3. **See the state that matters.** Hit points, armour class, inventory and
-   turn order beside the narration, so the player never has to track anything
-   on paper.
+3. **See the state that matters.** Hit points, armour class and inventory
+   beside the narration, so the player never has to track anything on paper.
+   Turn order joins them when combat lands, which is deferred to the DM-turn
+   phase.
 4. **Trust it by watching it work.** A filtered trace shows the visible rolls,
    the rules the agent cited and what each turn cost in tokens.
-5. **Come back later.** A playthrough list resumes exactly where play stopped,
+5. **Come back later.** A campaign-run list resumes exactly where play stopped,
    including everything the agent invented in between.
 
 ## Scope
