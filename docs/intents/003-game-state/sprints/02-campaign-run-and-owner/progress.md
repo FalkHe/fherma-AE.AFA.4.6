@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-17
 updated: 2026-09-17
-stage: draft
+stage: done
 ---
 # Progress: Sprint 02
 
@@ -25,3 +25,6 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: approve — all four criteria met, the check-constraint names confirmed against a live database, and the model compared to the migrated schema with no drift.
+
+MR: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/18
