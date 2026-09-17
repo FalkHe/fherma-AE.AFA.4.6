@@ -17,6 +17,15 @@ Owns a player's playthrough of a campaign and who may act in it.
   per `(campaign_run_id, user_id)` pair.
 - The `campaign_runs` / `campaign_run_members` migration
   (`alembic/versions/0003_campaign_runs.py`).
+- The `adventure_runs` table (`models.py`): one row per adventure entered
+  within a campaign run — `campaign_run_id` (`ON DELETE CASCADE`, no index)
+  and `adventure_id`, a `status` limited to `active` / `completed`
+  (`server_default "active"`), `started_at`, `completed_at` (set if and only
+  if `status` is `completed`) and `updated_at`. One row per
+  `(campaign_run_id, adventure_id)` pair, and at most one `active` row per
+  `campaign_run_id` (a partial unique index, not a constraint). No scene
+  column and no ORM relationship.
+- The `adventure_runs` migration (`alembic/versions/0004_adventure_runs.py`).
 
 ## Surface
 

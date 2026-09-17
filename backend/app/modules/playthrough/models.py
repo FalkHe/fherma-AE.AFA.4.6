@@ -4,11 +4,13 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -61,3 +63,39 @@ class CampaignRunMember(Base):
     )
     role: Mapped[str] = mapped_column(String(16), nullable=False, server_default="owner")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AdventureRun(Base):
+    """One adventure entered within a campaign run. `status` tracks whether
+    it is the one currently in progress (`active`) or has been played to
+    completion (`completed`); a run may have at most one `active` adventure
+    at a time, and `completed_at` is set if and only if `status` is
+    `completed`. No scene/position column here -- that belongs to the
+    creature, not the adventure, and lands in a later sprint."""
+
+    __tablename__ = "adventure_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "campaign_run_id", "adventure_id", name="uq_adventure_runs_campaign_run_id"
+        ),
+        CheckConstraint("status IN ('active','completed')", name="status"),
+        CheckConstraint("(status = 'completed') = (completed_at IS NOT NULL)", name="completed_at"),
+        Index(
+            "uq_adventure_runs_active",
+            "campaign_run_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(ID_TYPE, primary_key=True, default=generate_id)
+    campaign_run_id: Mapped[str] = mapped_column(
+        ID_TYPE, ForeignKey("campaign_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    adventure_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
