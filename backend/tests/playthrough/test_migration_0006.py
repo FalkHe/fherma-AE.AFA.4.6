@@ -99,8 +99,7 @@ def test_upgrade_creates_events_then_its_two_indexes(migration, recorded_calls):
     assert isinstance(columns["turn_id"].type, sa.CHAR)
     assert isinstance(columns["type"].type, sa.String) and columns["type"].type.length == 32
     assert (
-        isinstance(columns["visibility"].type, sa.String)
-        and columns["visibility"].type.length == 8
+        isinstance(columns["visibility"].type, sa.String) and columns["visibility"].type.length == 8
     )
     assert isinstance(columns["payload"].type, JSONB)
     assert columns["payload"].server_default is None
@@ -140,7 +139,9 @@ def test_upgrade_creates_events_then_its_two_indexes(migration, recorded_calls):
     checks = _constraints(table_args, sa.CheckConstraint)
     checks_by_name = {check.name: str(check.sqltext) for check in checks}
     assert set(checks_by_name) == {"type", "visibility"}
-    assert checks_by_name["type"] == "type IN ('narration','player_action','roll','tool_call','error')"
+    assert checks_by_name["type"] == (
+        "type IN ('narration','player_action','roll','tool_call','error')"
+    )
     assert checks_by_name["visibility"] == "visibility IN ('player','dm')"
 
     index_calls = recorded_calls[1:]
