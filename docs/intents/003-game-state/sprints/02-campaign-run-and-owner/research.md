@@ -7,10 +7,8 @@ created: 2026-09-17
 
 ## Facts
 
-**Blocker.** Sprint 01 is *not* in this branch's history (`git merge-base --is-ancestor
-sprint/003-01-shared-database-fixture HEAD` → no; `backend/tests/database.py` and
-`backend/tests/playthrough/` are absent here, present on `sprint/003-01-shared-database-fixture`).
-Every AC rides on `playthrough_db`, so 01 must land in this branch's base first.
+**Blocker, since resolved.** Sprint 01 merged into `main` as `72f441b`; this branch is rebased on it, so
+`tests/database.py` and `tests/playthrough/` are present and every AC's fixture is available.
 
 **Fixture contract (from 01's branch).** `tests/database.py:90` `scratch_db(**env_pins)` — generator,
 `pytest.skip` when no server, scratch database `test_<hex>`, pins `DATABASE_URL`, runs `alembic upgrade head`
