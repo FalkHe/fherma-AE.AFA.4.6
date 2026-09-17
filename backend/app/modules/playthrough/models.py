@@ -1,10 +1,12 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -12,6 +14,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -96,6 +99,77 @@ class AdventureRun(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class GameObject(Base):
+    """A creature, item or fixture instantiated within a campaign run
+    (`__tablename__ = "objects"`; named `GameObject` because `Object` shadows
+    a builtin). `source_adventure_id`/`source_scene_id` are provenance,
+    written once at instantiation; `adventure_run_id`/`scene_id` are
+    position, written on entry and every move -- the two pairs are
+    deliberately unconstrained against each other. A thing with an owner
+    (carried) never also has a position, and position is always both
+    columns or neither. The four fighting stats (`current_hp`, `max_hp`,
+    `armour_class`, `is_alive`) exist if and only if `kind` is `creature`.
+    No ORM relationship."""
+
+    __tablename__ = "objects"
+    __table_args__ = (
+        UniqueConstraint("campaign_run_id", "instance_key", name="uq_objects_campaign_run_id"),
+        CheckConstraint("kind IN ('creature','item','fixture')", name="kind"),
+        CheckConstraint(
+            "(kind = 'creature') = (current_hp IS NOT NULL) AND "
+            "(kind = 'creature') = (max_hp IS NOT NULL) AND "
+            "(kind = 'creature') = (armour_class IS NOT NULL) AND "
+            "(kind = 'creature') = (is_alive IS NOT NULL)",
+            name="stats_creature_only",
+        ),
+        CheckConstraint(
+            "(current_hp IS NULL AND max_hp IS NULL) OR "
+            "(current_hp IS NOT NULL AND max_hp IS NOT NULL AND "
+            "current_hp >= 0 AND current_hp <= max_hp)",
+            name="hp_range",
+        ),
+        CheckConstraint("(adventure_run_id IS NULL) = (scene_id IS NULL)", name="position"),
+        CheckConstraint(
+            "owner_object_id IS NULL OR (adventure_run_id IS NULL AND scene_id IS NULL)",
+            name="carried",
+        ),
+        Index("ix_objects_adventure_run_id_scene_id", "adventure_run_id", "scene_id"),
+    )
+
+    id: Mapped[str] = mapped_column(ID_TYPE, primary_key=True, default=generate_id)
+    campaign_run_id: Mapped[str] = mapped_column(
+        ID_TYPE, ForeignKey("campaign_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    member_id: Mapped[str | None] = mapped_column(
+        ID_TYPE,
+        ForeignKey("campaign_run_members.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    template_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    instance_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    source_adventure_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_scene_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    adventure_run_id: Mapped[str | None] = mapped_column(
+        ID_TYPE, ForeignKey("adventure_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    scene_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    owner_object_id: Mapped[str | None] = mapped_column(
+        ID_TYPE, ForeignKey("objects.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    current_hp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_hp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    armour_class: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_alive: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    state: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
