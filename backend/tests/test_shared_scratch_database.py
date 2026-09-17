@@ -6,10 +6,12 @@ shared"
 fixture -- every test here drives it directly with `next()` / `close()` /
 `throw()`, exactly as its own callers (`tests/srd/conftest.py`'s `srd_db`,
 `tests/playthrough/conftest.py`'s `playthrough_db`) do via `yield from`.
-Marked `database` throughout: `scratch_db` itself `pytest.skip`s when no
-Postgres server answers (part of its own contract, not asserted again
-here), which is exactly what keeps these tests green-but-skipped under
-`make backend-test` (`--no-deps`) and real under `make backend-test-db`.
+Marked `database` except the unreachable-server case: that one proves its
+point with a deliberately bad `DATABASE_URL` and never needs a real
+Postgres, so it stays unmarked and keeps running under `make backend-test`
+(`--no-deps`) rather than being skipped alongside the rest. Every other
+test here is real-database-backed and skips cleanly there, running for
+real under `make backend-test-db`.
 
 No `pytest-asyncio` in this suite (`AGENTS.md` gotchas): every async call is
 wrapped in a single `asyncio.run(...)`.
@@ -17,12 +19,15 @@ wrapped in a single `asyncio.run(...)`.
 
 import asyncio
 import os
+import re
 
 import psycopg
 import pytest
 from sqlalchemy import text
 
 from tests.database import scratch_db
+
+_SCRATCH_NAME_PATTERN = re.compile(r"^test_[0-9a-f]{16}$")
 
 
 def _psycopg_conninfo(sqlalchemy_url: str) -> str:
@@ -39,6 +44,34 @@ def _database_exists(admin_url: str, name: str) -> bool:
     with psycopg.connect(_psycopg_conninfo(admin_url), autocommit=True) as conn:
         result = conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
         return result.fetchone() is not None
+
+
+def test_ac1_skips_cleanly_when_no_server_answers(monkeypatch):
+    # <- AC1: an unreachable admin server produces a `pytest.skip`, not an
+    # error bubbling out of the generator -- the thing that keeps `make
+    # backend-test` (`--no-deps`) green with no Postgres in the picture.
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://app:app@127.0.0.1:1/nope")
+
+    gen = scratch_db()
+    with pytest.raises(pytest.skip.Exception):
+        next(gen)
+
+
+@pytest.mark.database
+def test_ac1_creates_a_database_named_test_plus_a_hex_suffix():
+    # <- AC1: the scratch database itself, not just its URL, is named
+    # `test_<hex>` -- checked against the real `pg_database` catalog.
+    admin_url = os.environ["DATABASE_URL"]
+
+    gen = scratch_db()
+    try:
+        next(gen)
+        scratch_name = os.environ["DATABASE_URL"].rsplit("/", 1)[-1]
+
+        assert _SCRATCH_NAME_PATTERN.match(scratch_name), scratch_name
+        assert _database_exists(admin_url, scratch_name)
+    finally:
+        gen.close()
 
 
 @pytest.mark.database
