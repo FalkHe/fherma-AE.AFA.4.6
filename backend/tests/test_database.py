@@ -114,7 +114,5 @@ def test_ac_drops_database_even_after_a_failure():
 
     conninfo = database._psycopg_conninfo(admin_database_url)
     with psycopg.connect(conninfo, autocommit=True) as admin_conn:
-        result = admin_conn.execute(
-            "SELECT 1 FROM pg_database WHERE datname = %s", (scratch_name,)
-        )
+        result = admin_conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (scratch_name,))
         assert result.fetchone() is None
