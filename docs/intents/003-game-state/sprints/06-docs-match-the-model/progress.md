@@ -30,3 +30,6 @@ Four things found while writing, all outside the 19-item correction list and the
 - The glossary still heads two entries with entity nouns the agreed vocabulary avoids in prose. As head-words they may earn the exception.
 
 ## Verify
+Round 1: approve — AC1-AC7 all OK. All 19 §7 items verified in the file each names, plus the two decided departures (`model.md:57`; the Purge row removed with D3 restated once). `grep -n Playthrough docs/general/` is empty; the three lower-case hits (`model.md:61`, `architecture.md:46`, `glossary.md:63`) are activity prose. `Encounter`/`Initiative` survive only where marked deferred (`model.md:175`, `glossary.md:16`, `:71`) — the one unmarked hit, `architecture.md:73`, is assigned to phase 8 by `roadmap/Stage-01/README.md:388`, so leaving it is correct, not a gap. AC5: `docs/modules/playthrough.md` matches `backend/app/modules/playthrough/models.py` column by column and states the empty surface (§8), which `ls` confirms (`__init__.py`, `models.py`, `README.md` only). AC6: `git diff main..HEAD -- docs/roadmap/` is 6 rows in one file, each original question intact with the closure appended. AC7: no path under `backend/` or `frontend/` in the diff.
+
+MR: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/22
