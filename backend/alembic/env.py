@@ -11,6 +11,7 @@ from app.core.settings import get_settings
 
 # A new module adds one line here. No autodiscovery.
 from app.modules.auth import models as auth_models  # noqa: F401
+from app.modules.playthrough import models as playthrough_models  # noqa: F401
 from app.modules.srd import models as srd_models  # noqa: F401
 from app.modules.users import models as users_models  # noqa: F401
 
