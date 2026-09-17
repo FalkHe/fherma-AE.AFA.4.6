@@ -25,11 +25,11 @@ Aiming for ≥2 medium + 1 hard.
 
 | Brief task | Mechanic |
 |---|---|
-| Medium 1 — token usage and cost | Per turn and per playthrough, summed from the event stream |
+| Medium 1 — token usage and cost | Per turn and per campaign run, summed from the event stream |
 | Medium 2 — long/short-term memory | LangGraph checkpointer (short), journal entries (long) |
 | Medium 8 — security guard, dev/user split | Guard node before the agent; developer drawer |
 | Hard 1 — agentic RAG | On-demand SRD lookup the agent may re-query |
-| Easy 2 — personality | DM tone selectable per playthrough |
+| Easy 2 — personality | DM tone selectable per campaign run |
 | Easy 4 — model settings | Model and temperature in the developer drawer |
 
 Optional Langfuse tracing (`compose.langfuse.yaml`) covers hard task 2 when
