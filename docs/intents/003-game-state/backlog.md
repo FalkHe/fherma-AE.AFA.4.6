@@ -21,7 +21,7 @@ screen somebody can use, and the honest one — this phase ships constraints, ve
 | 03 | Adventure progress cannot contradict itself: a campaign run records one row per adventure entered, refuses the same adventure twice, refuses a second *active* adventure beside the first, and refuses a row marked completed with no completion time | 02 | #16 | done |
 | 04 | The world's objects hold what the authored content declares and nothing it does not: a creature carries hit points and armour class, an item attempting either is refused, hit points above the maximum are refused, a carried item cannot also stand in a scene, a character's position names the adventure run that scopes its scene, and one member may hold two characters | 02, 03 | #17 | done |
 | 05 | The transcript is append-only, ordered and filterable: events written to a campaign run read back in write order by id alone, a DM-visibility event is absent from the player read while still present in the table, an unknown type or visibility is refused, and per-turn and per-run cost are exact sums over the rows | 02 | #18 | done |
-| 06 | The general docs describe the model that exists: nothing in `docs/general/` names an entity the schema does not have, position reads as the creature's, combat and turn order read as deferred, several characters per user is stated, and the module index points at the new module doc | 02, 03, 04, 05 | #19 | running |
+| 06 | The general docs describe the model that exists: nothing in `docs/general/` names an entity the schema does not have, position reads as the creature's, combat and turn order read as deferred, several characters per user is stated, and the module index points at the new module doc | 02, 03, 04, 05 | #19 | done |
 
 ## Notes
 
