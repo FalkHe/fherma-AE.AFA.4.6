@@ -488,16 +488,20 @@ def test_ac5_a_member_may_hold_two_objects_but_instance_key_is_unique_per_campai
 def test_ac5_downgrading_this_step_drops_objects_and_leaves_earlier_tables_intact(
     playthrough_db,
 ):
-    # <- AC5: `alembic downgrade -1` drops `objects` and leaves the earlier
-    # tables (`campaign_runs`, `campaign_run_members`, `adventure_runs`)
-    # intact.
+    # <- AC5: undoing this step's migration drops `objects` and leaves the
+    # earlier tables (`campaign_runs`, `campaign_run_members`,
+    # `adventure_runs`) intact. Named as revision `0004` (this step's
+    # `down_revision`), not `-1`: `-1` resolves against the database's
+    # *current* revision, so it silently targets whatever the chain's head
+    # has grown to by the time a later sprint's migration lands on top --
+    # naming the revision keeps this assertion true as the chain grows.
     async def _rollback_open_transaction():
         await playthrough_db.rollback()
 
     asyncio.run(_rollback_open_transaction())
 
     downgrade = subprocess.run(
-        ["alembic", "downgrade", "-1"],
+        ["alembic", "downgrade", "0004"],
         cwd=BACKEND_ROOT,
         capture_output=True,
         text=True,

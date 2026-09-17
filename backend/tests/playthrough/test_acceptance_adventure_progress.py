@@ -302,15 +302,20 @@ def test_ac4_status_and_completed_at_are_tied_together_and_cascade_deletes(playt
 
 @pytest.mark.database
 def test_ac5_downgrading_this_step_drops_the_table_and_leaves_sprint_02_intact(playthrough_db):
-    # <- AC5: `alembic downgrade -1` drops `adventure_runs` and leaves
-    # sprint 02's `campaign_runs` and `campaign_run_members` intact.
+    # <- AC5: undoing this step's migration drops `adventure_runs` and
+    # leaves sprint 02's `campaign_runs` and `campaign_run_members` intact.
+    # Named as revision `0003` (this step's `down_revision`), not `-1`: `-1`
+    # resolves against the database's *current* revision, so it silently
+    # targets whatever the chain's head has grown to by the time a later
+    # sprint's migration lands on top -- it dropped this sprint's own table
+    # instead of `adventure_runs` once sprint 04 added `0005`.
     async def _rollback_open_transaction():
         await playthrough_db.rollback()
 
     asyncio.run(_rollback_open_transaction())
 
     downgrade = subprocess.run(
-        ["alembic", "downgrade", "-1"],
+        ["alembic", "downgrade", "0003"],
         cwd=BACKEND_ROOT,
         capture_output=True,
         text=True,
