@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-17
 updated: 2026-09-17
-stage: draft
+stage: done
 ---
 # Progress: Sprint 04
 
@@ -27,3 +27,6 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: approve — every criterion probed against a live database rather than read off the SQL, including the one that mattered most: an item carrying any single fighting stat is refused, and health with no maximum is refused. No drift between the declared model and the migrated schema. The previous sprint's undo test was judged intact after the revision was named rather than counted.
+
+MR: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/20
