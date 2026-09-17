@@ -122,7 +122,9 @@ def test_upgrade_creates_campaign_runs_then_members_then_the_index(migration, re
     uniques = _constraints(member_args, sa.UniqueConstraint)
     assert len(uniques) == 1
     assert uniques[0].name == "uq_campaign_run_members_campaign_run_id"
-    assert [col.name for col in uniques[0].columns] == ["campaign_run_id", "user_id"]
+    # Unattached (never fed to a real `Table`), so column names live in
+    # `_pending_colargs`, not the resolved `.columns` collection.
+    assert uniques[0]._pending_colargs == ["campaign_run_id", "user_id"]
 
     fks = _constraints(member_args, sa.ForeignKeyConstraint)
     fk_by_name = {fk.name: fk for fk in fks}
@@ -132,12 +134,15 @@ def test_upgrade_creates_campaign_runs_then_members_then_the_index(migration, re
     }
     for fk in fks:
         assert fk.ondelete == "CASCADE"
-    assert [e.column.table.name for e in fk_by_name[
-        "fk_campaign_run_members_campaign_run_id_campaign_runs"
-    ].elements] == ["campaign_runs"]
-    assert [e.column.table.name for e in fk_by_name[
-        "fk_campaign_run_members_user_id_users"
-    ].elements] == ["users"]
+    # Unattached constraints never resolve `.column`, so read the raw
+    # "table.column" target string instead.
+    assert [
+        e.target_fullname
+        for e in fk_by_name["fk_campaign_run_members_campaign_run_id_campaign_runs"].elements
+    ] == ["campaign_runs.id"]
+    assert [
+        e.target_fullname for e in fk_by_name["fk_campaign_run_members_user_id_users"].elements
+    ] == ["users.id"]
 
     member_checks = _constraints(member_args, sa.CheckConstraint)
     assert len(member_checks) == 1
