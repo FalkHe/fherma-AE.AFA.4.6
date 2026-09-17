@@ -7,9 +7,15 @@ finished/unfinished `completed_at` pairing and its cascade, plus
 stats being present on a creature and nothing else, health staying within
 its maximum, position being whole or absent, a carried thing never also
 having a position, one thing per key per campaign run and no limit on how
-many things a member holds (`research.md` "Interfaces"). Engine-free --
-everything here is read off the declarative model's `Table`, never a real
-connection."""
+many things a member holds, plus `Event`'s column shape and order, the
+five-value `type` set and the two-value `visibility` set, `cost_usd` typed
+as an exact decimal rather than a float, the cascade on `campaign_run_id`
+and the clear-on-delete on `actor_member_id`, exactly two indexes with no
+unique constraint, no sequence column and no `updated_at`
+(`research.md` "Interfaces"). Engine-free -- everything here is read off
+the declarative model's `Table`, never a real connection."""
+
+from decimal import Decimal
 
 from sqlalchemy import (
     CHAR,
@@ -29,6 +35,7 @@ from app.modules.playthrough.models import (
     AdventureRun,
     CampaignRun,
     CampaignRunMember,
+    Event,
     GameObject,
 )
 
@@ -545,3 +552,168 @@ def test_object_position_columns_are_indexed_together():
 
 def test_objects_has_no_orm_relationship():
     assert GameObject.__mapper__.relationships.keys() == []
+
+
+def test_events_table_name():
+    assert Event.__tablename__ == "events"
+
+
+def test_events_primary_key_is_named_pk_events():
+    assert Event.__table__.primary_key.name == "pk_events"
+
+
+def test_events_column_order_has_no_sequence_column():
+    assert [column.name for column in Event.__table__.columns] == [
+        "id",
+        "campaign_run_id",
+        "actor_member_id",
+        "turn_id",
+        "type",
+        "visibility",
+        "payload",
+        "prompt_tokens",
+        "completion_tokens",
+        "cost_usd",
+        "created_at",
+    ]
+
+
+def test_event_id_is_the_shared_id_type_primary_key():
+    column = _column(Event, "id")
+    assert isinstance(column.type, CHAR)
+    assert column.type.length == 26
+    assert column.primary_key
+    assert column.default is not None
+
+
+def test_event_campaign_run_id_is_non_nullable_and_cascades_on_delete():
+    column = _column(Event, "campaign_run_id")
+    assert isinstance(column.type, CHAR)
+    assert column.type.length == 26
+    assert column.nullable is False
+    (fk,) = column.foreign_keys
+    assert fk.column.table.name == "campaign_runs"
+    assert fk.column.name == "id"
+    assert fk.ondelete == "CASCADE"
+
+
+def test_event_actor_member_id_is_nullable_and_cleared_on_delete():
+    column = _column(Event, "actor_member_id")
+    assert isinstance(column.type, CHAR)
+    assert column.type.length == 26
+    assert column.nullable is True
+    (fk,) = column.foreign_keys
+    assert fk.column.table.name == "campaign_run_members"
+    assert fk.column.name == "id"
+    assert fk.ondelete == "SET NULL"
+
+
+def test_event_turn_id_is_a_nullable_shared_id_type_with_no_fk():
+    column = _column(Event, "turn_id")
+    assert isinstance(column.type, CHAR)
+    assert column.type.length == 26
+    assert column.nullable is True
+    assert not column.foreign_keys
+
+
+def test_event_type_is_a_non_nullable_varchar_32_with_no_default():
+    column = _column(Event, "type")
+    assert isinstance(column.type, String)
+    assert column.type.length == 32
+    assert column.nullable is False
+    assert column.default is None
+    assert column.server_default is None
+
+
+def test_event_type_accepts_exactly_five_values():
+    constraint = _check_constraint(Event, "ck_events_type")
+    assert str(constraint.sqltext) == (
+        "type IN ('narration','player_action','roll','tool_call','error')"
+    )
+
+
+def test_event_visibility_is_a_non_nullable_varchar_8_with_no_default():
+    column = _column(Event, "visibility")
+    assert isinstance(column.type, String)
+    assert column.type.length == 8
+    assert column.nullable is False
+    assert column.default is None
+    assert column.server_default is None
+
+
+def test_event_visibility_accepts_exactly_two_values():
+    constraint = _check_constraint(Event, "ck_events_visibility")
+    assert str(constraint.sqltext) == "visibility IN ('player','dm')"
+
+
+def test_event_payload_is_a_non_nullable_jsonb_column_with_no_default():
+    column = _column(Event, "payload")
+    assert isinstance(column.type, JSONB)
+    assert column.nullable is False
+    assert column.default is None
+    assert column.server_default is None
+
+
+def test_event_prompt_tokens_is_a_nullable_integer():
+    column = _column(Event, "prompt_tokens")
+    assert isinstance(column.type, Integer)
+    assert column.nullable is True
+
+
+def test_event_completion_tokens_is_a_nullable_integer():
+    column = _column(Event, "completion_tokens")
+    assert isinstance(column.type, Integer)
+    assert column.nullable is True
+
+
+def test_event_cost_usd_is_a_nullable_exact_decimal_never_a_float():
+    column = _column(Event, "cost_usd")
+    assert isinstance(column.type, Numeric)
+    assert column.type.precision == 12
+    assert column.type.scale == 6
+    assert column.nullable is True
+    assert column.type.asdecimal is True
+    assert column.type.python_type is Decimal
+
+
+def test_event_created_at_is_a_timezone_aware_datetime_with_server_default_and_no_onupdate():
+    column = _column(Event, "created_at")
+    assert isinstance(column.type, DateTime)
+    assert column.type.timezone is True
+    assert column.nullable is False
+    assert column.server_default is not None
+    assert column.onupdate is None
+
+
+def test_events_has_no_updated_at_column():
+    assert "updated_at" not in Event.__table__.columns
+
+
+def test_events_has_exactly_two_indexes():
+    assert {index.name for index in Event.__table__.indexes} == {
+        "ix_events_campaign_run_id_visibility_id",
+        "ix_events_campaign_run_id_turn_id",
+    }
+
+
+def test_event_campaign_run_id_visibility_id_index_column_order():
+    index = _index(Event, "ix_events_campaign_run_id_visibility_id")
+    assert [column.name for column in index.columns] == [
+        "campaign_run_id",
+        "visibility",
+        "id",
+    ]
+
+
+def test_event_campaign_run_id_turn_id_index_column_order():
+    index = _index(Event, "ix_events_campaign_run_id_turn_id")
+    assert [column.name for column in index.columns] == ["campaign_run_id", "turn_id"]
+
+
+def test_events_has_no_unique_constraint():
+    for constraint in Event.__table__.constraints:
+        assert not isinstance(constraint, UniqueConstraint)
+
+
+def test_events_has_no_orm_relationship():
+    assert Event.__mapper__.relationships.keys() == []
