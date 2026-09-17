@@ -21,6 +21,7 @@ trail, not a description of the current state.
 | Doc | Contents |
 |---|---|
 | [modules/content.md](modules/content.md) | The adventure-content schema, its directory layout and versioning, and the authoring guide |
+| [modules/playthrough.md](modules/playthrough.md) | The state a game accumulates: campaign runs, membership, adventure runs, objects and events — five tables, no surface yet |
 
 ## Roadmap
 
