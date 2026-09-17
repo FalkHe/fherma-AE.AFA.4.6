@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-17
 updated: 2026-09-17
-stage: draft
+stage: done
 ---
 # Progress: Sprint 05
 
@@ -24,6 +24,10 @@ Status: `open | running | done | failed`
 `make lint` green · `make test` 671 backend + 53 frontend · `make backend-test-db` 32 passed.
 
 ## Backlog proposals
+- Write order by id is guaranteed within one process only. Two events written in the same millisecond by two workers could come back inverted. Nothing writes events yet and the append path is one transaction, but the phase that builds it should know.
 - Sprint 02's `temperature` column is declared as a decimal in the database but annotated as a floating-point number in the model. Harmless while nothing writes it, wrong once something does. Not this sprint's business to correct.
 
 ## Verify
+Round 1: approve — every criterion probed against a live database. Write order by id was shown to be provable rather than lucky: the generator is monotonic within a millisecond over twenty thousand ids, and the database sorts them exactly as the application does. The cost total comes back as an exact decimal, and no total is stored anywhere. No drift between the declared model and the migrated schema.
+
+MR: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/21
