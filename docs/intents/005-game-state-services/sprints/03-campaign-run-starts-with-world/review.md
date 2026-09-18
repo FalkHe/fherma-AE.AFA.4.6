@@ -32,3 +32,9 @@ of it placed yet. A player can also list their games and open one.
 Brief: docs/intents/005-game-state-services/sprints/03-campaign-run-starts-with-world/brief.md
 
 ## Verdict
+
+Round 1: approve — a player can start a game, and starting it brings the whole declared world into being with
+nothing placed yet; the list and the single read show only the caller's games, and another player's game is
+indistinguishable from one that does not exist. Three endpoints rather than the brief's two is the right call:
+what ships is the game's row, not its state. Two starts of one campaign give two independent games, so a
+finished adventure can be replayed.

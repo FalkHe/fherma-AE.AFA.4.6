@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-18
 updated: 2026-09-18
-stage: draft
+stage: done
 ---
 # Progress: Sprint 03
 
@@ -35,3 +35,12 @@ Status: `open | running | done | failed`
   three carried objects. No shipped content does this yet; sprint 06 will meet it first.
 
 ## Verify
+
+Round 1: approve — AC1-AC4 all OK. The verifier re-ran the gates, checked the list scoping and the
+foreign/unknown equivalence against a real database, and confirmed no existing test lost coverage (the four
+touched test files are pure additions).
+
+Non-blocking notes it raised, for whoever picks up the next sprint: the `IntegrityError` catch in
+`start_campaign_run` is wider than the duplicate-key case it names, and is the pattern later sprints will copy;
+`list_versions(...)[-1]` raises on a campaign directory with no version in it; `playthrough/service.py` imports
+`content.errors` and `content.schemas` alongside its `service.py`, slightly wider than the module boundary rule.
