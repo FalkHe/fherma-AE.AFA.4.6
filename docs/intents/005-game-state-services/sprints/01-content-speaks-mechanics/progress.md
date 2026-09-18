@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-18
 updated: 2026-09-18
-stage: draft
+stage: done
 ---
 # Progress: Sprint 01
 
@@ -35,3 +35,8 @@ Status: `open | running | done | failed`
 Round 1: changes-requested — `backend/tests/content/test_shipped_tree.py` was rewritten wholesale, dropping five
 shipped-content regression tests this sprint did not invalidate (placements, `bypassed_by` cardinalities,
 `definitions/` layout, no-old-keys); AC1-AC4 all OK.
+
+Round 2: changes-requested — the seven named tests are restored unweakened, but
+`test_loaded_campaign_exercises_every_pinned_mechanism_c27a`'s `carries` and item-`attacks` assertions were
+not; no test in `backend/tests/` pins the shipped placements' carried items. AC1-AC4 OK both rounds.
+Round cap reached: the verdict stands, MR !24 is a draft, backlog row 01 marked `failed`.

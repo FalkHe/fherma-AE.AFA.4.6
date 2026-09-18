@@ -34,3 +34,10 @@ Brief: docs/intents/005-game-state-services/sprints/01-content-speaks-mechanics/
 Round 1: changes requested — checks that pinned the Greenhollow adventure's own shape (who stands in which
 scene, how many, what each carries, and which carried item opens which barrier) were deleted rather than
 updated, so a later edit could quietly change the adventure's cast or layout with nothing objecting.
+
+Round 2: changes requested — the scene-by-scene cast and the barrier checks are genuinely back, but nothing
+checks what the figures in those scenes hold — the innkeeper's knife, the chief's cleaver, the two fleeces in
+the sack — nor which shipped items count as weapons, so a later edit could leave the chief with nothing to
+fight with and the adventure would still pass with every test green. Two rounds are the limit, so this stands
+and the merge request is a draft: the sprint's own four criteria all pass, and the open item is coverage this
+sprint deleted rather than anything the adventure does wrong.
