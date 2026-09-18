@@ -5,9 +5,11 @@ Owns a player's playthrough of a campaign and who may act in it.
 ## Owns
 
 - The `campaign_runs` table (`models.py`): one playthrough per row —
-  `campaign_id`, `content_version`, an optional `title`, a `status` limited
-  to `active` / `archived` / `finished` (`server_default "active"`), the
-  model settings it runs with (`model`, `temperature`,
+  `campaign_id`, `content_version`, an optional `title`, a `status` tracking
+  the run's lifecycle: `setup` (the row exists, its character does not yet),
+  `ready` (the character is created), `active` (the first narration is
+  written), then `archived` / `finished` as before (`server_default
+  "setup"`), the model settings it runs with (`model`, `temperature`,
   `personality_prompt_id`, `system_prompt_override`, all optional) and
   `created_at` / `updated_at`. No owner column — ownership lives in
   `campaign_run_members`.
@@ -31,7 +33,9 @@ Owns a player's playthrough of a campaign and who may act in it.
   `campaign_run_id` (`ON DELETE CASCADE`, indexed) and an optional
   `member_id` (`ON DELETE CASCADE`, indexed, never unique -- a member may
   hold any number of things); a `kind` limited to `creature` / `item` /
-  `fixture`; `template_id`, `instance_key` and `name`; provenance
+  `fixture`; an optional `template_id`, absent exactly when the object was
+  generated rather than instantiated from authored content; `instance_key`
+  and `name`; provenance
   (`source_adventure_id`, `source_scene_id`, no FK, written once) kept
   separate from position (`adventure_run_id` `ON DELETE SET NULL`,
   `scene_id`, written on entry and every move) -- both columns of a pair or
@@ -47,13 +51,17 @@ Owns a player's playthrough of a campaign and who may act in it.
   deletes an `adventure_runs` row, so this is a defended edge, not a live
   path.
 
-- The `events` table (`models.py`): one row per narration, player action,
-  dice roll, tool call or error recorded in a campaign run's transcript --
-  `campaign_run_id` (`ON DELETE CASCADE`) and an optional `actor_member_id`
+- The `events` table (`models.py`): one row per step of a campaign run's
+  transcript -- narration, player action, a requested or resolved roll, a
+  question put to the player, a tool call, a scene or adventure milestone, a
+  system message, or an error or warning -- `campaign_run_id`
+  (`ON DELETE CASCADE`) and an optional `actor_member_id`
   (`ON DELETE SET NULL` -- the event outlives the member); an optional
   `turn_id` with no foreign key, since no turn concept exists yet; a `type`
-  limited to `narration` / `player_action` / `roll` / `tool_call` / `error`
-  and a `visibility` limited to `player` / `dm`; a non-nullable `payload`
+  limited to `narration` / `player_action` / `roll_requested` / `roll` /
+  `question` / `tool_call` / `scene_entered` / `adventure_started` /
+  `adventure_completed` / `system` / `error` / `warning` and a `visibility`
+  limited to `player` / `dm`; a non-nullable `payload`
   JSONB column with no default; optional `prompt_tokens`,
   `completion_tokens` and `cost_usd` (an exact `NUMERIC(12,6)`, never a
   float); `created_at` only -- an event is never edited after it is
