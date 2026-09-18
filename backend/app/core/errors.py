@@ -21,6 +21,7 @@ class ErrorCode(StrEnum):
     INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
     CSRF_TOKEN_INVALID = "CSRF_TOKEN_INVALID"
     USERNAME_TAKEN = "USERNAME_TAKEN"
+    ALREADY_STARTED = "ALREADY_STARTED"
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
@@ -47,6 +48,7 @@ _ERROR_INFO: dict[ErrorCode, tuple[int, str]] = {
     ErrorCode.INVALID_CREDENTIALS: (401, "Username or password is incorrect."),
     ErrorCode.CSRF_TOKEN_INVALID: (403, "CSRF token missing or invalid."),
     ErrorCode.USERNAME_TAKEN: (409, "That username is already taken."),
+    ErrorCode.ALREADY_STARTED: (409, "This campaign run has already been started."),
     ErrorCode.NOT_FOUND: (404, "Resource not found."),
     ErrorCode.METHOD_NOT_ALLOWED: (405, "Method not allowed."),
     ErrorCode.INTERNAL_ERROR: (500, "An unexpected error occurred."),
