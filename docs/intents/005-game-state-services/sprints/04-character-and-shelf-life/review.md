@@ -34,3 +34,11 @@ later drop or give away, and starts at full health. Games can also be renamed an
 Brief: docs/intents/005-game-state-services/sprints/04-character-and-shelf-life/brief.md
 
 ## Verdict
+
+Round 1: approve — a game gets its player character, carrying its starting pack as real items it could later
+drop or give away, and becomes ready to play; games can also be renamed and put away. Archiving works as you
+amended it: a ready, in-progress or finished game becomes a record that still lists and re-reads but is never
+played on again, with no way back, while a game that was never started is removed altogether along with
+everything set up for it — checked against a real database, and no other state of a game can trigger that
+removal. One thing for your bookkeeping: the sprint's own brief and its backlog line still describe archiving
+as something that can be undone, which is no longer true.

@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-18
 updated: 2026-09-18
-stage: draft
+stage: done
 ---
 # Progress: Sprint 04
 
@@ -36,3 +36,11 @@ Status: `open | running | done | failed`
 - `ProseText` has no maximum length while `objects.name` is `String(120)` — phase 7 feeds generated text there.
 
 ## Verify
+
+Round 1: approve — AC1-AC4 all OK against the amended rules. The verifier confirmed deletion is reachable only
+from `setup`, takes membership and objects with it and orphans nothing; that the archived-write refusals are
+driven by a genuinely archived run rather than a stub; that no stub outlives its scope; and that no existing
+test lost coverage (all five touched files are pure additions). `PATCH` is proven to pass CORS preflight.
+
+Left stale on purpose: `backlog.md` row 04 still reads "rename/archive/unarchive". The row text is the human's
+to change; the status column is updated.
