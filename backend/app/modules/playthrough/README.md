@@ -71,33 +71,67 @@ Owns a player's playthrough of a campaign and who may act in it.
 
 ## Surface
 
-Three endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring
-an authenticated caller (`POST` is also CSRF-guarded):
+Six endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring an
+authenticated caller (`POST` and `PATCH` are also CSRF-guarded):
 
 - `POST /api/v1/playthrough/campaign` with `{"campaignId": …}` — starts a
   campaign run, answering `201` and the run.
 - `GET /api/v1/playthrough/campaign` — the caller's runs, newest first,
   archived ones included.
 - `GET /api/v1/playthrough/campaign/{runId}` — one of the caller's runs.
+- `PATCH /api/v1/playthrough/campaign/{runId}` with `{"title": …}` —
+  renames the run, answering `200` and the run.
+- `POST /api/v1/playthrough/campaign/{runId}/character` — creates the run's
+  one player character from its pinned campaign's seed sheet and moves the
+  run to `ready`, answering `201` and the character.
+- `POST /api/v1/playthrough/campaign/{runId}/archive` — puts the run away
+  (or, for a run still `setup`, deletes it outright — see §Owns), answering
+  `204` with no body.
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
-nothing else.
+nothing else. A character reads as `id, name, currentHp, maxHp,
+armourClass` and nothing else — `CharacterRead`.
 
 Service functions (`service.py`), called as `service.f(...)`:
 
 - `start_campaign_run` — pins the run's `content_version` for its whole
   life, makes the starter the run's owning member, and instantiates every
   object the campaign's adventures declare, all unpositioned — entering an
-  adventure is a separate, later step. Appends no event. Starting the same
-  run twice is refused by the uniqueness of `objects.instance_key` rather
-  than by an explicit check.
+  adventure is a separate, later step. The player's own creature is not
+  among them; it does not exist until `create_character` runs. Appends no
+  event. Starting the same run twice is refused by the uniqueness of
+  `objects.instance_key` rather than by an explicit check.
 - `list_campaign_runs` — the caller's runs, newest first.
 - `get_campaign_run` — one run by id.
+- `create_character` — builds the run's one player character (`GameObject`
+  with no `template_id`, owned by the caller's membership) from a
+  `SeedCharacter`-shaped sheet, defaulting to the pinned campaign's own seed
+  character, then one carried `item` row per sheet inventory entry through
+  the same template-driven `_build_object` sprint 03 built, then moves the
+  run `setup → ready`. Refuses a second character on the run
+  (`CharacterExistsError`) and refuses an archived run (`RunArchivedError`).
+  Appends no event; one commit.
+- `rename_campaign_run` — sets the run's title. Refuses an archived run
+  (`RunArchivedError`).
+- `archive_campaign_run` — `ready` / `active` / `finished` move to
+  `archived`; already `archived` is a no-op. A `setup` run — never given a
+  character — is deleted outright instead: the run row, its membership and
+  every object instantiated for it, all removed through the schema's
+  `ON DELETE CASCADE` chain. There is no unarchive.
+- `activate_campaign_run` — `ready → active`, already `active` a no-op,
+  any other status `InvalidRunStatusError`. No route calls it: it exists for
+  a later phase's first-narration step to call (← D3).
 - `_require_member` — internal; every function above that takes a run id
   calls it first to check membership before doing anything else.
+- `_require_writable` — internal; raises `RunArchivedError` when the run is
+  `archived`. Called by `rename_campaign_run` and `create_character` before
+  they touch anything.
 
 Every service function takes the acting user and checks membership before
 touching a run. A run belonging to someone else and a run that does not
 exist answer identically — not found — so no one can probe for the
 existence of another player's game. Errors: an unknown or foreign run and an
-unknown campaign are not found; a run already started is a conflict.
+unknown campaign are not found; a run already started, a second character, an
+archived run refusing a write, and an invalid status transition are each a
+domain conflict (`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
+`INVALID_RUN_STATUS`).

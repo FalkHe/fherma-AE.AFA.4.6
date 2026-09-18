@@ -10,11 +10,11 @@ activity, not an entity: **no table is called `playthrough`**, and no row is "a
 playthrough".
 
 Today the module ships its five tables and their migrations, plus the surface
-that starts a campaign run and reads it back (§8): a service of three
-functions behind three authenticated endpoints. Entering an adventure,
-positioning objects and appending events remain future work; this document
-describes the tables and the surface that exist, not the lifecycle still to
-come.
+that starts a campaign run, gives it its character, renames it, reads it back
+and puts it away (§8): a service of seven functions behind six authenticated
+endpoints. Entering an adventure, positioning objects and appending events
+remain future work; this document describes the tables and the surface that
+exist, not the lifecycle still to come.
 
 ## 1. What the module owns, and what it does not
 
@@ -236,23 +236,34 @@ Append-only: written once, never edited, never deleted.
 
 ## 8. Surface
 
-Three endpoints exist, all authenticated; the `POST` is also CSRF-guarded:
+Six endpoints exist, all authenticated; `POST` and `PATCH` are also
+CSRF-guarded:
 
 | Method & path | Behaviour |
 |---|---|
 | `POST /api/v1/playthrough/campaign` | Starts a campaign run for `{"campaignId": …}` — `201` and the run |
 | `GET /api/v1/playthrough/campaign` | The caller's runs, newest first, archived ones included |
 | `GET /api/v1/playthrough/campaign/{runId}` | One of the caller's runs |
+| `PATCH /api/v1/playthrough/campaign/{runId}` | Renames the run for `{"title": …}` — `200` and the run |
+| `POST /api/v1/playthrough/campaign/{runId}/character` | Creates the run's one player character — `201` and the character |
+| `POST /api/v1/playthrough/campaign/{runId}/archive` | Puts the run away, or deletes it if it was never started — `204`, no body |
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
-nothing else — the row, not its state.
+nothing else — the row, not its state. A character reads as `id, name,
+currentHp, maxHp, armourClass` and nothing else (`CharacterRead`) — a
+`GameObject` row (§6), narrowed to what a player needs to see of their own
+sheet.
 
-The service (`service.py`) exposes `start_campaign_run`, `list_campaign_runs`
-and `get_campaign_run`, called as `service.f(...)`. Every one of them takes
-the acting user, and every one that takes a run id calls the internal
-`_require_member` first. A run belonging to someone else and a run that does
-not exist answer identically — **not found** — so no one can probe for the
-existence of another player's game.
+The service (`service.py`) exposes `start_campaign_run`, `list_campaign_runs`,
+`get_campaign_run`, `create_character`, `rename_campaign_run`,
+`archive_campaign_run` and `activate_campaign_run`, called as
+`service.f(...)`. Every one of them takes the acting user, and every one that
+takes a run id calls the internal `_require_member` first. A run belonging to
+someone else and a run that does not exist answer identically — **not
+found** — so no one can probe for the existence of another player's game.
+`_require_writable`, also internal, raises `RunArchivedError` on an
+`archived` run; `rename_campaign_run` and `create_character` call it right
+after `_require_member`.
 
 **Starting a run** does three things at once, because none of them makes
 sense without the others: it pins the campaign's current content version onto
@@ -261,11 +272,48 @@ alter a game already in progress; it makes the starter the run's owning
 member (`campaign_run_members`, §4); and it instantiates every object the
 campaign's adventures declare — every placement, every carried item — into
 `objects` (§6), none of them positioned in any scene yet, because entering an
-adventure is a separate, explicit step still to come. It appends no `events`
+adventure is a separate, explicit step still to come. **The player's own
+creature is not among them**: a run leaves `start_campaign_run` in `setup`,
+its world populated but its character still to come. It appends no `events`
 row (§7). Starting the same run twice is refused by the uniqueness of
 `(campaign_run_id, instance_key)` on `objects` (§6) rather than by an explicit
 check.
 
+**Creating the character** is the second, later step, and the only caller of
+the generic object write for the player's own creature: `create_character`
+reads a `SeedCharacter`-shaped sheet — the pinned campaign's own seed
+character until a generation agent supplies one of its own, the signature
+already accepting either — and builds one `objects` row with no
+`template_id`, `member_id` set to the caller's membership, `instance_key`
+`pc:<memberId>:1`, and `current_hp` equal to `max_hp`. It then builds one
+carried `item` row per sheet inventory entry, through the same
+template-driven `_build_object` `start_campaign_run` uses, each keyed
+`pc:<memberId>:1/<templateId>:<n>` and none of them positioned. Both writes
+flush before the run's `status` moves `setup → ready` and everything commits
+once; no `events` row is appended. A second character on the same run is
+refused (`CharacterExistsError`), checked by querying `objects` for an
+existing `creature` at this `member_id` rather than by a constraint
+(← 003-D13).
+
+**Renaming** only sets `title`; the run's `status` is untouched.
+
+**Archiving** is the run's shelf life, and there is no unarchive. `ready`,
+`active` and `finished` all move to `archived`; an already-`archived` run is
+a no-op. A run still `setup` was never given a character, so archiving it
+instead **deletes it outright** — the run row, its membership and every
+`objects` row instantiated for it — carried entirely by the schema's
+`ON DELETE CASCADE` chain (§2) once the `campaign_runs` row goes. Every other
+archive leaves the row, and everything under it, exactly as it was: the
+event stream and the cost record it carries stay just as readable as before,
+still reachable by `GET`, only no longer writable.
+
+**Activating** a run — `activate_campaign_run`, `ready → active` — has no
+route yet; it exists for the first-narration step a later phase adds to call.
+Called on an already-`active` run it is a no-op; called on anything else it
+raises `InvalidRunStatusError`.
+
 Errors this module raises: an unknown-or-foreign run and a campaign the
-content does not know are **not found**; a run already started is a
-**conflict**.
+content does not know are **not found**; a run already started, a second
+character on a run, a write against an archived run and an invalid status
+transition are each a **conflict** (`ALREADY_STARTED`, `CHARACTER_EXISTS`,
+`RUN_ARCHIVED`, `INVALID_RUN_STATUS`).
