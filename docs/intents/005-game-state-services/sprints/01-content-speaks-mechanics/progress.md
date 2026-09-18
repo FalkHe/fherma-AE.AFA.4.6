@@ -31,3 +31,7 @@ Status: `open | running | done | failed`
 - A scene with no exits that is not the ending is now a dead end and no rule refuses it.
 
 ## Verify
+
+Round 1: changes-requested — `backend/tests/content/test_shipped_tree.py` was rewritten wholesale, dropping five
+shipped-content regression tests this sprint did not invalidate (placements, `bypassed_by` cardinalities,
+`definitions/` layout, no-old-keys); AC1-AC4 all OK.

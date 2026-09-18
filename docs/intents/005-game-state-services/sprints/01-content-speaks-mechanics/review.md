@@ -30,3 +30,7 @@ items carried instead of reading as prose. The authoring rules say so, and Green
 Brief: docs/intents/005-game-state-services/sprints/01-content-speaks-mechanics/brief.md
 
 ## Verdict
+
+Round 1: changes requested — checks that pinned the Greenhollow adventure's own shape (who stands in which
+scene, how many, what each carries, and which carried item opens which barrier) were deleted rather than
+updated, so a later edit could quietly change the adventure's cast or layout with nothing objecting.
