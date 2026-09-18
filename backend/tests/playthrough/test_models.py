@@ -8,7 +8,7 @@ stats being present on a creature and nothing else, health staying within
 its maximum, position being whole or absent, a carried thing never also
 having a position, one thing per key per campaign run and no limit on how
 many things a member holds, plus `Event`'s column shape and order, the
-five-value `type` set and the two-value `visibility` set, `cost_usd` typed
+twelve-value `type` set and the two-value `visibility` set, `cost_usd` typed
 as an exact decimal rather than a float, the cascade on `campaign_run_id`
 and the clear-on-delete on `actor_member_id`, exactly two indexes with no
 unique constraint, no sequence column and no `updated_at`
@@ -84,18 +84,18 @@ def test_campaign_run_title_is_a_nullable_varchar_120():
     assert column.nullable is True
 
 
-def test_campaign_run_status_is_non_nullable_with_server_default_active():
+def test_campaign_run_status_is_non_nullable_with_server_default_setup():
     column = _column(CampaignRun, "status")
     assert isinstance(column.type, String)
     assert column.type.length == 16
     assert column.nullable is False
     assert column.server_default is not None
-    assert "active" in str(column.server_default.arg)
+    assert "setup" in str(column.server_default.arg)
 
 
-def test_campaign_run_status_accepts_exactly_three_values():
+def test_campaign_run_status_accepts_exactly_five_values():
     constraint = _check_constraint(CampaignRun, "ck_campaign_runs_status")
-    assert str(constraint.sqltext) == "status IN ('active','archived','finished')"
+    assert str(constraint.sqltext) == ("status IN ('setup','ready','active','archived','finished')")
 
 
 def test_campaign_run_model_is_a_nullable_varchar_64():
@@ -105,12 +105,14 @@ def test_campaign_run_model_is_a_nullable_varchar_64():
     assert column.nullable is True
 
 
-def test_campaign_run_temperature_is_a_nullable_numeric_3_2():
+def test_campaign_run_temperature_is_a_nullable_exact_decimal_never_a_float():
     column = _column(CampaignRun, "temperature")
     assert isinstance(column.type, Numeric)
     assert column.type.precision == 3
     assert column.type.scale == 2
     assert column.nullable is True
+    assert column.type.asdecimal is True
+    assert column.type.python_type is Decimal
 
 
 def test_campaign_run_personality_prompt_id_is_a_nullable_varchar_128():
@@ -379,11 +381,11 @@ def test_object_kind_accepts_exactly_three_values():
     assert str(constraint.sqltext) == "kind IN ('creature','item','fixture')"
 
 
-def test_object_template_id_is_a_non_nullable_varchar_64_with_no_fk():
+def test_object_template_id_is_a_nullable_varchar_64_with_no_fk():
     column = _column(GameObject, "template_id")
     assert isinstance(column.type, String)
     assert column.type.length == 64
-    assert column.nullable is False
+    assert column.nullable is True
     assert not column.foreign_keys
 
 
@@ -625,10 +627,12 @@ def test_event_type_is_a_non_nullable_varchar_32_with_no_default():
     assert column.server_default is None
 
 
-def test_event_type_accepts_exactly_five_values():
+def test_event_type_accepts_exactly_twelve_values():
     constraint = _check_constraint(Event, "ck_events_type")
     assert str(constraint.sqltext) == (
-        "type IN ('narration','player_action','roll','tool_call','error')"
+        "type IN ('narration','player_action','roll_requested','roll','question',"
+        "'tool_call','scene_entered','adventure_started','adventure_completed',"
+        "'system','error','warning')"
     )
 
 
