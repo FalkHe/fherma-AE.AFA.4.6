@@ -257,94 +257,81 @@ def test_ac2_the_character_and_its_pack_land_as_real_rows_from_the_seed_sheet(pl
 
 @pytest.mark.database
 def test_ac3_the_run_can_be_renamed_and_archiving_governs_its_whole_shelf_life(
-    client, monkeypatch, session_cookie_header, assert_error_envelope, playthrough_db
+    client, session_cookie_header, assert_error_envelope, playthrough_db
 ):
     # <- AC3
-    _stub_auth(monkeypatch)
     run_id = generate_id()
 
-    # -- Wire contract: rename, archive, and what an archived run still
-    # answers versus what it refuses.
-    renamed_run = _make_run(id=run_id, title="Rosalind's Watch", status="ready")
+    # -- Wire contract: rename and archive map onto the right status code
+    # and body shape. Scoped to its own `MonkeyPatch` context, not the
+    # `monkeypatch` fixture, so every patch made here is guaranteed undone
+    # before the real-database scenario below runs the very same service
+    # functions for real -- `monkeypatch` only reverts at test teardown, so
+    # a patch left standing here would silently shadow the real function
+    # the scenario means to call.
+    with pytest.MonkeyPatch.context() as mp:
+        _stub_auth(mp)
 
-    async def fake_rename(db, **kwargs):
-        return renamed_run
+        renamed_run = _make_run(id=run_id, title="Rosalind's Watch", status="ready")
 
-    monkeypatch.setattr(playthrough_service, "rename_campaign_run", fake_rename)
+        async def fake_rename(db, **kwargs):
+            return renamed_run
 
-    rename_response = client.patch(
-        f"/api/v1/playthrough/campaign/{run_id}",
-        json={"title": "Rosalind's Watch"},
-        headers={**session_cookie_header("a-valid-cookie"), "X-CSRF-Token": CSRF_TOKEN},
-    )
-    assert rename_response.status_code == 200, rename_response.text
-    assert rename_response.json()["title"] == "Rosalind's Watch"
+        mp.setattr(playthrough_service, "rename_campaign_run", fake_rename)
 
-    async def fake_archive(db, **kwargs):
-        return None
+        rename_response = client.patch(
+            f"/api/v1/playthrough/campaign/{run_id}",
+            json={"title": "Rosalind's Watch"},
+            headers={**session_cookie_header("a-valid-cookie"), "X-CSRF-Token": CSRF_TOKEN},
+        )
+        assert rename_response.status_code == 200, rename_response.text
+        assert rename_response.json()["title"] == "Rosalind's Watch"
 
-    monkeypatch.setattr(playthrough_service, "archive_campaign_run", fake_archive)
+        async def fake_archive(db, **kwargs):
+            return None
 
-    archive_response = client.post(
-        f"/api/v1/playthrough/campaign/{run_id}/archive",
-        headers={**session_cookie_header("a-valid-cookie"), "X-CSRF-Token": CSRF_TOKEN},
-    )
-    assert archive_response.status_code == 204, archive_response.text
-    assert archive_response.content == b""
+        mp.setattr(playthrough_service, "archive_campaign_run", fake_archive)
 
-    archived_run = _make_run(id=run_id, status="archived")
+        archive_response = client.post(
+            f"/api/v1/playthrough/campaign/{run_id}/archive",
+            headers={**session_cookie_header("a-valid-cookie"), "X-CSRF-Token": CSRF_TOKEN},
+        )
+        assert archive_response.status_code == 204, archive_response.text
+        assert archive_response.content == b""
 
-    async def fake_get_archived(db, **kwargs):
-        return archived_run
+        archived_run = _make_run(id=run_id, status="archived")
 
-    monkeypatch.setattr(playthrough_service, "get_campaign_run", fake_get_archived)
+        async def fake_get_archived(db, **kwargs):
+            return archived_run
 
-    read_after_archive = client.get(
-        f"/api/v1/playthrough/campaign/{run_id}",
-        headers=session_cookie_header("a-valid-cookie"),
-    )
-    assert read_after_archive.status_code == 200, read_after_archive.text
-    assert read_after_archive.json()["status"] == "archived"
+        mp.setattr(playthrough_service, "get_campaign_run", fake_get_archived)
 
-    async def fake_list_still_answers(db, **kwargs):
-        return [archived_run]
+        read_after_archive = client.get(
+            f"/api/v1/playthrough/campaign/{run_id}",
+            headers=session_cookie_header("a-valid-cookie"),
+        )
+        assert read_after_archive.status_code == 200, read_after_archive.text
+        assert read_after_archive.json()["status"] == "archived"
 
-    monkeypatch.setattr(playthrough_service, "list_campaign_runs", fake_list_still_answers)
+        async def fake_list_still_answers(db, **kwargs):
+            return [archived_run]
 
-    list_after_archive = client.get(
-        "/api/v1/playthrough/campaign", headers=session_cookie_header("a-valid-cookie")
-    )
-    assert list_after_archive.status_code == 200, list_after_archive.text
-    assert [run["id"] for run in list_after_archive.json()] == [str(run_id)]
+        mp.setattr(playthrough_service, "list_campaign_runs", fake_list_still_answers)
 
-    async def fake_rename_refused(db, **kwargs):
-        raise ApiError(ErrorCode.RUN_ARCHIVED)
+        list_after_archive = client.get(
+            "/api/v1/playthrough/campaign", headers=session_cookie_header("a-valid-cookie")
+        )
+        assert list_after_archive.status_code == 200, list_after_archive.text
+        assert [run["id"] for run in list_after_archive.json()] == [str(run_id)]
 
-    monkeypatch.setattr(playthrough_service, "rename_campaign_run", fake_rename_refused)
-
-    refused_rename = client.patch(
-        f"/api/v1/playthrough/campaign/{run_id}",
-        json={"title": "New Name"},
-        headers={**session_cookie_header("a-valid-cookie"), "X-CSRF-Token": CSRF_TOKEN},
-    )
-    assert_error_envelope(refused_rename, status=409, code="RUN_ARCHIVED")
-
-    async def fake_create_character_refused(db, **kwargs):
-        raise ApiError(ErrorCode.RUN_ARCHIVED)
-
-    monkeypatch.setattr(playthrough_service, "create_character", fake_create_character_refused)
-
-    refused_character = client.post(
-        f"/api/v1/playthrough/campaign/{run_id}/character",
-        headers={**session_cookie_header("a-valid-cookie"), "X-CSRF-Token": CSRF_TOKEN},
-    )
-    assert_error_envelope(refused_character, status=409, code="RUN_ARCHIVED")
-
-    # -- Real database: renaming persists, archiving actually moves a
-    # ready / active / finished run to `archived`, and archiving a run that
-    # was never started deletes it outright -- gone from the list and
-    # reading it answers not found -- rather than merely marking it
-    # archived. All in one `asyncio.run(...)`: see the module docstring.
+    # -- Real database, no monkeypatch in effect: renaming persists,
+    # archiving actually moves a ready / active / finished run to
+    # `archived`, a genuinely archived run still lists and reads while
+    # refusing a rename and a character write with the real domain code --
+    # not a stub standing in for the route -- and archiving a run that was
+    # never started deletes it outright -- gone from the list and reading
+    # it answers not found. All in one `asyncio.run(...)`: see the module
+    # docstring for why this scenario never touches `TestClient`.
     async def _scenario():
         user_id = generate_id()
         await _insert_user(playthrough_db, user_id, username="ac3-owner")
@@ -373,6 +360,11 @@ def test_ac3_the_run_can_be_renamed_and_archiving_governs_its_whole_shelf_life(
             )
 
         async def _to_finished(candidate):
+            # A real "finished" run always already has a character -- it
+            # got there by being played, not by skipping straight from
+            # `setup`. Forcing the status column alone, with no character,
+            # would look to the service like a never-started run.
+            await _to_ready(candidate)
             await playthrough_db.execute(
                 text("UPDATE campaign_runs SET status = 'finished' WHERE id = :id"),
                 {"id": candidate.id},
@@ -390,6 +382,43 @@ def test_ac3_the_run_can_be_renamed_and_archiving_governs_its_whole_shelf_life(
                 text("SELECT status FROM campaign_runs WHERE id = :id"), {"id": candidate.id}
             )
             assert status.scalar_one() == "archived"
+
+        # A genuinely archived run: still listed and readable, but refuses
+        # a rename and a character write, both with the same domain code.
+        archived_candidate = await playthrough_service.start_campaign_run(
+            playthrough_db, user_id=user_id, campaign_id="greenhollow"
+        )
+        await playthrough_service.create_character(
+            playthrough_db, user_id=user_id, run_id=archived_candidate.id
+        )
+        await playthrough_service.archive_campaign_run(
+            playthrough_db, user_id=user_id, run_id=archived_candidate.id
+        )
+
+        archived_read = await playthrough_service.get_campaign_run(
+            playthrough_db, user_id=user_id, run_id=archived_candidate.id
+        )
+        assert archived_read.status == "archived"
+
+        listed_runs = await playthrough_service.list_campaign_runs(playthrough_db, user_id=user_id)
+        assert archived_candidate.id in {r.id for r in listed_runs}
+
+        # Calling the service directly raises its own domain exception, not
+        # `ApiError` (that translation happens in the route layer this test
+        # never imports) -- caught here by its one contractual trait, the
+        # `.code` the interface promises, rather than by importing the
+        # forbidden `playthrough/errors.py` to name the class.
+        with pytest.raises(Exception) as rename_exc:
+            await playthrough_service.rename_campaign_run(
+                playthrough_db, user_id=user_id, run_id=archived_candidate.id, title="New Name"
+            )
+        assert rename_exc.value.code == ErrorCode.RUN_ARCHIVED
+
+        with pytest.raises(Exception) as character_exc:
+            await playthrough_service.create_character(
+                playthrough_db, user_id=user_id, run_id=archived_candidate.id
+            )
+        assert character_exc.value.code == ErrorCode.RUN_ARCHIVED
 
         # A never-started run is deleted outright: gone from the list and
         # reads as not found, its membership and objects gone with it.
@@ -411,7 +440,7 @@ def test_ac3_the_run_can_be_renamed_and_archiving_governs_its_whole_shelf_life(
         )
         assert setup_run.id not in {r.id for r in remaining_runs}
 
-        with pytest.raises(ApiError) as exc_info:
+        with pytest.raises(Exception) as exc_info:
             await playthrough_service.get_campaign_run(
                 playthrough_db, user_id=user_id, run_id=setup_run.id
             )
