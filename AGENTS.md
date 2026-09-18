@@ -35,6 +35,10 @@ frontend/src/modules/<module>/    components/ hooks/ routes/
 
 Intents and sprints live in `docs/intents/` (fhit plugin: `/fhit:intent`, `/fhit:backlog`, `/fhit:sprint`, `/fhit:status`).
 
+- Provider: gitlab
+- Human: f4lkh3
+- Agent: st3lla
+
 Project docs are indexed in `docs/README.md`. `docs/roadmap/` is history, not
 current state — where a roadmap doc and the code disagree, the code wins.
 
