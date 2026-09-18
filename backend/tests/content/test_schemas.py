@@ -221,16 +221,67 @@ def test_campaign_rejects_empty_object_templates_c11():
         schemas.Campaign(**campaign(object_templates=[]))
 
 
-# --- 12: SeedCharacter unchanged -------------------------------------------------
+# --- 12: SeedCharacter.inventory is a list of content ids (AC3, I2) ------------
 
 
-def test_seed_character_inventory_is_list_of_prose_and_unreferenced_c12():
+def test_seed_character_inventory_is_list_of_content_ids_c12():
     character = schemas.SeedCharacter(**seed_character())
-    assert character.inventory == [
-        "a shortsword",
-        "a coil of rope",
-        "a tin lantern",
-    ]
+    assert character.inventory == ["rusty-key"]
+
+
+def test_seed_character_inventory_defaults_to_empty_list_c12():
+    payload = seed_character()
+    del payload["inventory"]
+    character = schemas.SeedCharacter(**payload)
+    assert character.inventory == []
+
+
+def test_seed_character_inventory_rejects_non_content_id_entries_c12():
+    with pytest.raises(ValidationError):
+        schemas.SeedCharacter(**seed_character(inventory=["a shortsword"]))
+
+
+# --- AC1: Exit gains id and kind; `to` follows kind (I1) ------------------------
+
+
+def _exit(**overrides) -> dict:
+    payload = {
+        "id": "into-the-mill",
+        "to": "mill-floor",
+        "description": "The mill door, barred from within.",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_exit_defaults_to_kind_scene_ac1():
+    exit_ = schemas.Exit(**_exit())
+    assert exit_.kind == "scene"
+    assert exit_.to == "mill-floor"
+
+
+def test_exit_scene_without_to_is_rejected_ac1():
+    payload = _exit()
+    del payload["to"]
+    with pytest.raises(ValidationError):
+        schemas.Exit(**payload)
+
+
+def test_exit_adventure_end_without_to_is_valid_ac1():
+    exit_ = schemas.Exit(id="out-of-the-mill", kind="adventure_end", description="Freedom.")
+    assert exit_.to is None
+
+
+def test_exit_adventure_end_with_to_is_rejected_ac1():
+    with pytest.raises(ValidationError):
+        schemas.Exit(**_exit(kind="adventure_end"))
+
+
+def test_exit_requires_id_ac1():
+    payload = _exit()
+    del payload["id"]
+    with pytest.raises(ValidationError):
+        schemas.Exit(**payload)
 
 
 # --- carried-over schema conventions (unchanged models, still worth a smoke test) --

@@ -58,7 +58,7 @@ SEED_CHARACTER: dict = {
     "abilities": ABILITIES,
     "max_hp": 9,
     "armour_class": 14,
-    "inventory": ["a shortsword", "a coil of rope", "a tin lantern"],
+    "inventory": ["rusty-key"],
 }
 
 CREATURE_TEMPLATE: dict = {
@@ -139,6 +139,7 @@ SCENE_APPROACH: dict = {
     "placements": [{"template": "rusty-key", "count": 1}],
     "exits": [
         {
+            "id": "into-the-mill",
             "to": "mill-floor",
             "description": "The mill door, barred from within.",
             "condition": "the bar has been broken, forced, or lifted from outside",
@@ -166,6 +167,13 @@ SCENE_FLOOR: dict = {
     "pressure": (
         "The water is still rising; the chute will be the only dry footing within the hour."
     ),
+    "exits": [
+        {
+            "id": "out-of-the-mill",
+            "kind": "adventure_end",
+            "description": "The grain chute gives way onto the bank, and open air.",
+        }
+    ],
 }
 
 ADVENTURE: dict = {

@@ -1,17 +1,13 @@
 """Unmocked tests over the real, shipped `backend/content/` tree.
 
 These never monkeypatch `service.CONTENT_ROOT` and never write into
-`backend/content/`. They read the actual `greenhollow/v1` campaign as
-reworked by step-1.4.md §5, and prove it loads through the real service
-surface with the nine-template `object_templates` layout.
-
-**Mode-A note.** `backend/content/campaigns/greenhollow/v1/` still holds the
-pre-rework `definitions/` layout at authoring time (shared-knowledge.md §2:
-"`app content validate` currently exits `0`"). Every test in this file is
-expected to fail until backend-dev lands the migration of §5 -- red here is
-the rework working, not a defect (step-1.4.md §2).
-
-Criterion numbers refer to `step-1.4.md` §10 ("The shipped tree", 26-31).
+`backend/content/`. They read the actual `greenhollow/v1` campaign and prove
+it loads through the real service surface, carrying the addressable exits
+(`Exit.id`/`Exit.kind`), the ending exit on `lair-hollow`, and the
+item-backed seed inventory landed by sprint 005/01 (`brief.md` AC4), on top
+of the standing regression checks carried over from the earlier
+object-template rework (criterion numbers `_c26`.. refer to `step-1.4.md`
+§10, "The shipped tree", 26-31).
 """
 
 import json
@@ -26,8 +22,19 @@ CAMPAIGN_ID = "greenhollow"
 VERSION = "v1"
 
 CREATURE_IDS = ["mira", "goblin", "goblin-boss"]
-ITEM_IDS = ["shepherds-knife", "bent-horseshoe", "notched-cleaver", "stolen-fleece"]
+ITEM_IDS = [
+    "shepherds-knife",
+    "bent-horseshoe",
+    "notched-cleaver",
+    "stolen-fleece",
+    "wooden-shield",
+    "hooded-lantern",
+    "coil-of-twine",
+    "rations",
+]
 FIXTURE_IDS = ["thorn-screen", "wool-sack"]
+
+SEED_INVENTORY = ["shepherds-knife", "wooden-shield", "hooded-lantern", "coil-of-twine", "rations"]
 
 runner = CliRunner()
 
@@ -48,10 +55,12 @@ def test_version_directory_holds_exactly_campaign_json_and_adventures_c26():
     assert entries == {"campaign.json", "adventures"}
 
 
-# --- 27: object_templates has exactly nine entries, in this order -----------
+# --- object_templates has exactly thirteen entries, in the pinned order -----
+# (supersedes the old nine-entry pin, step-1.4.md's c27: sprint 005/01 added
+# four item templates)
 
 
-def test_object_templates_has_nine_entries_in_pinned_order_c27():
+def test_object_templates_has_thirteen_entries_in_pinned_order():
     campaign_data = json.loads((_version_dir() / "campaign.json").read_text())
     ids_and_kinds = [(t["id"], t["kind"]) for t in campaign_data["object_templates"]]
 
@@ -63,9 +72,25 @@ def test_object_templates_has_nine_entries_in_pinned_order_c27():
         ("bent-horseshoe", "item"),
         ("notched-cleaver", "item"),
         ("stolen-fleece", "item"),
+        ("wooden-shield", "item"),
+        ("hooded-lantern", "item"),
+        ("coil-of-twine", "item"),
+        ("rations", "item"),
         ("thorn-screen", "fixture"),
         ("wool-sack", "fixture"),
     ]
+
+
+def test_new_item_templates_have_the_same_shape_as_the_existing_ones():
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
+    templates = loaded.object_templates
+
+    for item_id in ["wooden-shield", "hooded-lantern", "coil-of-twine", "rations"]:
+        template = templates[item_id]
+        assert template.kind == "item"
+        assert template.attacks == []
+        assert template.name
+        assert template.description
 
 
 # --- 27a: completeness -- no mechanism ships unexercised ----------------------
@@ -123,7 +148,9 @@ def test_loaded_campaign_exercises_every_pinned_mechanism_c27a():
             assert templates[item_id].kind == "item"
 
     # both bypass chains are playable: at least one listed item is placed or
-    # carried somewhere in the tree
+    # carried somewhere in the tree. shepherds-knife also ships in the seed
+    # inventory now (sprint 005/01), but it is still carried by Mira here, so
+    # this reasoning over scene placements/carries is unaffected.
     all_carried_or_placed_item_ids = {
         p.template
         for scene in scenes.values()
@@ -207,7 +234,11 @@ def test_scene_placements_match_the_pinned_shape_c30():
         "lair-maw",
         "lair-hollow",
     ]
-    assert lair_hollow.exits == []
+
+    # sprint 005/01: lair-hollow no longer ends the adventure with an empty
+    # exits list -- it carries exactly one exit, the adventure_end exit
+    assert [e.id for e in lair_hollow.exits] == ["leave-the-hollow"]
+    assert lair_hollow.exits[0].kind == "adventure_end"
 
 
 # --- 31: step-1.3 criteria survive the rename ----------------------------------
@@ -223,7 +254,10 @@ def test_step_1_3_structural_criteria_survive_the_rename_c31():
 
     adventure = next(iter(loaded.adventures.values()))
     assert adventure.entry_scene != "lair-hollow"  # terminal scene isn't the entry scene
-    assert loaded.scenes["lair-hollow"].exits == []
+    # sprint 005/01: lair-hollow ends the adventure through an adventure_end
+    # exit rather than an empty exits list
+    assert [e.id for e in loaded.scenes["lair-hollow"].exits] == ["leave-the-hollow"]
+    assert loaded.scenes["lair-hollow"].exits[0].kind == "adventure_end"
 
     # goblin placed in two scenes
     scenes_with_goblin = [
@@ -254,6 +288,50 @@ def test_step_1_3_structural_criteria_survive_the_rename_c31():
     # a consequences entry naming the villain verbatim
     all_consequences = " ".join(c for scene in loaded.scenes.values() for c in scene.consequences)
     assert "Grettle" in all_consequences
+
+
+# --- AC4: exit ids and the ending exit ---------------------------------------
+
+
+def test_exits_carry_the_pinned_ids():
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
+    scenes = loaded.scenes
+
+    assert [e.id for e in scenes["village-green"].exits] == ["to-thornway"]
+    assert [e.id for e in scenes["thornway"].exits] == ["to-lair-maw"]
+    assert [e.id for e in scenes["lair-maw"].exits] == ["to-lair-hollow"]
+    assert [e.id for e in scenes["lair-hollow"].exits] == ["leave-the-hollow"]
+
+
+def test_lair_hollow_carries_the_adventure_end_exit():
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
+    ending_exit = loaded.scenes["lair-hollow"].exits[0]
+
+    assert ending_exit.kind == "adventure_end"
+    assert ending_exit.to is None
+    assert ending_exit.condition is None
+    assert ending_exit.description
+
+
+def test_scene_exits_still_target_a_known_scene_and_carry_to():
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
+    scenes = loaded.scenes
+
+    assert scenes["village-green"].exits[0].kind == "scene"
+    assert scenes["village-green"].exits[0].to == "thornway"
+    assert scenes["thornway"].exits[0].to == "lair-maw"
+    assert scenes["lair-maw"].exits[0].to == "lair-hollow"
+
+
+# --- AC4: the seed inventory names item templates ----------------------------
+
+
+def test_seed_character_inventory_names_the_pinned_item_templates():
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    assert loaded.campaign.seed_character.inventory == SEED_INVENTORY
+    for template_id in loaded.campaign.seed_character.inventory:
+        assert loaded.object_templates[template_id].kind == "item"
 
 
 # --- 32: the CLI still exits 0 on this tree -------------------------------------

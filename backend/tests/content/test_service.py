@@ -24,6 +24,7 @@ from tests.content.conftest import (
     item_template,
     scene_approach,
     scene_floor,
+    seed_character,
 )
 
 ENTRY_PATTERN = re.compile(r"^([^:]+): \[([A-Z0-9]+)\] (.+)$")
@@ -584,7 +585,7 @@ def test_every_error_entry_matches_the_pinned_grammar_c21(content_root):
     with pytest.raises(errors.ContentInvalidError) as exc_info:
         service.load_campaign(CAMPAIGN_ID, VERSION)
 
-    grammar = re.compile(r"^[^:]+(/[^:]+)*: \[(READ|SCHEMA|R([2-9]|1[0-8]))\] .+$")
+    grammar = re.compile(r"^[^:]+(/[^:]+)*: \[(READ|SCHEMA|R([2-9]|1[0-9]|20))\] .+$")
     for entry in exc_info.value.errors:
         assert grammar.match(entry), entry
         assert "[R1]" not in entry
@@ -638,3 +639,138 @@ def test_load_object_template_traversal_ids_never_reach_the_filesystem_c25(conte
     with pytest.raises(errors.ContentNotFoundError) as exc_info:
         service.load_object_template("../../app", VERSION, "bog-lurker")
     assert exc_info.value.relative_path == f"campaigns/../../app/{VERSION}"
+
+
+# --- AC2: terminal-scene means "reachable and ends in an adventure_end exit" ---
+
+
+def test_reachable_scene_with_adventure_end_exit_satisfies_terminal_rule_ac2(content_root):
+    build_version_dir(content_root)
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)  # must not raise
+    assert loaded.scenes["mill-floor"].exits[0].kind == "adventure_end"
+
+
+def test_scene_with_no_exits_at_all_is_refused_ac2(content_root):
+    build_version_dir(
+        content_root,
+        scenes={
+            "mill-approach": scene_approach(),
+            "mill-floor": scene_floor(exits=[]),
+        },
+    )
+
+    with pytest.raises(errors.ContentInvalidError) as exc_info:
+        service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    assert (
+        "adventures/the-sunken-mill.json: [R10] no scene reachable from entry_scene "
+        "carries an adventure_end exit"
+    ) in exc_info.value.errors
+
+
+def test_r9_ignores_adventure_end_exits_but_still_fires_for_scene_exits_ac2(content_root):
+    build_version_dir(
+        content_root,
+        scenes={
+            "mill-approach": scene_approach(
+                exits=[
+                    {
+                        "id": "into-the-mill",
+                        "to": "no-such-scene",
+                        "description": "The mill door, barred from within.",
+                    }
+                ]
+            ),
+            "mill-floor": scene_floor(),
+        },
+    )
+
+    with pytest.raises(errors.ContentInvalidError) as exc_info:
+        service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    r9 = [(m.group(1), m.group(3)) for m in _entries(exc_info) if m.group(2) == "R9"]
+    assert len(r9) == 1
+    assert r9[0][0] == "adventures/the-sunken-mill.json"
+    assert "no-such-scene" in r9[0][1]
+
+
+# --- AC3: R19, duplicate exit id within one scene -------------------------------
+
+
+def test_duplicate_exit_id_in_one_scene_yields_one_r19_ac3(content_root):
+    build_version_dir(
+        content_root,
+        scenes={
+            "mill-approach": scene_approach(
+                exits=[
+                    {
+                        "id": "into-the-mill",
+                        "to": "mill-floor",
+                        "description": "The mill door, barred from within.",
+                    },
+                    {
+                        "id": "into-the-mill",
+                        "to": "mill-floor",
+                        "description": "A second, unbarred door.",
+                    },
+                ]
+            ),
+            "mill-floor": scene_floor(),
+        },
+    )
+
+    with pytest.raises(errors.ContentInvalidError) as exc_info:
+        service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    r19 = [(m.group(1), m.group(3)) for m in _entries(exc_info) if m.group(2) == "R19"]
+    assert len(r19) == 1
+    assert r19[0][0] == "adventures/the-sunken-mill.json"
+    assert "mill-approach" in r19[0][1]
+    assert "into-the-mill" in r19[0][1]
+
+
+# --- AC3: R20, seed character inventory names an item template -----------------
+
+
+def test_seed_inventory_unknown_template_yields_one_r20_ac3(content_root):
+    build_version_dir(
+        content_root,
+        campaign=campaign(seed_character=seed_character(inventory=["no-such-item"])),
+    )
+
+    with pytest.raises(errors.ContentInvalidError) as exc_info:
+        service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    r20 = [(m.group(1), m.group(3)) for m in _entries(exc_info) if m.group(2) == "R20"]
+    assert len(r20) == 1
+    assert r20[0][0] == "campaign.json"
+    assert "no-such-item" in r20[0][1]
+    assert "unknown object template" in r20[0][1]
+
+
+def test_seed_inventory_non_item_template_yields_one_r20_ac3(content_root):
+    build_version_dir(
+        content_root,
+        campaign=campaign(seed_character=seed_character(inventory=["bog-lurker"])),
+    )
+
+    with pytest.raises(errors.ContentInvalidError) as exc_info:
+        service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    r20 = [(m.group(1), m.group(3)) for m in _entries(exc_info) if m.group(2) == "R20"]
+    assert len(r20) == 1
+    assert r20[0][0] == "campaign.json"
+    assert "bog-lurker" in r20[0][1]
+    assert "is not an item" in r20[0][1]
+
+
+def test_seed_inventory_entry_counts_as_r14_reference_ac3(content_root):
+    extra_item = item_template(id="spare-key", name="Spare Key")
+    build_version_dir(
+        content_root,
+        object_templates=[creature_template(), item_template(), extra_item, fixture_template()],
+        campaign=campaign(seed_character=seed_character(inventory=["rusty-key", "spare-key"])),
+    )
+
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)  # must not raise: spare-key is referenced
+    assert "spare-key" in loaded.object_templates
