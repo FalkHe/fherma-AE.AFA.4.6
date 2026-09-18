@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-18
 updated: 2026-09-18
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/24
 ---
 # Review: Sprint 01 — the content speaks the mechanics' language
 
