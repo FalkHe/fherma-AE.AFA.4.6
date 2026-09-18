@@ -4,7 +4,10 @@ These never monkeypatch `service.CONTENT_ROOT` and never write into
 `backend/content/`. They read the actual `greenhollow/v1` campaign and prove
 it loads through the real service surface, carrying the addressable exits
 (`Exit.id`/`Exit.kind`), the ending exit on `lair-hollow`, and the
-item-backed seed inventory landed by sprint 005/01 (`brief.md` AC4).
+item-backed seed inventory landed by sprint 005/01 (`brief.md` AC4), on top
+of the standing regression checks carried over from the earlier
+object-template rework (criterion numbers `_c26`.. refer to `step-1.4.md`
+§10, "The shipped tree", 26-31).
 """
 
 import json
@@ -40,7 +43,21 @@ def _version_dir() -> Path:
     return service.CONTENT_ROOT / "campaigns" / CAMPAIGN_ID / VERSION
 
 
+# --- 26: definitions/ is gone, exactly two entries remain --------------------
+
+
+def test_definitions_directory_does_not_exist_c26():
+    assert not (_version_dir() / "definitions").exists()
+
+
+def test_version_directory_holds_exactly_campaign_json_and_adventures_c26():
+    entries = {p.name for p in _version_dir().iterdir()}
+    assert entries == {"campaign.json", "adventures"}
+
+
 # --- object_templates has exactly thirteen entries, in the pinned order -----
+# (supersedes the old nine-entry pin, step-1.4.md's c27: sprint 005/01 added
+# four item templates)
 
 
 def test_object_templates_has_thirteen_entries_in_pinned_order():
@@ -74,6 +91,135 @@ def test_new_item_templates_have_the_same_shape_as_the_existing_ones():
         assert template.attacks == []
         assert template.name
         assert template.description
+
+
+# --- 27b: both bypassed_by cardinalities ship ---------------------------------
+
+
+def test_bypassed_by_cardinalities_c27b():
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
+    templates = loaded.object_templates
+
+    thorn_screen_checks = templates["thorn-screen"].checks
+    assert thorn_screen_checks[1].bypassed_by == ["shepherds-knife", "notched-cleaver"]
+
+    wool_sack_checks = templates["wool-sack"].checks
+    assert wool_sack_checks[1].bypassed_by == ["notched-cleaver"]
+
+    assert thorn_screen_checks[0].bypassed_by == []
+    assert wool_sack_checks[0].bypassed_by == []
+
+
+def test_bypassed_by_key_absent_from_first_checks_in_shipped_json_c27b():
+    campaign_data = json.loads((_version_dir() / "campaign.json").read_text())
+    fixtures_by_id = {
+        t["id"]: t for t in campaign_data["object_templates"] if t["kind"] == "fixture"
+    }
+
+    for fixture_id in FIXTURE_IDS:
+        assert "bypassed_by" not in fixtures_by_id[fixture_id]["checks"][0]
+
+
+# --- 29: migration fidelity -- no old keys survive -----------------------------
+
+
+def test_no_old_keys_survive_under_the_greenhollow_tree_c29():
+    for path in _version_dir().rglob("*.json"):
+        text = path.read_text()
+        assert '"creatures"' not in text, path
+        assert '"definition"' not in text, path
+
+
+# --- 30: the four scenes' placements, exactly ----------------------------------
+
+
+def test_scene_placements_match_the_pinned_shape_c30():
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
+    scenes = loaded.scenes
+
+    village_green = scenes["village-green"]
+    assert [(p.template, p.count) for p in village_green.placements] == [
+        ("mira", 1),
+        ("bent-horseshoe", 1),
+    ]
+
+    assert scenes["thornway"].placements == []
+
+    lair_maw = scenes["lair-maw"]
+    assert [(p.template, p.count) for p in lair_maw.placements] == [
+        ("goblin", 3),
+        ("thorn-screen", 1),
+    ]
+
+    lair_hollow = scenes["lair-hollow"]
+    assert [(p.template, p.count) for p in lair_hollow.placements] == [
+        ("goblin-boss", 1),
+        ("goblin", 1),
+        ("wool-sack", 1),
+    ]
+
+    # scene ids and order, per the adventure's own scene list, unchanged
+    adventure = next(iter(loaded.adventures.values()))
+    assert [s.id for s in adventure.scenes] == [
+        "village-green",
+        "thornway",
+        "lair-maw",
+        "lair-hollow",
+    ]
+
+    # sprint 005/01: lair-hollow no longer ends the adventure with an empty
+    # exits list -- it carries exactly one exit, the adventure_end exit
+    assert [e.id for e in lair_hollow.exits] == ["leave-the-hollow"]
+    assert lair_hollow.exits[0].kind == "adventure_end"
+
+
+# --- 31: step-1.3 criteria survive the rename ----------------------------------
+
+
+def test_step_1_3_structural_criteria_survive_the_rename_c31():
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
+
+    assert service.list_campaign_ids() == [CAMPAIGN_ID]
+    assert service.list_versions(CAMPAIGN_ID) == [VERSION]
+    assert len(loaded.adventures) == 1
+    assert len(loaded.scenes) == 4
+
+    adventure = next(iter(loaded.adventures.values()))
+    assert adventure.entry_scene != "lair-hollow"  # terminal scene isn't the entry scene
+    # sprint 005/01: lair-hollow ends the adventure through an adventure_end
+    # exit rather than an empty exits list
+    assert [e.id for e in loaded.scenes["lair-hollow"].exits] == ["leave-the-hollow"]
+    assert loaded.scenes["lair-hollow"].exits[0].kind == "adventure_end"
+
+    # goblin placed in two scenes
+    scenes_with_goblin = [
+        scene_id
+        for scene_id, scene in loaded.scenes.items()
+        if any(p.template == "goblin" for p in scene.placements)
+    ]
+    assert len(scenes_with_goblin) == 2
+
+    # mira has attacks == [], at least one creature has a non-empty attacks list
+    creature_templates = [t for t in loaded.object_templates.values() if t.kind == "creature"]
+    assert loaded.object_templates["mira"].stat_block.attacks == []
+    assert any(t.stat_block.attacks for t in creature_templates)
+
+    # two hidden entries across two scenes
+    scenes_with_hidden = [scene for scene in loaded.scenes.values() if scene.hidden]
+    assert len(scenes_with_hidden) >= 2
+
+    # one exit with a condition, one without
+    all_exits = [exit_ for scene in loaded.scenes.values() for exit_ in scene.exits]
+    assert any(exit_.condition is not None for exit_ in all_exits)
+    assert any(exit_.condition is None for exit_ in all_exits)
+
+    # a placement with count > 1
+    all_placements = [p for scene in loaded.scenes.values() for p in scene.placements]
+    assert any(p.count > 1 for p in all_placements)
+
+    # a consequences entry naming the villain verbatim
+    all_consequences = " ".join(c for scene in loaded.scenes.values() for c in scene.consequences)
+    assert "Grettle" in all_consequences
 
 
 # --- AC4: exit ids and the ending exit ---------------------------------------
@@ -138,7 +284,10 @@ def test_loaded_campaign_still_exercises_every_pinned_mechanism():
             assert templates[item_id].kind == "item"
 
 
-def test_content_app_validates_shipped_tree():
+# --- 32: the CLI still exits 0 on this tree -------------------------------------
+
+
+def test_content_app_validates_shipped_tree_c32():
     result = runner.invoke(content_app, [])
 
     assert result.exit_code == 0
