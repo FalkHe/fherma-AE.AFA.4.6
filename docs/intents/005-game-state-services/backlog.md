@@ -17,7 +17,7 @@ route reaches yet — as `@pytest.mark.database` acceptance tests under `make ba
 | # | Sprint (task) | Depends on | Issue | Status |
 |---|---|---|---|---|
 | 01 | Check content schema + `greenhollow` against the mechanics; add `Exit.id`/`Exit.kind`, item-template seed inventory; fix loader rules and shipped content | – | #21 | open |
-| 02 | Check schema + model against the mechanics; migration `0007` for status set, nullable `template_id`, twelve event types; fix `temperature` type; update 003 tests and docs | – | #22 | running |
+| 02 | Check schema + model against the mechanics; migration `0007` for status set, nullable `template_id`, twelve event types; fix `temperature` type; update 003 tests and docs | – | #22 | done |
 | 03 | Build the service/route skeleton and `start_campaign_run` + list; instantiate all objects unpositioned; establish the membership gate | 02 | #23 | open |
 | 04 | Implement `create_character` (seed sheet, carried items, `setup → ready`), rename/archive/unarchive, archived read-only; fix `docs/general/model.md` lifecycle rows | 01, 03 | #24 | open |
 | 05 | Implement `append_event` + payload models, `GET …/events?after=`, `app playthrough cost`, SSE `GET …/stream` | 02, 03 | #25 | open |

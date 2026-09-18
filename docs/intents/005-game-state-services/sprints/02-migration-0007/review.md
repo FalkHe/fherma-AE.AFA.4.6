@@ -31,3 +31,10 @@ is one step forward that also steps back cleanly.
 Brief: docs/intents/005-game-state-services/sprints/02-migration-0007/brief.md
 
 ## Verdict
+
+Round 1: approve — the stored game now carries the whole run lifecycle: a run that only exists, one that is
+ready, one being played, and the archived or finished ones; it accepts a character created without an authored
+template and records all twelve kinds of transcript entry while refusing anything outside those sets. Stepping
+the schema back leaves it exactly as it was before this change, checked against a real database and not just
+the written instructions. The one thing to remember: stepping back would refuse to run once a generated
+character exists, which cannot happen until character creation lands.
