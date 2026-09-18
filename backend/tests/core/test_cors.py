@@ -32,6 +32,29 @@ def test_preflight_for_sign_in_has_the_preflight_cors_set(client):
     assert "access-control-expose-headers" not in response.headers
 
 
+def test_preflight_for_renaming_a_campaign_run_has_the_preflight_cors_set(client):
+    # `PATCH` is only used by the playthrough rename endpoint (005/04) --
+    # without it in `allow_methods`, this preflight would fail in a
+    # browser even though every same-origin test client call still passes.
+    response = client.options(
+        "/api/v1/playthrough/campaign/some-run-id",
+        headers={
+            "Origin": FRONTEND_ORIGIN,
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "content-type, x-csrf-token",
+        },
+    )
+
+    assert response.headers["access-control-allow-credentials"] == "true"
+    assert response.headers["access-control-allow-origin"] == FRONTEND_ORIGIN
+    allow_methods = response.headers["access-control-allow-methods"]
+    assert "PATCH" in allow_methods
+    allow_headers = response.headers["access-control-allow-headers"].lower()
+    assert "x-csrf-token" in allow_headers
+    # Deliberately not asserted here - see the module docstring.
+    assert "access-control-expose-headers" not in response.headers
+
+
 def test_sign_in_success_response_has_the_simple_response_cors_set(client, monkeypatch):
     user = make_user(username="aragorn")
 
