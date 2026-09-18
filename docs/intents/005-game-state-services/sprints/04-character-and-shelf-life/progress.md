@@ -9,10 +9,10 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| qa | open | |
+| 1 | done | character, rename, archive/delete, activate, three 409 codes |
+| 2 | done | three routes, wire schemas, `PATCH` added to CORS |
+| 3 | done | general model lifecycle rows, README, playthrough doc |
+| qa | done | 4 acceptance tests; AC3 sent back once for a leaking monkeypatch |
 
 Status: `open | running | done | failed`
 
