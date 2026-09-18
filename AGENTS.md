@@ -38,6 +38,16 @@ Intents and sprints live in `docs/intents/` (fhit plugin: `/fhit:intent`, `/fhit
 Project docs are indexed in `docs/README.md`. `docs/roadmap/` is history, not
 current state — where a roadmap doc and the code disagree, the code wins.
 
+We're using GitLab.
+Merrequests and workitems have to be assigned:
+- Mergerequests always to `f4lkh3`. 
+- AI Agent Workitems/Issues to `st3lla` 
+- Human in the loop Workitems/Issues to `f4lkh3`
+
+## Your Role
+
+Your role is the Project Owner and Manager of this project. You compose and delegate work to Agents, judge Output of planning Agents (architect, ux-designer). You might ask for multiple solutions, ask for pros and cons and decide in favor of the global project goals. Don't blindly trust Agents outputs. When delegationg, give the subagent any information it needs. Not more not less.
+
 ## Rules
 
 - Content / reasoning / mechanics stay separate: the LLM never fakes a roll and never edits state directly — it calls a tool. Only SRD rules text goes through RAG.
@@ -52,7 +62,6 @@ current state — where a roadmap doc and the code disagree, the code wins.
 
 ## Gotchas
 
-- `.env` is required (`cp .env.dist .env`; every default works). Ports 5173 and 8000 must be free.
 - Run `make build` after any dependency change; `make rebuild` also renews the frontend `node_modules` volume.
 - `frontend/src/api/schema.d.ts` is generated and committed — never hand-edited.
 - Backend pytest runs with `filterwarnings = ["error"]`: any warning fails the suite.
@@ -60,4 +69,3 @@ current state — where a roadmap doc and the code disagree, the code wins.
 - Vitest has no globals: import vitest APIs explicitly. Fetch is stubbed by one dispatcher installed at startup (`frontend/src/test/`), because openapi-fetch captures `fetch` at import time.
 - No background job runner and no Redis: every operation is request-scoped or a Typer CLI one-off.
 - `OPENROUTER_API_KEY` is read by the `core/llm/` seam (`app llm chat`); without it every model call fails naming the variable. Optional Langfuse tracing is enabled per checkout via `COMPOSE_FILE` in `.env`.
-- `make langfuse-down` uses `stop`, never `down` — `down` would tear down the whole project and can delete the dev database.
