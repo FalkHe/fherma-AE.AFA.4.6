@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-18
 updated: 2026-09-18
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/26
 ---
 # Review: Sprint 03 — a campaign run starts with its world already in it
 
