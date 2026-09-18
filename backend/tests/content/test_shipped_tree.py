@@ -93,6 +93,74 @@ def test_new_item_templates_have_the_same_shape_as_the_existing_ones():
         assert template.description
 
 
+# --- 27a: completeness -- no mechanism ships unexercised ----------------------
+
+
+def test_loaded_campaign_exercises_every_pinned_mechanism_c27a():
+    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
+    templates = loaded.object_templates
+    scenes = loaded.scenes
+
+    assert set(templates.keys()) == set(CREATURE_IDS + ITEM_IDS + FIXTURE_IDS)
+
+    # a creature placement that carries
+    village_green = scenes["village-green"]
+    mira_placement = next(p for p in village_green.placements if p.template == "mira")
+    assert mira_placement.carries == [
+        type(mira_placement.carries[0])(template="shepherds-knife", count=1)
+    ]
+
+    lair_hollow = scenes["lair-hollow"]
+    boss_placement = next(p for p in lair_hollow.placements if p.template == "goblin-boss")
+    assert [c.template for c in boss_placement.carries] == ["notched-cleaver"]
+
+    # a fixture placement that carries, with count > 1
+    sack_placement = next(p for p in lair_hollow.placements if p.template == "wool-sack")
+    assert [(c.template, c.count) for c in sack_placement.carries] == [("stolen-fleece", 2)]
+
+    # a bare item placement, no carrier, carries omitted (defaults to [])
+    horseshoe_placement = next(
+        p for p in village_green.placements if p.template == "bent-horseshoe"
+    )
+    assert horseshoe_placement.carries == []
+
+    # a placement with count > 1
+    lair_maw = scenes["lair-maw"]
+    goblin_placement = next(p for p in lair_maw.placements if p.template == "goblin")
+    assert goblin_placement.count == 3
+
+    # a scene with no placements
+    assert scenes["thornway"].placements == []
+
+    # item templates: non-empty attacks and attacks == []
+    assert templates["shepherds-knife"].attacks != []
+    assert templates["notched-cleaver"].attacks != []
+    assert templates["bent-horseshoe"].attacks == []
+    assert templates["stolen-fleece"].attacks == []
+
+    # each fixture: first check bypassed_by == [], second lists only items
+    for fixture_id in FIXTURE_IDS:
+        checks = templates[fixture_id].checks
+        assert len(checks) == 2
+        assert checks[0].bypassed_by == []
+        assert checks[1].bypassed_by
+        for item_id in checks[1].bypassed_by:
+            assert templates[item_id].kind == "item"
+
+    # both bypass chains are playable: at least one listed item is placed or
+    # carried somewhere in the tree. shepherds-knife also ships in the seed
+    # inventory now (sprint 005/01), but it is still carried by Mira here, so
+    # this reasoning over scene placements/carries is unaffected.
+    all_carried_or_placed_item_ids = {
+        p.template
+        for scene in scenes.values()
+        for p in scene.placements
+        if templates[p.template].kind == "item"
+    } | {c.template for scene in scenes.values() for p in scene.placements for c in p.carries}
+    assert "shepherds-knife" in all_carried_or_placed_item_ids
+    assert "notched-cleaver" in all_carried_or_placed_item_ids
+
+
 # --- 27b: both bypassed_by cardinalities ship ---------------------------------
 
 
@@ -264,24 +332,6 @@ def test_seed_character_inventory_names_the_pinned_item_templates():
     assert loaded.campaign.seed_character.inventory == SEED_INVENTORY
     for template_id in loaded.campaign.seed_character.inventory:
         assert loaded.object_templates[template_id].kind == "item"
-
-
-# --- every template is used, and the whole tree still validates -------------
-
-
-def test_loaded_campaign_still_exercises_every_pinned_mechanism():
-    loaded = service.load_campaign(CAMPAIGN_ID, VERSION)
-    templates = loaded.object_templates
-
-    assert set(templates.keys()) == set(CREATURE_IDS + ITEM_IDS + FIXTURE_IDS)
-
-    # each fixture: first check bypassed_by == [], second lists only items
-    for fixture_id in FIXTURE_IDS:
-        checks = templates[fixture_id].checks
-        assert checks[0].bypassed_by == []
-        assert checks[1].bypassed_by
-        for item_id in checks[1].bypassed_by:
-            assert templates[item_id].kind == "item"
 
 
 # --- 32: the CLI still exits 0 on this tree -------------------------------------
