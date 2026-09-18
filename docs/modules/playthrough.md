@@ -9,10 +9,12 @@ adventures are not here — those are static files owned by the `content` module
 activity, not an entity: **no table is called `playthrough`**, and no row is "a
 playthrough".
 
-Today the module is **schema only**. It ships five tables and their
-migrations, and nothing else — no service, no route, no schema module, no CLI
-(§8). This document describes the tables that exist, not the lifecycle that
-will one day write them.
+Today the module ships its five tables and their migrations, plus the surface
+that starts a campaign run and reads it back (§8): a service of three
+functions behind three authenticated endpoints. Entering an adventure,
+positioning objects and appending events remain future work; this document
+describes the tables and the surface that exist, not the lifecycle still to
+come.
 
 ## 1. What the module owns, and what it does not
 
@@ -234,14 +236,36 @@ Append-only: written once, never edited, never deleted.
 
 ## 8. Surface
 
-**There is none.** The module ships `models.py` and its migrations and nothing
-else: no `service.py`, no `routes.py`, no `schemas.py`, no Typer command, no
-HTTP endpoint. Nothing in the application creates, reads or mutates any of
-these five tables today, and the module exports no callable that another
-module could import.
+Three endpoints exist, all authenticated; the `POST` is also CSRF-guarded:
 
-This is deliberate, not an omission: this phase lands the shape of the state,
-and the lifecycle that writes it — starting a campaign run, entering an
-adventure, instantiating objects, appending events — is a later phase. Until
-then, the constraints described above are the only thing enforcing these
-rules, which is why so many of them are in the database rather than in Python.
+| Method & path | Behaviour |
+|---|---|
+| `POST /api/v1/playthrough/campaign` | Starts a campaign run for `{"campaignId": …}` — `201` and the run |
+| `GET /api/v1/playthrough/campaign` | The caller's runs, newest first, archived ones included |
+| `GET /api/v1/playthrough/campaign/{runId}` | One of the caller's runs |
+
+A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
+nothing else — the row, not its state.
+
+The service (`service.py`) exposes `start_campaign_run`, `list_campaign_runs`
+and `get_campaign_run`, called as `service.f(...)`. Every one of them takes
+the acting user, and every one that takes a run id calls the internal
+`_require_member` first. A run belonging to someone else and a run that does
+not exist answer identically — **not found** — so no one can probe for the
+existence of another player's game.
+
+**Starting a run** does three things at once, because none of them makes
+sense without the others: it pins the campaign's current content version onto
+the run for its whole life, so a later change to the authored content cannot
+alter a game already in progress; it makes the starter the run's owning
+member (`campaign_run_members`, §4); and it instantiates every object the
+campaign's adventures declare — every placement, every carried item — into
+`objects` (§6), none of them positioned in any scene yet, because entering an
+adventure is a separate, explicit step still to come. It appends no `events`
+row (§7). Starting the same run twice is refused by the uniqueness of
+`(campaign_run_id, instance_key)` on `objects` (§6) rather than by an explicit
+check.
+
+Errors this module raises: an unknown-or-foreign run and a campaign the
+content does not know are **not found**; a run already started is a
+**conflict**.
