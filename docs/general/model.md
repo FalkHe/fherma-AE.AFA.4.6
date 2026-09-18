@@ -306,9 +306,12 @@ adventures, so it lives in the campaign-scoped file.
 
 ## Lifecycle
 
+Built in Phase 5 — Game State Services. Nothing below runs yet; the tables it
+writes exist.
+
 | Action | Effect |
 |---|---|
-| Start a campaign run | Pin the campaign and content version; create the owner member row; instantiate **all** objects the pinned Campaign-Definition declares; generate the player's creature |
+| Start a campaign run | Pin the campaign and content version; create the owner member row; instantiate **all** objects the pinned Campaign-Definition declares, the player's creature among them, from the seed player character |
 | Start an adventure | Create an `adventure_runs` row; place that adventure's cast — the player's creature among them — in the scenes the content puts them in |
 | Archive | The player-facing removal gesture — a status change; nothing is deleted |
 
