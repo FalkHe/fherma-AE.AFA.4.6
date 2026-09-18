@@ -9,9 +9,9 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| qa | open | |
+| 1 | done | revision 0007, models, engine-free tests rewritten |
+| 2 | done | module README and playthrough doc |
+| qa | done | 4 database acceptance tests, red before implementation |
 
 Status: `open | running | done | failed`
 
