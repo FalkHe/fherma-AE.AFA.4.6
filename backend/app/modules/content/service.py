@@ -188,23 +188,28 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
         for scene in adventure.scenes:
             if scene_owner_by_id.get(scene.id) != adventure_id:
                 continue
+
+            # R19: an exit id is unique within its own scene.
+            seen_exit_ids: set[str] = set()
             for exit_ in scene.exits:
+                if exit_.id in seen_exit_ids:
+                    errors.append(
+                        f"adventures/{adventure_id}.json: [R19] scene '{scene.id}': "
+                        f"duplicate exit id '{exit_.id}'"
+                    )
+                    continue
+                seen_exit_ids.add(exit_.id)
+
+            # R9: a scene exit targets a different, known scene. adventure_end
+            # exits carry no `to` and are exempt.
+            for exit_ in scene.exits:
+                if exit_.kind != "scene":
+                    continue
                 if exit_.to == scene.id or exit_.to not in adventure_scene_ids:
                     errors.append(
                         f"adventures/{adventure_id}.json: [R9] scene '{scene.id}': "
                         f"exit targets unknown scene '{exit_.to}'"
                     )
-
-        terminal = any(
-            scene.exits == []
-            for scene in adventure.scenes
-            if scene_owner_by_id.get(scene.id) == adventure_id
-        )
-        if not terminal:
-            errors.append(
-                f"adventures/{adventure_id}.json: [R10] no scene in this adventure "
-                "is terminal (exits == [])"
-            )
 
         reachable: set[str] = {adventure.entry_scene}
         frontier = [adventure.entry_scene]
@@ -225,6 +230,19 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
                     f"adventures/{adventure_id}.json: [R11] scene '{scene.id}' is not "
                     "reachable from entry_scene"
                 )
+
+        # R10: at least one reachable scene carries an adventure_end exit.
+        # Reachability is computed above so this rule can rely on it.
+        terminal = any(
+            scene.id in reachable and any(exit_.kind == "adventure_end" for exit_ in scene.exits)
+            for scene in adventure.scenes
+            if scene_owner_by_id.get(scene.id) == adventure_id
+        )
+        if not terminal:
+            errors.append(
+                f"adventures/{adventure_id}.json: [R10] no scene reachable from "
+                "entry_scene carries an adventure_end exit"
+            )
 
     # R12, R16, R17, R18: placements and carries in the adventure files.
     referenced_template_ids: set[str] = set()
@@ -295,6 +313,22 @@ def load_campaign(campaign_id: str, version: str) -> LoadedCampaign:
                         f"campaign.json: [R17] fixture '{template.id}': check {check_index} "
                         f"bypassed_by entry {entry_index} '{entry_id}' is not an item"
                     )
+
+    # R20: seed character inventory entries name an item template. They also
+    # count towards R14's reference set.
+    for entry_index, entry_id in enumerate(campaign.seed_character.inventory):
+        referenced_template_ids.add(entry_id)
+        entry_template = templates_by_id.get(entry_id)
+        if entry_template is None:
+            errors.append(
+                f"campaign.json: [R20] seed character inventory entry {entry_index} "
+                f"names unknown object template '{entry_id}'"
+            )
+        elif entry_template.kind != "item":
+            errors.append(
+                f"campaign.json: [R20] seed character inventory entry {entry_index} "
+                f"'{entry_id}' is not an item"
+            )
 
     # R14: every declared template is referenced somewhere.
     for template_id in sorted(templates_by_id):

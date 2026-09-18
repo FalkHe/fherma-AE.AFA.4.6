@@ -248,12 +248,19 @@ One entry of a scene's `exits` list — **a list, not a map**.
 
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
-| `to` | content id | yes | — | The id of a scene in the **same adventure** |
+| `id` | content id | yes | — | Which exit `use_exit(actor, exit)` addresses. Unique within its **own scene only** (R19) — unlike scene and template ids, an exit id may repeat in another scene |
+| `kind` | `"scene"` \| `"adventure_end"` | no | `"scene"` | A `scene` exit moves the run to another scene; an `adventure_end` exit ends the adventure there |
+| `to` | content id or `null` | see purpose | — | The id of a scene in the **same adventure**. Required on a `scene` exit; an `adventure_end` exit must not carry it |
 | `description` | prose string | yes | — | What the player perceives as the way on |
 | `condition` | prose string or `null` | no | `null` | Prose the DM judges before allowing the exit; `null` means always open |
 
-**A scene with `exits: []` is terminal** — reaching it ends the adventure.
-Every adventure must have at least one terminal scene (R10).
+**Why an exit needs its own id.** Changing scene and ending the adventure are
+one mechanic, `use_exit(actor, exit)` — the DM addresses an exit by id, never
+by its position in the list. An adventure ends by the player taking a
+particular exit, not by wandering into a scene that happens to have none: some
+scene reachable from `entry_scene` must carry an `adventure_end` exit (R10).
+There is no more "terminal scene" shape — a scene with `exits: []` is simply a
+scene with no way on, not how an adventure ends.
 
 ### 5.9 `Scene`
 
@@ -272,7 +279,7 @@ consequences — never a script (see §10).
 | `consequences` | list of prose strings | no | `[]` | What follows from plausible player action — never what the player does |
 | `hidden` | list of `Secret` | no | `[]` | DM-only secrets |
 | `placements` | list of `Placement` | no | `[]` | What is here: creatures, items and fixtures alike |
-| `exits` | list of `Exit` | no | `[]` | Ways out of the scene; empty means terminal |
+| `exits` | list of `Exit` | no | `[]` | Ways out of the scene. Ending the adventure happens through an `adventure_end` exit (§5.8), not through an empty list |
 | `pressure` | prose string or `null` | no | `null` | What forces the scene forward |
 
 ### 5.10 `Adventure`
@@ -303,11 +310,15 @@ agent exists — it is not a player-facing option.
 | `abilities` | `Abilities` | yes | — | The six ability scores |
 | `max_hp` | integer, ≥1 | yes | — | Starting/maximum hit points |
 | `armour_class` | integer, ≥1 | yes | — | Armour class |
-| `inventory` | list of prose strings | no | `[]` | Starting items, as free text — not `ItemTemplate` references |
+| `inventory` | list of content ids | no | `[]` | Starting items — each id must name a declared **item**-kind template (R20), never free text |
 
 No `portrait` field, no `level`, no proficiency, no authored attacks — see §9.
-The seed character references nothing else in the Campaign-Definition, so
-there is no referential rule for it.
+`inventory` is the seed character's only reference into the
+Campaign-Definition: a starting pack has to name real item templates so that
+later mechanics — combat, carrying, giving an item away — can act on a real
+weapon or tool instead of a sentence. R14 counts each entry as a use of the
+template it names, and R20 rejects an entry that names no template, or names
+one that is not an `item`.
 
 ### 5.12 `Campaign`
 
@@ -344,6 +355,8 @@ else, so the two can never disagree.
   entry that is not a valid content id are all rejected.
 - **Carrying does not nest.** A `Carried` entry carrying a `carries` key of
   its own is rejected.
+- **A `scene`-kind exit requires `to`; an `adventure_end`-kind exit must not
+  carry `to`.** Either mismatch is a `[SCHEMA]` failure on the exit itself.
 - No string and no list has an upper bound — nothing here rejects a file for
   being long.
 
@@ -352,7 +365,7 @@ else, so the two can never disagree.
 Applied after every file in the tree has already passed the field checks
 above. Each rule's tag is what appears in a validation error, in the form
 `<path>: [<TAG>] <detail>` (§8) — an author who sees `[R11]` can look the
-number up here. **Eighteen rules, `R1` through `R18`; `R1` and `R3` carry no
+number up here. **Twenty rules, `R1` through `R20`; `R1` and `R3` carry no
 tag of their own in `errors[]`.**
 
 | # | Where checked | Rule |
@@ -365,22 +378,29 @@ tag of their own in `errors[]`.**
 | R6 | loader | Each adventure's `id` equals its own filename stem |
 | R7 | loader | `adventure.entry_scene` is the `id` of one of that adventure's own `scenes` |
 | R8 | loader | A scene `id` appears **at most once across the whole campaign** — twice in one adventure and once each in two adventures are the same failure |
-| R9 | loader | Every `exit.to` names a scene in the **same** adventure, and is never the scene's own id |
-| R10 | loader | Each adventure has at least one scene whose `exits` is `[]` |
-| R11 | loader | Every scene of an adventure is reachable from `entry_scene` by following exits (conditions ignored for this check); the entry scene itself counts as reached |
+| R9 | loader | Every `scene`-kind exit's `to` names a scene in the **same** adventure, and is never the scene's own id |
+| R10 | loader | Some scene reachable from the entry scene carries an `adventure_end` exit |
+| R11 | loader | Every scene of an adventure is reachable from `entry_scene` by following exits (conditions ignored for this check); the entry scene itself counts as reached; an exit without `to` (an `adventure_end` exit) is not followed further |
 | R12 | loader | Every object-template reference resolves to a declared template — `placements[].template`, `carries[].template` and every entry of every `checks[].bypassed_by` list alike |
 | R13 | loader | An object template `id` appears at most once in `campaign.object_templates`; the first occurrence keeps the id, every later one is excluded from the loaded campaign |
-| R14 | loader | Every declared object template is referenced at least once — by a placement, a carry, or an entry of any `bypassed_by` list |
+| R14 | loader | Every declared object template is referenced at least once — by a placement, a carry, an entry of any `bypassed_by` list, or an entry of `seed_character.inventory` |
 | R15 | loader | An object template `name` is unique across the campaign, compared case-insensitively after stripping, **across all three kinds** |
 | R16 | loader | A template appears at most once in a scene's `placements` list, and at most once in any single placement's `carries` list |
 | R17 | loader | Every `carries[].template` and every entry of every `checks[].bypassed_by` list resolves to a template whose `kind` is `item` |
 | R18 | loader | A placement whose template `kind` is `item` has `carries == []` |
+| R19 | loader | An exit `id` appears at most once within its own scene's `exits` list |
+| R20 | loader | Every `seed_character.inventory` entry resolves to a declared template whose `kind` is `item` |
 
 **Ordering between R12 and R17.** R17 is evaluated only for a reference R12
 already resolved — an unknown id yields `[R12]` and nothing else, so one
 mistake never produces two findings. This is judged per reference: in a
 `bypassed_by` list holding an unknown id, an item and a creature, the unknown
 one yields `[R12]`, the creature yields `[R17]`, and the item yields nothing.
+
+**R20 is R12 and R17 folded into one tag.** A `seed_character.inventory`
+entry has only one rule to fail: an unresolvable id and an id resolving to a
+non-`item` template are both reported `[R20]`, unlike a placement or a carry
+reference where the two shapes of failure are two different tags.
 
 **What an id/filename mismatch gets you.** An adventure is always identified
 by its **filename**, never by the `id` field inside the file:
@@ -413,14 +433,16 @@ Every reported problem has the shape:
 
 - `[READ]` — the file could not be read, or is not valid JSON.
 - `[SCHEMA]` — the file parsed as JSON but failed a field check (§6).
-- `[R2]` … `[R18]` — the numbered referential rule that failed (§7). **R1 has
+- `[R2]` … `[R20]` — the numbered referential rule that failed (§7). **R1 has
   no tag of its own** — its failure is always reported as `[READ]` or
   `[SCHEMA]` against `campaign.json`. **R3 never appears here** — it is a
   CLI-level check, not a loader rule.
 
 **Every rule about a template names `campaign.json`**, and puts the template
-id in the detail. **Every rule about a placement or a carry names the
-adventure file**, and puts the scene id in the detail.
+id in the detail. **Every rule about a placement, a carry or an exit names
+the adventure file**, and puts the scene id in the detail. **R20 names
+`campaign.json`**, and puts the offending inventory entry in the detail —
+there is no scene or adventure file to name.
 
 Example messages:
 
@@ -429,11 +451,13 @@ adventures/goblins-of-greenhollow.json: [R9] scene 'lair-maw': exit targets unkn
 adventures/goblins-of-greenhollow.json: [R12] scene 'lair-hollow': unknown object template 'notched-cleavor'
 adventures/goblins-of-greenhollow.json: [R17] scene 'lair-hollow': carried template 'goblin' is not an item
 adventures/goblins-of-greenhollow.json: [R18] scene 'village-green': item placement 'bent-horseshoe' cannot carry
+adventures/goblins-of-greenhollow.json: [R19] scene 'lair-hollow': duplicate exit id 'leave-the-hollow'
 campaign.json: [R12] fixture 'thorn-screen': check 1 bypassed_by entry 0 names unknown object template 'shepherds-knifr'
 campaign.json: [R13] duplicate object template id 'goblin'
 campaign.json: [R14] object template 'stolen-fleece' is not referenced by any scene
 campaign.json: [R15] object template 'zzz-key' duplicates the name 'Rusty Key'
 campaign.json: [R17] fixture 'thorn-screen': check 1 bypassed_by entry 0 'goblin' is not an item
+campaign.json: [R20] seed character inventory names unknown object template 'shepherds-knifr'
 campaign.json: [SCHEMA] object_templates.0.creature.stat_block.max_hp: Input should be a valid integer
 ```
 
@@ -511,9 +535,30 @@ scenes included, is one of them.
     },
     "max_hp": 9,
     "armour_class": 14,
-    "inventory": ["a shortsword", "a coil of rope", "a tin lantern"]
+    "inventory": ["belt-knife", "coil-of-rope", "tin-lantern"]
   },
   "object_templates": [
+    {
+      "id": "belt-knife",
+      "kind": "item",
+      "name": "Belt Knife",
+      "description": "A small belaying knife Perrin keeps up a sleeve, more habit than weapon.",
+      "attacks": [
+        { "name": "Belt Knife", "to_hit": 3, "damage": "1d4" }
+      ]
+    },
+    {
+      "id": "coil-of-rope",
+      "kind": "item",
+      "name": "Coil of Rope",
+      "description": "Ten yards of hemp rope, salt-stiffened from years on the barges."
+    },
+    {
+      "id": "tin-lantern",
+      "kind": "item",
+      "name": "Tin Lantern",
+      "description": "A dented tin lantern that throws more shadow than light but burns clean."
+    },
     {
       "id": "bog-lurker",
       "kind": "creature",
@@ -598,6 +643,7 @@ scenes included, is one of them.
       ],
       "exits": [
         {
+          "id": "into-the-mill",
           "to": "mill-floor",
           "description": "The mill door, barred from within.",
           "condition": "the bar has been broken, forced, or lifted from outside"
@@ -619,6 +665,13 @@ scenes included, is one of them.
         { "template": "bog-lurker", "count": 2 },
         { "template": "sunken-door", "count": 1 }
       ],
+      "exits": [
+        {
+          "id": "climb-out-through-the-chute",
+          "kind": "adventure_end",
+          "description": "The dry grain chute climbs past the wheel and out into open air."
+        }
+      ],
       "pressure": "The water is still rising; the chute will be the only dry footing within the hour."
     }
   ]
@@ -626,13 +679,22 @@ scenes included, is one of them.
 ```
 
 Why it is valid: the two scene ids are unique across the campaign (R8);
-`mill-floor` is reachable from `mill-approach` (R11) and has no `exits`, so it
-is terminal (R10); every object template is referenced by a scene (R14) and
-its name is unique (R15); no scene places a template twice (R16);
-`sunken-door`'s second check is bypassed by `rusty-key`, an `item`-kind
-template (R17); the omitted optional fields — `npc_intent`, `placements`,
-`pressure` on `mill-approach`, and `exits` on `mill-floor` — take their
-defaults, which is legal and is how absence is expressed.
+`mill-floor` is reachable from `mill-approach` (R11) and carries an
+`adventure_end` exit, so the adventure has a way to end (R10); that exit
+omits `to`, as an `adventure_end` exit must, and the reachability walk does
+not try to follow it further (R11); every object template is referenced —
+`bog-lurker` and `sunken-door` by a placement, `rusty-key` by a placement and
+a `bypassed_by` entry, `belt-knife`/`coil-of-rope`/`tin-lantern` by
+`seed_character.inventory` (R14) — and every name is unique (R15); no scene
+places a template twice (R16); `sunken-door`'s second check is bypassed by
+`rusty-key`, an `item`-kind template (R17); each seed-character inventory
+entry names a declared `item`-kind template (R20); each scene has only one
+exit, so trivially no two exits in the same scene share an id (R19); the
+omitted optional fields — `npc_intent`, `placements`, `pressure` on
+`mill-approach`, `kind` on `into-the-mill` (defaulting to `scene`), and
+`condition` on `climb-out-through-the-chute` — take their defaults; `to` is
+correctly absent on `climb-out-through-the-chute`, since an `adventure_end`
+exit must not carry one.
 
 ## 12. Authoring checklist
 
@@ -640,9 +702,16 @@ Run down this list before validating:
 
 - [ ] Every scene of every adventure is reachable from that adventure's
       `entry_scene` by following exits.
-- [ ] Every adventure has at least one scene with `exits: []`.
+- [ ] Some scene reachable from `entry_scene` carries an `adventure_end`
+      exit.
+- [ ] Every `scene`-kind exit names a `to`; every `adventure_end`-kind exit
+      omits it.
+- [ ] No two exits in the same scene share an `id`.
 - [ ] Every object template is referenced by at least one placement, one
-      carry, or one `bypassed_by` entry.
+      carry, one `bypassed_by` entry, or one `seed_character.inventory`
+      entry.
+- [ ] Every `seed_character.inventory` entry names a declared **item**-kind
+      template, never free text.
 - [ ] No scene places the same template twice in `placements`, and no
       placement carries the same template twice in `carries` — use `count`
       instead.
@@ -656,7 +725,8 @@ Run down this list before validating:
       placement never carries anything itself.
 - [ ] Every id (`campaign.id`, adventure/scene/template ids) matches its own
       filename stem where it has one (or, for a scene or a template, is
-      unique campaign-wide) and is lowercase kebab-case.
+      unique campaign-wide; for an exit, is unique within its own scene) and
+      is lowercase kebab-case.
 - [ ] Every prose field carries real text — no accidental whitespace-only
       string.
 - [ ] The player-class key is `character_class`, and the armour key is

@@ -1,6 +1,6 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 class ContentModel(BaseModel):
@@ -88,9 +88,19 @@ class Placement(ContentModel):
 
 
 class Exit(ContentModel):
-    to: ContentId
+    id: ContentId
+    kind: Literal["scene", "adventure_end"] = "scene"
+    to: ContentId | None = None
     description: ProseText
     condition: ProseText | None = None
+
+    @model_validator(mode="after")
+    def _to_matches_kind(self) -> Self:
+        if self.kind == "scene" and self.to is None:
+            raise ValueError("to is required when kind is 'scene'")
+        if self.kind == "adventure_end" and self.to is not None:
+            raise ValueError("to must be absent when kind is 'adventure_end'")
+        return self
 
 
 class Scene(ContentModel):
@@ -122,7 +132,7 @@ class SeedCharacter(ContentModel):
     abilities: Abilities
     max_hp: int = Field(ge=1)
     armour_class: int = Field(ge=1)
-    inventory: list[ProseText] = Field(default_factory=list)
+    inventory: list[ContentId] = Field(default_factory=list)
 
 
 class Campaign(ContentModel):

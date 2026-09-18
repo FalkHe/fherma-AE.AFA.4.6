@@ -19,7 +19,7 @@
     },
     "max_hp": 12,
     "armour_class": 15,
-    "inventory": ["a spear", "a wooden shield", "a hooded lantern", "a coil of twine", "three days' rations"]
+    "inventory": ["shepherds-knife", "wooden-shield", "hooded-lantern", "coil-of-twine", "rations"]
   },
   "object_templates": [
     {
@@ -121,6 +121,34 @@
       "kind": "item",
       "name": "Stolen Fleece",
       "description": "A bundled fleece off one of Greenhollow's missing sheep, still carrying the shear-mark of the household it was taken from. Carried back to the green it is proof of what happened and worth something to the house that lost it.",
+      "attacks": []
+    },
+    {
+      "id": "wooden-shield",
+      "kind": "item",
+      "name": "Wooden Shield",
+      "description": "A round shield of green-cut wood strapped together and banded in iron, better suited to turning aside a goblin's blade than to hanging on a wall.",
+      "attacks": []
+    },
+    {
+      "id": "hooded-lantern",
+      "kind": "item",
+      "name": "Hooded Lantern",
+      "description": "A tin lantern with a hinged hood to shutter its light at will, filled and trimmed the night before the walk north.",
+      "attacks": []
+    },
+    {
+      "id": "coil-of-twine",
+      "kind": "item",
+      "name": "Coil of Twine",
+      "description": "A tight coil of waxed cord, the kind used to lash hurdles and mend fences, long enough to mark a trail or bind a prisoner.",
+      "attacks": []
+    },
+    {
+      "id": "rations",
+      "kind": "item",
+      "name": "Trail Rations",
+      "description": "Three days of hard bread, dried meat and a twist of salt, wrapped in oilcloth and tied to the belt for the walk into the Thornway woods.",
       "attacks": []
     },
     {
