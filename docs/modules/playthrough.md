@@ -68,14 +68,18 @@ life, plus the model settings the Dungeon Master runs with.
 | `campaign_id` | `String(64)` | no | — | The authored campaign, by content id — no FK |
 | `content_version` | `String(16)` | no | — | The pinned version directory (`v1`, `v2`, …) |
 | `title` | `String(120)` | yes | `NULL` | The player's own name for the run |
-| `status` | `String(16)` | no | `active` | `active` / `archived` / `finished` |
+| `status` | `String(16)` | no | `setup` | `setup` / `ready` / `active` / `archived` / `finished` |
 | `model` | `String(64)` | yes | `NULL` | OpenRouter model id this run uses |
-| `temperature` | `NUMERIC(3,2)` | yes | `NULL` | Sampling temperature |
+| `temperature` | `NUMERIC(3,2)` | yes | `NULL` | Sampling temperature — an exact decimal, never a float, the same shape as `events.cost_usd` |
 | `personality_prompt_id` | `String(128)` | yes | `NULL` | Which DM personality prompt to load |
 | `system_prompt_override` | `Text` | yes | `NULL` | A full system-prompt replacement |
 | `created_at` / `updated_at` | timestamptz | no | `now()` | `updated_at` also on update |
 
-- **Check `status`**: `status IN ('active','archived','finished')`.
+- **`status` is a lifecycle, not a free set of labels.** A run is created in
+  `setup` — the row exists, but its character does not yet. Creating the
+  character moves it to `ready`; the first narration written moves it to
+  `active`. `archived` and `finished` follow as before. **Check `status`**:
+  `status IN ('setup','ready','active','archived','finished')`.
 - **No owner column.** Ownership lives in `campaign_run_members` (§4) and
   nowhere else, so that a run never has to be rewritten to gain a second
   member.
@@ -143,7 +147,7 @@ class is `GameObject` because `Object` shadows a builtin; the table is
 | `campaign_run_id` | FK → `campaign_runs.id` | no | — | `ON DELETE CASCADE`, indexed |
 | `member_id` | FK → `campaign_run_members.id` | yes | `NULL` | `ON DELETE CASCADE`, indexed, **never unique** |
 | `kind` | `String(16)` | no | — | `creature` / `item` / `fixture` |
-| `template_id` | `String(64)` | no | — | The authored `ObjectTemplate` it came from — no FK |
+| `template_id` | `String(64)` | yes | `NULL` | The authored `ObjectTemplate` it came from — no FK |
 | `instance_key` | `String(160)` | no | — | Stable per-run identity (`goblin-2`) |
 | `name` | `String(120)` | no | — | What the player is told it is called |
 | `source_adventure_id` / `source_scene_id` | `String(64)` | yes | `NULL` | **Provenance** — where it was instantiated, written once |
@@ -158,6 +162,11 @@ class is `GameObject` because `Object` shadows a builtin; the table is
 - **Unique** `(campaign_run_id, instance_key)`. Indexed on
   `(adventure_run_id, scene_id)` — "what is in this scene" is the one query
   the schema is shaped for.
+- **`template_id` is optional.** It is absent exactly when the object was
+  generated rather than instantiated from authored content — a generated
+  character has no template. Nothing else changes for a generated object:
+  the creature-only stats rule and the hit-point range rule below still
+  hold.
 - **Provenance and position are different pairs, and nothing ties them
   together.** `source_*` records where a thing came from and is written once;
   `(adventure_run_id, scene_id)` records where it is now and is rewritten on
@@ -189,9 +198,10 @@ class is `GameObject` because `Object` shadows a builtin; the table is
 
 ## 7. `events`
 
-One narration, player action, dice roll, tool call or error recorded in a
-campaign run's transcript. Append-only: written once, never edited, never
-deleted.
+One step of a campaign run's transcript — narration, player action, a
+requested or resolved dice roll, a question put to the player, a tool call,
+a scene or adventure milestone, a system message, or an error or warning.
+Append-only: written once, never edited, never deleted.
 
 | Column | Type | Null | Default | Purpose |
 |---|---|---|---|---|
@@ -199,7 +209,7 @@ deleted.
 | `campaign_run_id` | FK → `campaign_runs.id` | no | — | `ON DELETE CASCADE` |
 | `actor_member_id` | FK → `campaign_run_members.id` | yes | `NULL` | `ON DELETE SET NULL` — the event outlives the member |
 | `turn_id` | ULID `CHAR(26)` | yes | `NULL` | Groups events into one turn — **no foreign key** |
-| `type` | `String(32)` | no | — | `narration` / `player_action` / `roll` / `tool_call` / `error` |
+| `type` | `String(32)` | no | — | `narration` / `player_action` / `roll_requested` / `roll` / `question` / `tool_call` / `scene_entered` / `adventure_started` / `adventure_completed` / `system` / `error` / `warning` |
 | `visibility` | `String(8)` | no | — | `player` / `dm` |
 | `payload` | `JSONB` | no | **none** | The event body; its shape follows from `type` |
 | `prompt_tokens`, `completion_tokens` | `Integer` | yes | `NULL` | Model usage for this event |
