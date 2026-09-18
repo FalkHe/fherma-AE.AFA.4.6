@@ -170,7 +170,7 @@ def test_ac2_untitled_and_repeat_runs_of_the_same_campaign_insert_with_overrides
 
 @pytest.mark.database
 def test_ac3_status_check_membership_uniqueness_and_owner_cascade(playthrough_db):
-    # <- AC3: `status` accepts the three named values and rejects anything
+    # <- AC3: `status` accepts the five named values and rejects anything
     # else, a second membership row for the same run/user pair violates the
     # unique constraint, and deleting the owning user cascades onto the
     # member row.
@@ -178,7 +178,7 @@ def test_ac3_status_check_membership_uniqueness_and_owner_cascade(playthrough_db
         user_id = generate_id()
         await _insert_user(playthrough_db, user_id, "ac3-owner")
 
-        for status in ("active", "archived", "finished"):
+        for status in ("setup", "ready", "active", "archived", "finished"):
             run_id = generate_id()
             await _insert_campaign_run(
                 playthrough_db, run_id, campaign_id=f"ac3-{status}", status=status
