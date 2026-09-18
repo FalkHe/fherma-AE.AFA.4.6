@@ -210,9 +210,23 @@ def _expected_instance_keys(loaded_campaign) -> set[str]:
 def test_ac3_starting_over_greenhollow_v1_writes_exactly_its_declared_objects_unpositioned(
     playthrough_db,
 ):
-    # <- AC3
+    # <- AC3. The `(campaign_run_id, instance_key)` constraint guarantees
+    # only that *one run* cannot hold the same authored object twice; it
+    # says nothing about how many runs of a campaign a user may have, so a
+    # second start of the same campaign must succeed as a second, distinct
+    # run with its own complete object set -- not be refused.
     loaded = content_service.load_campaign("greenhollow", "v1")
     expected_keys = _expected_instance_keys(loaded)
+
+    async def _fetch_objects(run_id):
+        rows = await playthrough_db.execute(
+            text(
+                "SELECT id, instance_key, adventure_run_id, scene_id, owner_object_id "
+                "FROM objects WHERE campaign_run_id = :run_id"
+            ),
+            {"run_id": run_id},
+        )
+        return rows.all()
 
     async def _scenario():
         user_id = generate_id()
@@ -234,16 +248,12 @@ def test_ac3_starting_over_greenhollow_v1_writes_exactly_its_declared_objects_un
         )
         assert stored_version.scalar_one() == "v1"
 
-        # Exactly the object set the content implies, none of it positioned,
-        # carried rows pointing at the owner they belong to.
-        rows = await playthrough_db.execute(
-            text(
-                "SELECT id, instance_key, adventure_run_id, scene_id, owner_object_id "
-                "FROM objects WHERE campaign_run_id = :run_id"
-            ),
-            {"run_id": run.id},
-        )
-        by_key = {row.instance_key: row for row in rows.all()}
+        # Exactly the object set the content implies -- no `instance_key`
+        # repeated within this one run -- none of it positioned, carried
+        # rows pointing at the owner they belong to.
+        rows = await _fetch_objects(run.id)
+        by_key = {row.instance_key: row for row in rows}
+        assert len(rows) == len(expected_keys)  # no instance_key duplicated within the run
         assert set(by_key.keys()) == expected_keys
 
         for key, row in by_key.items():
@@ -262,12 +272,17 @@ def test_ac3_starting_over_greenhollow_v1_writes_exactly_its_declared_objects_un
         )
         assert event_count.scalar_one() == 0
 
-        # Starting the same run a second time is refused.
-        with pytest.raises(Exception) as exc_info:  # noqa: B017, PT011 - domain type is off-limits
-            await playthrough_service.start_campaign_run(
-                playthrough_db, user_id=user_id, campaign_id="greenhollow"
-            )
-        await playthrough_db.rollback()
-        assert getattr(exc_info.value, "code", None) == "ALREADY_STARTED"
+        # Starting the same campaign again yields a second, distinct run --
+        # its own complete set of the thirteen keys, sharing no row with
+        # the first run's.
+        second_run = await playthrough_service.start_campaign_run(
+            playthrough_db, user_id=user_id, campaign_id="greenhollow"
+        )
+        assert second_run.id != run.id
+
+        second_rows = await _fetch_objects(second_run.id)
+        assert len(second_rows) == len(expected_keys)
+        assert {row.instance_key for row in second_rows} == expected_keys
+        assert {row.id for row in second_rows}.isdisjoint({row.id for row in rows})
 
     asyncio.run(_scenario())
