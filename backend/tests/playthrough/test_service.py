@@ -351,13 +351,38 @@ def test_start_campaign_run_raises_not_found_for_an_unknown_campaign():
     assert excinfo.value.__cause__ is not None
 
 
-def test_repeat_start_is_refused_by_the_key_not_a_pre_check():
-    """No pre-check exists (I5): the run's id is deterministic per
-    `(user_id, campaign_id)` (`_campaign_run_id`), so a second start's rows
-    collide with the first's on the same `objects` unique constraint that
-    `FakeSession.flush()` simulates, and the service must translate the
-    resulting `IntegrityError` rather than let it escape."""
+def test_starting_the_same_campaign_twice_yields_two_distinct_runs():
+    """003 explicitly allows repeat runs of the same campaign: a run's id
+    is minted fresh (`core.ids.generate_id`, the same helper every module
+    uses), never derived from `(user_id, campaign_id)`, so a second start
+    is a second, independent playthrough -- not a conflict."""
     db = FakeSession()
+
+    first = asyncio.run(service.start_campaign_run(db, user_id="user-1", campaign_id="greenhollow"))
+    second = asyncio.run(
+        service.start_campaign_run(db, user_id="user-1", campaign_id="greenhollow")
+    )
+
+    assert first.id != second.id
+    objects = [obj for obj in db.persisted if isinstance(obj, GameObject)]
+    assert {obj.instance_key for obj in objects if obj.campaign_run_id == first.id} == (
+        GREENHOLLOW_KEYS
+    )
+    assert {obj.instance_key for obj in objects if obj.campaign_run_id == second.id} == (
+        GREENHOLLOW_KEYS
+    )
+
+
+def test_a_duplicate_instance_key_within_one_run_is_refused_by_the_key_not_a_pre_check():
+    """`(campaign_run_id, instance_key)` is unique *within one run* (I5):
+    it guards a single run's world being instantiated exactly once, not
+    against a second run of the same campaign. There is no pre-check --
+    if it were ever violated, the resulting `IntegrityError` is what
+    `CampaignRunExistsError` translates. Forcing the same run id twice
+    (via a fixed `id_generator`) is the only way to observe that
+    translation without a real database, since a fresh id never
+    collides."""
+    db = FakeSession(id_generator=lambda: "fixed-run-id")
 
     asyncio.run(service.start_campaign_run(db, user_id="user-1", campaign_id="greenhollow"))
 

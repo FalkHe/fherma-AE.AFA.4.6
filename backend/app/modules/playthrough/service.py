@@ -5,13 +5,11 @@ called `service.f(...)` -- never import the functions by name, the test
 suite's monkeypatching depends on it (AGENTS.md).
 """
 
-import hashlib
-
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError, SAWarning
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.ids import ID_LENGTH, generate_id
+from app.core.ids import generate_id
 from app.modules.content import service as content_service
 from app.modules.content.errors import ContentNotFoundError
 from app.modules.content.schemas import LoadedCampaign, ObjectTemplate
@@ -21,19 +19,6 @@ from app.modules.playthrough.errors import (
     CampaignRunNotFoundError,
 )
 from app.modules.playthrough.models import CampaignRun, CampaignRunMember, GameObject
-
-
-def _campaign_run_id(*, user_id: str, campaign_id: str) -> str:
-    """The run's own id, deterministic rather than random.
-
-    A user starting the same campaign a second time reuses the identical
-    id, so the second attempt's rows collide with the first's on the
-    `(campaign_run_id, instance_key)` unique constraint (and on the run's
-    own primary key) -- the repeat is refused by that key alone, with no
-    pre-check needed (I5).
-    """
-    digest = hashlib.sha256(f"{user_id}:{campaign_id}".encode()).hexdigest()
-    return digest[:ID_LENGTH]
 
 
 def _build_object(
@@ -148,11 +133,7 @@ async def start_campaign_run(db: AsyncSession, *, user_id: str, campaign_id: str
     except ContentNotFoundError as exc:
         raise CampaignNotFoundError(campaign_id) from exc
 
-    run = CampaignRun(
-        id=_campaign_run_id(user_id=user_id, campaign_id=campaign_id),
-        campaign_id=campaign_id,
-        content_version=content_version,
-    )
+    run = CampaignRun(campaign_id=campaign_id, content_version=content_version)
 
     try:
         db.add(run)
@@ -173,15 +154,14 @@ async def start_campaign_run(db: AsyncSession, *, user_id: str, campaign_id: str
         await db.flush()
 
         await db.commit()
-    except (IntegrityError, SAWarning) as exc:
-        # `IntegrityError` is the constraint itself; `SAWarning` is what a
-        # *session already holding* the deterministic id raises the moment
-        # `db.add(run)` sees a second, distinct object claim it (identity
-        # map conflict, promoted to an exception by the suite's
-        # `filterwarnings = ["error"]`) -- a session reused across two
-        # starts hits this before either statement reaches Postgres, but
-        # the meaning is the same repeat start, so it is translated the
-        # same way.
+    except IntegrityError as exc:
+        # `(campaign_run_id, instance_key)` is unique *within one run*: it
+        # guarantees this run's world is instantiated exactly once, not
+        # that the campaign can only ever be started once -- two starts of
+        # the same campaign by the same user get two distinct runs, each
+        # with its own random id and its own full object set. This only
+        # fires if instantiation is ever attempted twice into the *same*
+        # run; there is no pre-check.
         await db.rollback()
         raise CampaignRunExistsError(campaign_id) from exc
 
