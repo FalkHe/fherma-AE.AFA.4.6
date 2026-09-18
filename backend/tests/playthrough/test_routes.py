@@ -425,9 +425,7 @@ def test_rename_campaign_run_without_session_cookie_returns_401(client, monkeypa
 
     monkeypatch.setattr(playthrough_service, "rename_campaign_run", fake_rename)
 
-    response = client.patch(
-        "/api/v1/playthrough/campaign/some-run-id", json={"title": "New Title"}
-    )
+    response = client.patch("/api/v1/playthrough/campaign/some-run-id", json={"title": "New Title"})
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"

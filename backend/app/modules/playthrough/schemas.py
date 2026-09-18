@@ -22,6 +22,21 @@ class CampaignRunRead(CamelModel):
     created_at: datetime
 
 
+class RenameCampaignRunRequest(CamelModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
+class CharacterRead(CamelModel):
+    """The character, on the wire -- `id, name, currentHp, maxHp,
+    armourClass` and nothing else (I2): no state, no keys, no ownership."""
+
+    id: str
+    name: str
+    current_hp: int
+    max_hp: int
+    armour_class: int
+
+
 class CharacterState(BaseModel):
     """The character's `state` column (I5), written whole from the seed
     sheet and never mutated in place -- a plain `BaseModel`, not a
