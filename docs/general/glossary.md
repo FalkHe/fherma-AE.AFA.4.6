@@ -33,7 +33,7 @@ whole, where no ambiguity is possible.
 - **Campaign** — a series of adventures. The largest authored unit.
 - **Campaign-Definition** — the authored JSON structure of a campaign:
   `campaign.json` — its metadata, its ordered adventure list, its object
-  templates and its seed character. Structure, never narrative.
+  templates and its seed player character. Structure, never narrative.
 - **Adventure** — one story within a campaign, three or more scenes.
 - **Adventure-Definition** — the authored JSON structure of one adventure:
   `adventures/<id>.json` — its entry scene and its scenes.
