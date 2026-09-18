@@ -10,7 +10,7 @@ stage: done
 | WI | Status | Note |
 |---|---|---|
 | 1 | done | schema, loader rules R9-R11/R14 restated, R19/R20 added, fixture repaired |
-| 2 | done | greenhollow ending exit, exit ids, four item templates, id pack |
+| 2 | done | greenhollow ending exit, exit ids, four item templates, id pack; shipped-tree coverage restored over rounds 2-3 |
 | 3 | done | authoring guide and module README |
 | qa | done | 4 acceptance tests, red before implementation |
 
@@ -39,4 +39,9 @@ shipped-content regression tests this sprint did not invalidate (placements, `by
 Round 2: changes-requested — the seven named tests are restored unweakened, but
 `test_loaded_campaign_exercises_every_pinned_mechanism_c27a`'s `carries` and item-`attacks` assertions were
 not; no test in `backend/tests/` pins the shipped placements' carried items. AC1-AC4 OK both rounds.
-Round cap reached: the verdict stands, MR !24 is a draft, backlog row 01 marked `failed`.
+Round cap reached: the verdict stood, MR !24 went to draft and backlog row 01 was marked `failed`.
+
+Round 3: approve — reopened at the product owner's request after sprint 02 merged. `main` merged into the branch
+(only conflict: `backlog.md`'s status column), `test_loaded_campaign_exercises_every_pinned_mechanism_c27a`
+restored byte-identical to `main`, verified to fail when the goblin chief's `carries` is emptied. Gates green:
+lint, 703 backend, 53 frontend, 36 database. MR !24 taken out of draft and approved; backlog row 01 `done`.

@@ -41,3 +41,10 @@ the sack — nor which shipped items count as weapons, so a later edit could lea
 fight with and the adventure would still pass with every test green. Two rounds are the limit, so this stands
 and the merge request is a draft: the sprint's own four criteria all pass, and the open item is coverage this
 sprint deleted rather than anything the adventure does wrong.
+
+Round 3: approve — everything the earlier rounds asked for is back. The checks on the Greenhollow adventure's
+cast, on what each figure and container holds, and on which items count as weapons now say exactly what they
+said before this sprint, and they bite: emptying the goblin chief's hands leaves the content valid but makes
+the suite fail, which is precisely the silent change round 2 was about. The one open question, unchanged since
+round 1, is the shepherd's knife in the starting pack, which follows the approved brief and is proposed for
+the backlog.
