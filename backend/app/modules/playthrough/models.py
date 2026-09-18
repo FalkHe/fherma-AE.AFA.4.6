@@ -28,15 +28,19 @@ class CampaignRun(Base):
     Ownership lives in `CampaignRunMember`, not here."""
 
     __tablename__ = "campaign_runs"
-    __table_args__ = (CheckConstraint("status IN ('active','archived','finished')", name="status"),)
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('setup','ready','active','archived','finished')", name="status"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(ID_TYPE, primary_key=True, default=generate_id)
     campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
     content_version: Mapped[str] = mapped_column(String(16), nullable=False)
     title: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="setup")
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    temperature: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    temperature: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
     personality_prompt_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     system_prompt_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -153,7 +157,7 @@ class GameObject(Base):
         nullable=True,
     )
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
-    template_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    template_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     instance_key: Mapped[str] = mapped_column(String(160), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     source_adventure_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -177,18 +181,23 @@ class GameObject(Base):
 
 
 class Event(Base):
-    """One narration, player action, dice roll, tool call or error recorded
-    in a campaign run's transcript. `visibility` splits what the player sees
-    from DM-only bookkeeping; `actor_member_id` is cleared, not cascaded,
-    when the acting member is removed, so the event itself survives.
-    `turn_id` has no referent yet -- no turn concept exists in this codebase
-    -- so it is a bare column with no foreign key. Immutable once written:
-    no `updated_at`. No ORM relationship."""
+    """One of the twelve recorded event types -- narration, player action,
+    dice rolls, questions, tool calls, scene/adventure lifecycle markers,
+    system and diagnostic notices -- in a campaign run's transcript.
+    `visibility` splits what the player sees from DM-only bookkeeping;
+    `actor_member_id` is cleared, not cascaded, when the acting member is
+    removed, so the event itself survives. `turn_id` has no referent yet --
+    no turn concept exists in this codebase -- so it is a bare column with
+    no foreign key. Immutable once written: no `updated_at`. No ORM
+    relationship."""
 
     __tablename__ = "events"
     __table_args__ = (
         CheckConstraint(
-            "type IN ('narration','player_action','roll','tool_call','error')", name="type"
+            "type IN ('narration','player_action','roll_requested','roll','question',"
+            "'tool_call','scene_entered','adventure_started','adventure_completed',"
+            "'system','error','warning')",
+            name="type",
         ),
         CheckConstraint("visibility IN ('player','dm')", name="visibility"),
         Index("ix_events_campaign_run_id_visibility_id", "campaign_run_id", "visibility", "id"),

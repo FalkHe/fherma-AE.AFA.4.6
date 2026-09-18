@@ -176,16 +176,29 @@ def test_ac2_player_visibility_filter_skips_dm_events_with_no_gap(playthrough_db
 
 @pytest.mark.database
 def test_ac3_type_and_visibility_are_restricted_to_their_declared_values(playthrough_db):
-    # <- AC3: `type` accepts exactly `narration`, `player_action`, `roll`,
-    # `tool_call`, `error` and raises (`ck_events_type`) on anything else;
-    # `visibility` accepts exactly `player` and `dm` and raises
-    # (`ck_events_visibility`) on anything else.
+    # <- AC3: `type` accepts exactly the twelve declared values and raises
+    # (`ck_events_type`) on anything else; `visibility` accepts exactly
+    # `player` and `dm` and raises (`ck_events_visibility`) on anything
+    # else.
     async def _scenario():
         campaign_run_id = generate_id()
         await _insert_campaign_run(playthrough_db, campaign_run_id, campaign_id="ac3-campaign")
         await playthrough_db.commit()
 
-        for event_type in ("narration", "player_action", "roll", "tool_call", "error"):
+        for event_type in (
+            "narration",
+            "player_action",
+            "roll_requested",
+            "roll",
+            "question",
+            "tool_call",
+            "scene_entered",
+            "adventure_started",
+            "adventure_completed",
+            "system",
+            "error",
+            "warning",
+        ):
             event_id = generate_id()
             await _insert_event(playthrough_db, event_id, campaign_run_id, type=event_type)
             await playthrough_db.commit()
