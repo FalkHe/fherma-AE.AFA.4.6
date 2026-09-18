@@ -79,7 +79,14 @@ def test_start_campaign_run_response_has_exactly_the_camelcase_field_set(
 
     assert response.status_code == 201, response.text
     body = response.json()
-    assert set(body.keys()) == {"id", "campaignId", "contentVersion", "title", "status", "createdAt"}
+    assert set(body.keys()) == {
+        "id",
+        "campaignId",
+        "contentVersion",
+        "title",
+        "status",
+        "createdAt",
+    }
 
 
 def test_start_campaign_run_without_session_cookie_returns_401(client, monkeypatch):
@@ -177,7 +184,14 @@ def test_list_campaign_runs_response_items_have_exactly_the_camelcase_field_set(
     assert response.status_code == 200, response.text
     body = response.json()
     assert len(body) == 1
-    assert set(body[0].keys()) == {"id", "campaignId", "contentVersion", "title", "status", "createdAt"}
+    assert set(body[0].keys()) == {
+        "id",
+        "campaignId",
+        "contentVersion",
+        "title",
+        "status",
+        "createdAt",
+    }
 
 
 def test_list_campaign_runs_without_session_cookie_returns_401(client, monkeypatch):
@@ -249,4 +263,11 @@ def test_get_campaign_run_response_has_exactly_the_camelcase_field_set(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert set(body.keys()) == {"id", "campaignId", "contentVersion", "title", "status", "createdAt"}
+    assert set(body.keys()) == {
+        "id",
+        "campaignId",
+        "contentVersion",
+        "title",
+        "status",
+        "createdAt",
+    }
