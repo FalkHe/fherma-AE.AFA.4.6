@@ -9,10 +9,10 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| qa | open | |
+| 1 | done | schema, loader rules R9-R11/R14 restated, R19/R20 added, fixture repaired |
+| 2 | done | greenhollow ending exit, exit ids, four item templates, id pack |
+| 3 | done | authoring guide and module README |
+| qa | done | 4 acceptance tests, red before implementation |
 
 Status: `open | running | done | failed`
 
