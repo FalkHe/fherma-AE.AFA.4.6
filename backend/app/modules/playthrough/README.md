@@ -71,5 +71,33 @@ Owns a player's playthrough of a campaign and who may act in it.
 
 ## Surface
 
-No service, route, schema or CLI yet — this sprint delivers the tables
-only. Later work items in this intent add the surface.
+Three endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring
+an authenticated caller (`POST` is also CSRF-guarded):
+
+- `POST /api/v1/playthrough/campaign` with `{"campaignId": …}` — starts a
+  campaign run, answering `201` and the run.
+- `GET /api/v1/playthrough/campaign` — the caller's runs, newest first,
+  archived ones included.
+- `GET /api/v1/playthrough/campaign/{runId}` — one of the caller's runs.
+
+A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
+nothing else.
+
+Service functions (`service.py`), called as `service.f(...)`:
+
+- `start_campaign_run` — pins the run's `content_version` for its whole
+  life, makes the starter the run's owning member, and instantiates every
+  object the campaign's adventures declare, all unpositioned — entering an
+  adventure is a separate, later step. Appends no event. Starting the same
+  run twice is refused by the uniqueness of `objects.instance_key` rather
+  than by an explicit check.
+- `list_campaign_runs` — the caller's runs, newest first.
+- `get_campaign_run` — one run by id.
+- `_require_member` — internal; every function above that takes a run id
+  calls it first to check membership before doing anything else.
+
+Every service function takes the acting user and checks membership before
+touching a run. A run belonging to someone else and a run that does not
+exist answer identically — not found — so no one can probe for the
+existence of another player's game. Errors: an unknown or foreign run and an
+unknown campaign are not found; a run already started is a conflict.
