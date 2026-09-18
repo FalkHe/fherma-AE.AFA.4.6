@@ -70,15 +70,15 @@ runs before it and rejects prompt injection and out-of-band state changes
 | `get_scene(id)` | Load scene facts |
 | `get_monster(name)` | Stat block from JSON |
 | `update_object(id, patch)` | Validated state mutation |
-| `start_combat()` / `end_round()` | Initiative and turn tracking |
+| `start_combat()` / `end_round()` | Initiative and turn tracking — **Stage 02**; nothing tracks turns in Stage 01 |
 | `add_journal_entry()` / `search_journal()` | Long-term memory |
 | `ask_player(prompt, options)` | Human-in-the-loop interrupt |
 
 **Web client** — narration pane, state panel (HP, AC, inventory; turn order is
-deferred to the DM-turn phase, which is where combat state gets built), filtered
-agent trace with roll log and rule citations, token and cost display, a
-campaign-run list, and a developer drawer (model, temperature, system prompt,
-DM personality) kept separate from the player UI.
+deferred — the DM-turn phase decides what a fight needs, and nothing tracks
+turns before Stage 02), filtered agent trace with roll log and rule citations,
+token and cost display, a campaign-run list, and a developer drawer (model,
+temperature, system prompt, DM personality) kept separate from the player UI.
 
 ## Deployment shape
 
