@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     embedding_model: str = "openai/text-embedding-3-small"
     embedding_dimensions: int = Field(default=1536, ge=1)
     image_model: str = "google/gemini-3.1-flash-image"
+    sse_poll_interval_seconds: float = Field(default=2.0, gt=0)
+    sse_max_lifetime_seconds: float = Field(default=300.0, gt=0)
 
 
 @lru_cache

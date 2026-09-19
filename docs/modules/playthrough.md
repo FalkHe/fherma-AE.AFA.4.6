@@ -11,11 +11,12 @@ playthrough".
 
 Today the module ships its five tables and their migrations, plus the surface
 that starts a campaign run, gives it its character, renames it, reads it back,
-appends to its transcript, reads that transcript back and puts the run away
-(§8): a service of nine functions behind seven authenticated endpoints.
-Entering an adventure and positioning objects remain future work; this
-document describes the tables and the surface that exist, not the lifecycle
-still to come.
+appends to its transcript, reads that transcript back, reports what it has
+cost and puts the run away (§8): a service of ten functions behind eight
+authenticated endpoints, plus one command run by hand rather than an
+endpoint (§10). Entering an adventure and positioning objects remain future
+work; this document describes the tables and the surface that exist, not the
+lifecycle still to come.
 
 ## 1. What the module owns, and what it does not
 
@@ -233,14 +234,16 @@ Append-only: written once, never edited, never deleted.
   events written before the turn concept exists can still be grouped by it,
   and it is a bare column precisely because there is no table to point at.
 - **Cost is stored per event, not per run.** A run's spend is a sum over its
-  events, which cannot drift from the events that caused it.
+  events, which cannot drift from the events that caused it — there is no
+  separate ledger row and nothing to keep in step. How that sum is read, and
+  why nothing outside this module can ask for it directly, is §10.
 - **One function writes this table, and one endpoint reads the player's half
   of it** — `append_event` and the transcript read, §8. How ids end up
   ordering that read, and the one condition that makes doing so safe, is §9.
 
 ## 8. Surface
 
-Seven endpoints exist, all authenticated; `POST` and `PATCH` are also
+Eight endpoints exist, all authenticated; `POST` and `PATCH` are also
 CSRF-guarded:
 
 | Method & path | Behaviour |
@@ -252,6 +255,7 @@ CSRF-guarded:
 | `POST /api/v1/playthrough/campaign/{runId}/character` | Creates the run's one player character — `201` and the character |
 | `POST /api/v1/playthrough/campaign/{runId}/archive` | Puts the run away, or deletes it if it was never started — `204`, no body |
 | `GET /api/v1/playthrough/campaign/{runId}/events` | The run's player-visible transcript, oldest first — `200` and the entries |
+| `GET /api/v1/playthrough/campaign/{runId}/stream` | Tells the caller when the transcript above has grown — no cost route exists anywhere; §11 |
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else — the row, not its state. A character reads as `id, name,
@@ -264,16 +268,17 @@ not for the player reading it.
 
 The service (`service.py`) exposes `start_campaign_run`, `list_campaign_runs`,
 `get_campaign_run`, `create_character`, `rename_campaign_run`,
-`archive_campaign_run`, `activate_campaign_run`, `append_event` and
-`list_events`, called as `service.f(...)`. Every one of them takes the
-acting user, and every one that takes a run id calls the internal
+`archive_campaign_run`, `activate_campaign_run`, `append_event`,
+`list_events` and `run_cost`, called as `service.f(...)`. Every one of them
+takes the acting user, and every one that takes a run id calls the internal
 `_require_member` first — **except `append_event`**, which is never called
 directly from a route and trusts the mechanic calling it to have checked
 membership already (see below). A run belonging to someone else and a run
 that does not exist answer identically — **not found** — so no one can probe
 for the existence of another player's game. `_require_writable`, also
 internal, raises `RunArchivedError` on an `archived` run; `rename_campaign_run`
-and `create_character` call it right after `_require_member`.
+and `create_character` call it right after `_require_member`. `run_cost` is
+the one function on this list with no route calling it at all — §10.
 
 **Starting a run** does three things at once, because none of them makes
 sense without the others: it pins the campaign's current content version onto
@@ -395,3 +400,74 @@ the app has a reason to run as more than one process. **Anyone adding a
 second process to this API must revisit this ordering before anything
 else** — it is the one thing in this module that a second process would
 silently break.
+
+## 10. What a run has cost, and why there is no address for it
+
+Every `events` row can carry what the model call behind it cost (`cost_usd`,
+§7), and **a run's cost is nothing more than the sum of that column over its
+events** — there is no separate ledger table, no running total kept on
+`campaign_runs`, and so nothing that could ever drift out of step with the
+events that actually happened. It can be read two ways: whole, as one figure
+for the entire run, or broken down turn by turn, grouped by `events.turn_id`
+with the entries that belong to no turn — recorded before the turn concept
+existed, or never assigned one — gathered into one group of their own at the
+end rather than left out. Either way the figure is **exact**: `cost_usd` is a
+decimal column, summed as a decimal throughout, never rounded through a
+float, so a run built from many small charges reports the number those
+charges actually add up to, not a number close to it.
+
+Nothing about this is reachable over the network. The only way to ask what a
+run has cost is a command run by hand: `app playthrough cost <run-id> --user
+<user-id>`, which prints the run's total and then one line per turn. It is
+gated exactly like every other read in this module — the user must be a
+member of the run, and asking about someone else's run answers the same
+"not found" a foreign run gets anywhere else in the module, not a number.
+
+**Cost has no address because it is a developer's number, not a player's.**
+Nobody playing a game needs to see what their turn cost in model spend; the
+figure exists to let whoever is running this service watch what it is
+spending. The plan for it is a developer-only corner of the web client — a
+drawer that does not exist yet — and until that drawer is built, a
+command run by hand is the only way to look, on purpose: no endpoint answers
+this figure, so there is nothing for a stray request, a curious player or a
+future feature to stumble onto and expose by accident. A test in this
+module's suite asserts that no route serves cost, so that absence stays true
+as the module grows rather than quietly disappearing the day someone adds a
+convenient endpoint.
+
+## 11. The live signal
+
+A player's client can hold open `GET
+/api/v1/playthrough/campaign/{runId}/stream` and be told, without asking
+again and again, when something new has happened in their game. What it is
+told is deliberately thin: that there is something new, and which entry is
+the newest one now — nothing about what that entry says. On seeing the
+signal, the client re-reads the transcript the ordinary way, through the
+`GET …/events` read already described in §8. That is the whole point of
+keeping the signal empty: there is exactly one way to read what happened in a
+game, and the stream only ever tells a client that it is time to use it
+again, rather than becoming a second copy of the transcript that could one
+day disagree with the first.
+
+In plain terms, it behaves like any other server-sent event stream a browser
+already knows how to consume. It checks, on a short interval, whether a new
+entry has arrived; when one has, it sends the "something is new" message; when
+nothing has changed, it sends a keepalive instead, so a connection sitting
+quietly is not mistaken by anything in between for one that has died. It
+closes itself either when the listener has gone away or once it has been open
+for a bounded length of time, whichever comes first — and because this is an
+ordinary server-sent event stream, the browser simply reconnects on its own
+when that happens, so a player never notices the seam. Both the checking
+interval and the maximum lifetime are settings with sensible defaults, not
+values baked into the code.
+
+There is no background worker behind this and nothing subscribes to the
+database for changes: the stream simply polls, on its own schedule, for
+whether anything new has landed since it last looked. At the size this game
+runs at, one connection quietly asking "anything new?" a few times a minute
+is enough, and it costs nothing to build beyond what already exists. Access
+is checked once, **before** the stream is handed back to the client — so a
+player who may not read this run is refused the same way they would be
+refused anywhere else in this module, as an ordinary error, rather than being
+handed a connection that opens and then goes silent for reasons they cannot
+see.
