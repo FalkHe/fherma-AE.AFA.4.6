@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -64,6 +65,28 @@ class CharacterState(BaseModel):
     character_class: str
     background: str
     appearance: str
+
+
+class TurnCost(BaseModel):
+    """One turn's `SUM(cost_usd)` (WI1, AC3) -- a plain `BaseModel`, never a
+    `CamelModel`: this is `run_cost`'s own return shape, read only by the
+    `app playthrough cost` command, never serialised onto the wire and never
+    returned from a route (← D14). `turn_id` is `None` for events written
+    with no turn; an all-`NULL` group's sum is normalised to
+    `Decimal("0.000000")` rather than `None`."""
+
+    turn_id: str | None
+    total: Decimal
+
+
+class RunCost(BaseModel):
+    """A run's cost, whole and by turn (WI1, AC3) -- `total` is the sum
+    across every turn (including the untagged one), never a separate
+    query. `turns` is ordered with the `None` turn last. Plain `BaseModel`,
+    never a wire schema."""
+
+    total: Decimal
+    turns: list[TurnCost]
 
 
 # --- Event payloads (WI1, I2) ------------------------------------------------

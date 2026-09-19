@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +29,9 @@ from app.modules.playthrough.errors import (
     RunArchivedError,
 )
 from app.modules.playthrough.models import CampaignRun, CampaignRunMember, Event, GameObject
-from app.modules.playthrough.schemas import EVENT_PAYLOADS, CharacterState
+from app.modules.playthrough.schemas import EVENT_PAYLOADS, CharacterState, RunCost, TurnCost
+
+_ZERO_COST = Decimal("0.000000")
 
 _EVENT_VISIBILITIES = frozenset({"player", "dm"})
 
@@ -472,3 +474,38 @@ async def list_events(
 
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+async def run_cost(db: AsyncSession, *, user_id: str, run_id: str) -> RunCost:
+    """What `run_id` has cost, whole and by turn (WI1, AC3) -- for its
+    owner alone, exact to the last digit, and reachable only as
+    `app playthrough cost` (never a route, ← D14).
+
+    `_require_member` first, exactly like every other function that takes
+    a `run_id`: a foreign or unknown run raises `CampaignRunNotFoundError`
+    before the sum ever runs. Grouped by `turn_id`, the `NULL` turn (events
+    written with no turn) sorted last -- `turn_id.is_(None)` orders `False`
+    (a real turn) before `True` (no turn), so `ORDER BY` alone puts it
+    there without a second pass in Python. `SUM(cost_usd)` over a group
+    whose events all carry no cost is SQL `NULL`, not `0`; that, and a run
+    with no events at all (no groups, so no rows), both normalise to the
+    exact `Decimal("0.000000")` here rather than leaking `None` into the
+    result. `total` is the sum of every turn's total, including the
+    untagged one -- never a second query against `events`.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+
+    stmt = (
+        select(Event.turn_id, func.sum(Event.cost_usd))
+        .where(Event.campaign_run_id == run_id)
+        .group_by(Event.turn_id)
+        .order_by(Event.turn_id.is_(None), Event.turn_id)
+    )
+    result = await db.execute(stmt)
+
+    turns = [
+        TurnCost(turn_id=turn_id, total=total if total is not None else _ZERO_COST)
+        for turn_id, total in result.all()
+    ]
+    total = sum((turn.total for turn in turns), _ZERO_COST)
+    return RunCost(total=total, turns=turns)
