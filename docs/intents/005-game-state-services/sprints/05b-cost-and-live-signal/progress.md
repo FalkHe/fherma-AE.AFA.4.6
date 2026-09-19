@@ -32,3 +32,12 @@ Status: `open | running | done | failed`
 <none yet>
 
 ## Verify
+
+Round 1: changes-requested — AC3 OK, including the proof that no address exposes cost and that the sums would
+fail if they ran through floats. AC4 failed on test evidence: `latest_event_id` is monkeypatched in every
+committed test, so neither its query nor its membership gate is ever executed; the verifier drove the real route
+against a scratch database itself and it behaved correctly, which is the only reason this is a test gap rather
+than a defect. Both harness fixes confirmed, the first by reproducing the old order-dependence on this branch.
+
+Noted, not blocking: `latest_event_id` rolls back on every successful call, expiring every ORM object in the
+session — harmless for the stream's own session, a hazard if a later caller shares a request session.

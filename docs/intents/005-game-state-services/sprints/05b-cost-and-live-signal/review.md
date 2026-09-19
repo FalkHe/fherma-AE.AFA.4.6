@@ -34,3 +34,7 @@ way, so there is one way of reading it rather than two that could disagree.
 Brief: docs/intents/005-game-state-services/sprints/05b-cost-and-live-signal/brief.md
 
 ## Verdict
+
+Round 1: changes requested — the live signal behaves correctly when driven against a real game, but no automated
+check ever writes a real entry or tests real membership for it, so if the signal stopped noticing new activity —
+or stopped refusing someone who is not in the game — every check would still pass.
