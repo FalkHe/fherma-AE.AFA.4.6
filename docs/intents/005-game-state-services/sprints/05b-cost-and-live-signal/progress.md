@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-19
 updated: 2026-09-19
-stage: draft
+stage: done
 ---
 # Progress: Sprint 05b
 
@@ -41,3 +41,12 @@ than a defect. Both harness fixes confirmed, the first by reproducing the old or
 
 Noted, not blocking: `latest_event_id` rolls back on every successful call, expiring every ORM object in the
 session — harmless for the stream's own session, a hazard if a later caller shares a request session.
+
+Round 2: approve — AC4's evidence gap closed by a database-marked test that writes and commits a real entry from
+a separate connection while the stream is open and reads the real `latest_event_id`. The verifier broke the
+query, then the membership gate, then both plus the direct assertion, and confirmed the test fails each time.
+
+Recorded from that pass, not blocking: removing the per-poll rollback does **not** fail the test — under READ
+COMMITTED each statement takes its own snapshot, so the rollback is connection hygiene rather than correctness.
+Nobody should later read that test as covering it. Gates green with the stack up: lint, 804 engine-free,
+53 frontend, 44 database.

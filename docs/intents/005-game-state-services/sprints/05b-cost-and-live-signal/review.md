@@ -38,3 +38,10 @@ Brief: docs/intents/005-game-state-services/sprints/05b-cost-and-live-signal/bri
 Round 1: changes requested — the live signal behaves correctly when driven against a real game, but no automated
 check ever writes a real entry or tests real membership for it, so if the signal stopped noticing new activity —
 or stopped refusing someone who is not in the game — every check would still pass.
+
+Round 2: approve — a game reports what it has cost, exactly, whole and turn by turn, reachable only by command
+with no address anywhere answering with cost. A player's client is told within a couple of seconds when
+something new has happened in their game, is refused outright when the game is not theirs, and the connection
+closes itself when the listener leaves or its time is up. The live signal is now proven against a real game: an
+entry written while a connection is open is announced, and the new check was confirmed to fail if either the
+signal's read or its membership test is broken.
