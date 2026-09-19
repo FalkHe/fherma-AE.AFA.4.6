@@ -52,14 +52,19 @@ work items land, and green once they do.
 """
 
 import asyncio
+import inspect
 import json
+import os
 import time
 from contextlib import contextmanager
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Annotated, get_args, get_origin, get_type_hints
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.requests import Request
 from typer.testing import CliRunner
 
@@ -67,7 +72,9 @@ from app.cli import cli
 from app.core.errors import ErrorCode
 from app.core.ids import generate_id
 from app.core.settings import get_settings
+from app.main import create_app
 from app.modules.auth import service as auth_service
+from app.modules.auth.dependencies import AuthContext
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import CampaignRunNotFoundError
 from app.modules.users import service as users_service
@@ -399,3 +406,170 @@ def test_ac4_the_stream_announces_updates_and_ends_on_disconnect_or_lifetime(
         # lifetime pinned for this scenario -- disconnect, not the
         # lifetime bound, is what ended it.
         assert elapsed < 2.0
+
+
+def _walk_routes(routes):
+    """Every leaf route reachable from `routes`, descending into
+    `_IncludedRouter` wrappers (this FastAPI/Starlette pin's own shape for
+    an included router, `fastapi==0.141.1`) until a real `APIRoute` with a
+    `path` turns up. Pure runtime introspection of FastAPI's own routing
+    objects -- never a read of `routes.py` itself."""
+    for route in routes:
+        if type(route).__name__ == "_IncludedRouter":
+            yield from _walk_routes(route.original_router.routes)
+        else:
+            yield route
+
+
+def _find_stream_route(app):
+    for route in _walk_routes(app.routes):
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", None) or set()
+        if path and path.endswith("/campaign/{run_id}/stream") and "GET" in methods:
+            return route
+    raise AssertionError("no GET .../campaign/{run_id}/stream route is registered")
+
+
+def _call_stream_endpoint(route, *, run_id: str, request, auth: AuthContext, db: AsyncSession):
+    """Calls the stream route's own function directly, matching its
+    parameters by their declared *type* rather than by a guessed name, so
+    this never depends on having read `routes.py`. This is what lets the
+    `StreamingResponse` it returns -- and the generator inside it -- be
+    driven by hand: `TestClient` fully buffers a streaming response before
+    ever returning control (module docstring), so it cannot be used to
+    observe a real insert arriving *while* the stream is open."""
+    endpoint = route.endpoint
+    hints = get_type_hints(endpoint, include_extras=True)
+    kwargs = {}
+    for name, param in inspect.signature(endpoint).parameters.items():
+        annotation = hints.get(name, param.annotation)
+        if get_origin(annotation) is Annotated:
+            annotation = get_args(annotation)[0]
+        if annotation is Request:
+            kwargs[name] = request
+        elif annotation is AuthContext:
+            kwargs[name] = auth
+        elif annotation is AsyncSession:
+            kwargs[name] = db
+        elif annotation is str:
+            kwargs[name] = run_id
+        else:
+            raise AssertionError(f"unexpected stream endpoint parameter {name!r}: {annotation!r}")
+    return endpoint(**kwargs)
+
+
+class _NeverDisconnects:
+    async def is_disconnected(self) -> bool:
+        return False
+
+
+@pytest.mark.database
+def test_ac4_the_real_signal_read_announces_a_committed_entry_and_gates_a_stranger(
+    playthrough_db, session_cookie_header, assert_error_envelope
+):
+    # <- AC4 (the real query and the real membership gate -- no stub on
+    # `latest_event_id` anywhere in this test)
+    async def _scenario():
+        owner_id = generate_id()
+        stranger_id = generate_id()
+        await _insert_user(playthrough_db, owner_id, username="ac4-real-owner")
+        await _insert_user(playthrough_db, stranger_id, username="ac4-real-stranger")
+        await playthrough_db.commit()
+
+        run = await playthrough_service.start_campaign_run(
+            playthrough_db, user_id=owner_id, campaign_id="greenhollow"
+        )
+        await playthrough_db.commit()
+        # Captured now, as a plain string: the stream rolls back per poll
+        # (I3), which expires every object this session ever loaded --
+        # `run` must never be touched again after the stream below runs.
+        run_id = run.id
+
+        auth = AuthContext(
+            user=SimpleNamespace(id=owner_id), session=SimpleNamespace(csrf_token="irrelevant")
+        )
+
+        with _pinned_sse_settings(poll_interval="0.02", max_lifetime="5.0"):
+            route = _find_stream_route(create_app())
+            streaming_response = await _call_stream_endpoint(
+                route,
+                run_id=run_id,
+                request=_NeverDisconnects(),
+                auth=auth,
+                db=playthrough_db,
+            )
+            assert streaming_response.media_type == "text/event-stream"
+            body_iterator = streaming_response.body_iterator
+            try:
+                # The baseline tick, before anything new exists.
+                await body_iterator.__anext__()
+
+                # A real transcript entry, written through the module's own
+                # writer and committed on a separate connection while the
+                # stream sits open -- `append_event` flushes without
+                # committing (05a), so only this explicit commit, from a
+                # connection distinct from the one the open stream polls
+                # through, can make the entry visible to it.
+                writer_engine = create_async_engine(os.environ["DATABASE_URL"])
+                writer_sessionmaker = async_sessionmaker(writer_engine, expire_on_commit=False)
+                try:
+                    async with writer_sessionmaker() as writer_session:
+                        new_event = await playthrough_service.append_event(
+                            writer_session,
+                            run_id=run_id,
+                            type="narration",
+                            visibility="player",
+                            payload={"text": "a real entry, written elsewhere"},
+                        )
+                        await writer_session.commit()
+                    new_event_id = new_event.id
+                finally:
+                    await writer_engine.dispose()
+
+                expected_update = (
+                    "data: "
+                    + json.dumps({"type": "updated", "id": new_event_id}, separators=(",", ":"))
+                    + "\n\n"
+                )
+
+                # Bounded attempts, not a wall-clock wait -- a miss here
+                # must fail the test, never skip it.
+                seen = None
+                for _ in range(50):
+                    chunk = await body_iterator.__anext__()
+                    if chunk == expected_update:
+                        seen = chunk
+                        break
+                assert seen is not None, (
+                    "the stream never announced the committed entry through "
+                    "the real latest_event_id query"
+                )
+            finally:
+                await body_iterator.aclose()
+
+        # The real membership gate (← D12), through the same function the
+        # stream polls -- no stub in effect anywhere in this test.
+        with pytest.raises(Exception) as exc_info:
+            await playthrough_service.latest_event_id(
+                playthrough_db, user_id=stranger_id, run_id=run_id
+            )
+        assert exc_info.value.code == ErrorCode.NOT_FOUND
+
+        return run_id, stranger_id
+
+    run_id, stranger_id = asyncio.run(_scenario())
+
+    # -- The same refusal, this time as the ordinary HTTP error envelope
+    # rather than a stream that opens and dies: a fresh app, its own
+    # `get_db_session` left untouched so it reaches the same real scratch
+    # database (`playthrough_db`'s own `DATABASE_URL` pin), with only auth
+    # stubbed -- membership itself is decided for real.
+    real_db_client = TestClient(create_app())
+    with pytest.MonkeyPatch.context() as mp:
+        _stub_auth(mp, user_id=stranger_id)
+        response = real_db_client.get(
+            _stream_path(run_id), headers=session_cookie_header("a-valid-cookie")
+        )
+
+    assert_error_envelope(response, status=404, code="NOT_FOUND")
+    assert "text/event-stream" not in response.headers.get("content-type", "")
