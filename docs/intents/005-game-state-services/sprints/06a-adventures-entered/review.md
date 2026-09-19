@@ -40,3 +40,9 @@ carried in the right places is left out of the database test run and silently sk
 so nothing would catch a future change that misplaces the world. Nothing proves yet that entering one adventure
 leaves another adventure's creatures where they are — the thing a player would notice first once a campaign
 ships more than one.
+
+Round 2: approve — a game's adventures can now be entered one at a time, and entering one puts the whole
+adventure in its places: its creatures and fixtures where the story puts them, the character at the way in,
+everything carried still carried, and a line in the transcript saying it began. Both gaps from round 1 are
+genuinely closed — the placement was broken on purpose and the check caught it, then broken again so a second
+adventure's creatures were dragged along, and the new check caught that too.

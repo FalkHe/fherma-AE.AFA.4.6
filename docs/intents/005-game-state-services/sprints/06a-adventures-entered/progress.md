@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-19
 updated: 2026-09-19
-stage: draft
+stage: done
 ---
 # Progress: Sprint 06a
 
@@ -53,3 +53,10 @@ different adventure's cast stays unpositioned, though the two-adventure fixture 
 Recorded from that pass: 05b's `latest_event_id` should **not** adopt this sprint's savepoint pattern — its
 rollback is load-bearing, releasing the read transaction between stream polls. Its own hazard (expiring a
 caller's objects) is real but wants a different fix, and a backlog line of its own.
+
+Round 2: approve — the marker fix moves AC1's positioning test into the database suite (3 collected there, none
+in the engine-free one), and the verifier swept all 42 scratch-database tests in `backend/tests/` to confirm this
+was the only one missing it. It then mutated the two position statements and the cast filter, and watched each
+check fail; the isolation assertion catches a leak the single-adventure Greenhollow test cannot see. No
+production code changed in this round, so round 1's confirmations stand. Gates: lint, 828 engine-free,
+53 frontend, 48 database.
