@@ -53,6 +53,9 @@ services:
       - .env
     volumes:
       - ./backend:/app
+      # Read-only, so a test can assert on a document the sprint's criteria
+      # name -- several phases ship documentation criteria.
+      - ./docs:/docs:ro
     # The image's entrypoint runs migrations + uvicorn; the CLI runs whatever
     # command is passed to `docker compose run` instead.
     entrypoint: []

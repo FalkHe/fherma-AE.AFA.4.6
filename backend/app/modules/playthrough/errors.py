@@ -101,3 +101,18 @@ class InvalidRunStatusError(PlaythroughError):
     def __init__(self, run_id: str) -> None:
         self.run_id = run_id
         super().__init__(f"campaign run status does not allow this transition: {run_id}")
+
+
+class InvalidEventPayloadError(PlaythroughError):
+    """`append_event` was asked to write a `type` or `visibility` it does
+    not know, or a `payload` that fails the model `EVENT_PAYLOADS[type]`
+    declares.
+
+    Nothing is written when this fires -- no `add`, no `flush` -- so a
+    caller sees a raised exception, never a partial row.
+    """
+
+    code = ErrorCode.VALIDATION_ERROR
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
