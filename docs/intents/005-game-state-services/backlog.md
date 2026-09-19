@@ -20,9 +20,10 @@ route reaches yet — as `@pytest.mark.database` acceptance tests under `make ba
 | 02 | Check schema + model against the mechanics; migration `0007` for status set, nullable `template_id`, twelve event types; fix `temperature` type; update 003 tests and docs | – | #22 | done |
 | 03 | Build the service/route skeleton and `start_campaign_run` + list; instantiate all objects unpositioned; establish the membership gate | 02 | #23 | done |
 | 04 | Implement `create_character` (seed sheet, carried items, `setup → ready`), rename/archive/unarchive, archived read-only; fix `docs/general/model.md` lifecycle rows | 01, 03 | #24 | done |
-| 05 | Implement `append_event` + payload models, `GET …/events?after=`, `app playthrough cost`, SSE `GET …/stream` | 02, 03 | #25 | open |
-| 06 | Implement `enter_adventure` (placement, `adventure_started`) and `use_exit` (scene move / adventure end / campaign finish) | 01, 04, 05 | #26 | open |
-| 07 | Implement `dice.py`, formula derivation, `request_player_roll`/`resolve_roll_request`/`roll`/`passive_check`, `resolve_check`/`resolve_save`, single consumption, `awaiting`, `app playthrough roll` | 05 | #27 | open |
+| 05a | Implement `append_event` + payload models and `GET …/events?after=`; record the id-ordering caveat | 02, 03 | #25 | done |
+| 05b | Implement `app playthrough cost` and the SSE `updated` signal `GET …/stream` | 05a | #33 | open |
+| 06 | Implement `enter_adventure` (placement, `adventure_started`) and `use_exit` (scene move / adventure end / campaign finish) | 01, 04, 05a | #26 | open |
+| 07 | Implement `dice.py`, formula derivation, `request_player_roll`/`resolve_roll_request`/`roll`/`passive_check`, `resolve_check`/`resolve_save`, single consumption, `awaiting`, `app playthrough roll` | 05a | #27 | open |
 | 08 | Implement `interact`, `take`/`drop`/`give`, the one-action-per-turn count, `use_item` seam | 06, 07 | #28 | open |
 | 09 | Implement `attack`, `damage`, `roll_initiative` as events-only combat; prove no combat state exists | 06, 07 | #29 | open |
 
@@ -30,7 +31,9 @@ Outcomes — the one verifiable statement per sprint — live in each `sprints/N
 
 ## Notes
 
-- Parallelism: 01 ‖ 02 · 06 ‖ 07 (after 05) · 08 ‖ 09.
+- Parallelism: 01 ‖ 02 · 06 ‖ 07 (after 05a) · 08 ‖ 09.
+- **05 was split into 05a and 05b** on the product owner's instruction: one sprint carried four surfaces — the
+  writer, the read, the cost command and the live signal. 05b needs 05a; 06 and 07 need only 05a.
 - **02 is its own sprint**: migration `0007` serves 03/04 (A1, A2) *and* 05 (A3); folding it into 03 would put one
   sprint on everybody's critical path, and it rewrites two existing 003 tests and two doc sections — one coherent hour.
   A4 (`temperature` → `Decimal`) rides along, same file, before the first writer.

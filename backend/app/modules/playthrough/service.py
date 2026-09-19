@@ -1,16 +1,21 @@
 """Starting, listing and reading a campaign run; giving it its character;
-renaming and archiving it.
+renaming and archiving it; appending to its transcript.
 
 Imported as a module (`from app.modules.playthrough import service`) and
 called `service.f(...)` -- never import the functions by name, the test
 suite's monkeypatching depends on it (AGENTS.md).
 """
 
+from decimal import Decimal
+from typing import Any
+
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ids import generate_id
+from app.core.llm.service import Usage
 from app.modules.content import service as content_service
 from app.modules.content.errors import ContentNotFoundError
 from app.modules.content.schemas import LoadedCampaign, ObjectTemplate, SeedCharacter
@@ -19,11 +24,14 @@ from app.modules.playthrough.errors import (
     CampaignRunExistsError,
     CampaignRunNotFoundError,
     CharacterExistsError,
+    InvalidEventPayloadError,
     InvalidRunStatusError,
     RunArchivedError,
 )
-from app.modules.playthrough.models import CampaignRun, CampaignRunMember, GameObject
-from app.modules.playthrough.schemas import CharacterState
+from app.modules.playthrough.models import CampaignRun, CampaignRunMember, Event, GameObject
+from app.modules.playthrough.schemas import EVENT_PAYLOADS, CharacterState
+
+_EVENT_VISIBILITIES = frozenset({"player", "dm"})
 
 
 def _build_object(
@@ -361,3 +369,106 @@ async def activate_campaign_run(db: AsyncSession, *, user_id: str, run_id: str) 
     await db.commit()
     await db.refresh(run)
     return run
+
+
+async def append_event(
+    db: AsyncSession,
+    *,
+    run_id: str,
+    type: str,
+    visibility: str,
+    payload: BaseModel | dict[str, Any],
+    turn_id: str | None = None,
+    actor_member_id: str | None = None,
+    usage: Usage | None = None,
+) -> Event:
+    """The only writer of `events` (AC1) -- every other module reaches the
+    transcript through this function, never through `Event(...)` directly
+    (guarded by `tests/playthrough/test_only_event_writer.py`).
+
+    `payload` is validated against `EVENT_PAYLOADS[type]` (`schemas.py`):
+    either a dict (its own field names or their camelCase aliases, both
+    accepted -- `CamelModel.populate_by_name`) or already an instance of
+    that exact model. An unknown `type`, an unknown `visibility`, or a
+    payload that fails its model raises `InvalidEventPayloadError` --
+    nothing is added or flushed first, so a refused call leaves no partial
+    row. `usage.cost_usd` (`float | None`) is converted via `Decimal(str(...))`,
+    never `Decimal(float)`, so the stored value is exact.
+
+    `add` + `flush` only -- the id exists on return, but there is **no
+    commit**: the caller owns the transaction, the way every mechanic in
+    later sprints will use this alongside its own state changes. Performs
+    **no membership check** of its own: every caller is already gated
+    (`_require_member` or equivalent) before it reaches here, and this
+    function must not add a second, redundant gate.
+    """
+    model_cls = EVENT_PAYLOADS.get(type)
+    if model_cls is None:
+        raise InvalidEventPayloadError(f"unknown event type: {type}")
+    if visibility not in _EVENT_VISIBILITIES:
+        raise InvalidEventPayloadError(f"unknown event visibility: {visibility}")
+
+    if isinstance(payload, model_cls):
+        validated = payload
+    elif isinstance(payload, dict):
+        try:
+            validated = model_cls.model_validate(payload)
+        except ValidationError as exc:
+            raise InvalidEventPayloadError(
+                f"invalid payload for event type '{type}': {exc}"
+            ) from exc
+    else:
+        raise InvalidEventPayloadError(
+            f"payload for event type '{type}' must be a dict or {model_cls.__name__}, "
+            f"got {payload.__class__.__name__}"
+        )
+
+    event = Event(
+        campaign_run_id=run_id,
+        actor_member_id=actor_member_id,
+        turn_id=turn_id,
+        type=type,
+        visibility=visibility,
+        payload=validated.model_dump(by_alias=True),
+    )
+    if usage is not None:
+        event.prompt_tokens = usage.prompt_tokens
+        event.completion_tokens = usage.completion_tokens
+        if usage.cost_usd is not None:
+            event.cost_usd = Decimal(str(usage.cost_usd))
+
+    db.add(event)
+    await db.flush()
+    return event
+
+
+async def list_events(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    after: str | None = None,
+    limit: int = 200,
+) -> list[Event]:
+    """The caller's `player`-visible transcript for `run_id`, oldest first.
+
+    `_require_member` first, exactly like every other function that takes a
+    `run_id` -- a foreign or unknown run raises `CampaignRunNotFoundError`
+    before anything else runs. Ordered by `id` alone (safe today because one
+    process mints every id -- README.md, `docs/modules/playthrough.md`
+    §9); `after`, when given, is exclusive. `dm`-visible rows are filtered
+    out of the query itself, not merely absent from what the caller renders.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+
+    stmt = (
+        select(Event)
+        .where(Event.campaign_run_id == run_id, Event.visibility == "player")
+        .order_by(Event.id)
+        .limit(limit)
+    )
+    if after is not None:
+        stmt = stmt.where(Event.id > after)
+
+    result = await db.execute(stmt)
+    return list(result.scalars().all())

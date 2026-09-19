@@ -12,6 +12,7 @@ does it for its own module.
 """
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 
 from app.core.ids import generate_id
@@ -61,6 +62,24 @@ def _make_run(**overrides):
 
 def _auth_headers(session_cookie_header):
     return {**session_cookie_header("a-valid-cookie"), "X-CSRF-Token": CSRF_TOKEN}
+
+
+def _make_event(**overrides):
+    fields = dict(
+        id=generate_id(),
+        campaign_run_id=generate_id(),
+        actor_member_id=None,
+        turn_id=None,
+        type="narration",
+        visibility="player",
+        payload={"text": "It begins."},
+        prompt_tokens=None,
+        completion_tokens=None,
+        cost_usd=Decimal("0.000100"),
+        created_at=datetime.now(UTC),
+    )
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
 
 
 def _make_character(**overrides):
@@ -575,3 +594,110 @@ def test_archived_run_still_reads_but_refuses_rename_and_character_creation(
         headers=_auth_headers(session_cookie_header),
     )
     assert_error_envelope(character_response, status=409, code="RUN_ARCHIVED")
+
+
+# --- WI2: the transcript read (I1-I4 not covered by the acceptance suite) --
+
+
+def test_list_events_without_session_cookie_returns_401(client, monkeypatch):
+    calls = []
+
+    async def fake_list_events(db, **kwargs):
+        calls.append(kwargs)
+        return [_make_event()]
+
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events)
+
+    response = client.get("/api/v1/playthrough/campaign/some-run-id/events")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"
+    assert calls == []
+
+
+def test_list_events_response_items_have_exactly_the_camelcase_field_set(
+    client, monkeypatch, session_cookie_header
+):
+    _stub_auth(monkeypatch)
+    event = _make_event()
+
+    async def fake_list_events(db, **kwargs):
+        return [event]
+
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events)
+
+    response = client.get(
+        f"/api/v1/playthrough/campaign/{event.campaign_run_id}/events",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body) == 1
+    assert set(body[0].keys()) == {"id", "type", "turnId", "payload", "createdAt"}
+
+
+def test_list_events_foreign_and_unknown_run_answer_the_identical_not_found_envelope(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    _stub_auth(monkeypatch)
+
+    async def fake_list_events_foreign(db, **kwargs):
+        raise CampaignRunNotFoundError(kwargs["run_id"])
+
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events_foreign)
+
+    foreign_response = client.get(
+        "/api/v1/playthrough/campaign/someone-elses-run-id/events",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+    unknown_response = client.get(
+        "/api/v1/playthrough/campaign/no-such-run-id/events",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+
+    foreign_error = assert_error_envelope(foreign_response, status=404, code="NOT_FOUND")
+    unknown_error = assert_error_envelope(unknown_response, status=404, code="NOT_FOUND")
+    assert foreign_error == unknown_error
+
+
+def test_list_events_limit_below_one_is_refused(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    _stub_auth(monkeypatch)
+    calls = []
+
+    async def fake_list_events(db, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events)
+
+    response = client.get(
+        "/api/v1/playthrough/campaign/some-run-id/events?limit=0",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+
+    assert_error_envelope(response, status=422, code="VALIDATION_ERROR")
+    assert calls == []
+
+
+def test_list_events_limit_above_500_is_refused(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    _stub_auth(monkeypatch)
+    calls = []
+
+    async def fake_list_events(db, **kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events)
+
+    response = client.get(
+        "/api/v1/playthrough/campaign/some-run-id/events?limit=501",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+
+    assert_error_envelope(response, status=422, code="VALIDATION_ERROR")
+    assert calls == []
