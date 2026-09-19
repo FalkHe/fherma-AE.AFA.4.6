@@ -4,6 +4,8 @@ to guarantee."""
 
 from app.core.errors import ErrorCode
 from app.modules.playthrough.errors import (
+    AdventureActiveError,
+    AdventureExhaustedError,
     CampaignNotFoundError,
     CampaignRunExistsError,
     CampaignRunNotFoundError,
@@ -48,3 +50,15 @@ def test_invalid_run_status_carries_invalid_run_status():
     exc = InvalidRunStatusError("run-1")
     assert isinstance(exc, PlaythroughError)
     assert exc.code == ErrorCode.INVALID_RUN_STATUS
+
+
+def test_adventure_active_carries_adventure_active():
+    exc = AdventureActiveError("run-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.ADVENTURE_ACTIVE
+
+
+def test_adventure_exhausted_carries_adventure_exhausted():
+    exc = AdventureExhaustedError("run-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.ADVENTURE_EXHAUSTED

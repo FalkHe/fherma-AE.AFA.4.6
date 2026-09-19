@@ -10,13 +10,14 @@ activity, not an entity: **no table is called `playthrough`**, and no row is "a
 playthrough".
 
 Today the module ships its five tables and their migrations, plus the surface
-that starts a campaign run, gives it its character, renames it, reads it back,
-appends to its transcript, reads that transcript back, reports what it has
-cost and puts the run away (§8): a service of ten functions behind eight
-authenticated endpoints, plus one command run by hand rather than an
-endpoint (§10). Entering an adventure and positioning objects remain future
-work; this document describes the tables and the surface that exist, not the
-lifecycle still to come.
+that starts a campaign run, gives it its character, renames it, reads it
+back, enters its next adventure, appends to its transcript, reads that
+transcript back, reports what it has cost and puts the run away (§8): a
+service of eleven functions behind nine authenticated endpoints, plus one
+command run by hand rather than an endpoint (§10). Moving between scenes,
+completing an adventure and a game finishing remain future work; this
+document describes the tables and the surface that exist, not the lifecycle
+still to come.
 
 ## 1. What the module owns, and what it does not
 
@@ -130,9 +131,10 @@ One adventure entered within a campaign run — the progress record, one row per
 - **Check `status`**: `status IN ('active','completed')`. **Check
   `completed_at`**: `(status = 'completed') = (completed_at IS NOT NULL)` —
   the two can never disagree.
-- **Unique** `(campaign_run_id, adventure_id)`: entering the same adventure
-  twice reuses its row. **At most one `active` adventure run per campaign
-  run**, enforced by a partial unique index
+- **Unique** `(campaign_run_id, adventure_id)`: an adventure gets at most one
+  row for the life of the run — entering only ever picks an adventure with
+  none yet, so no id is ever entered twice (§8). **At most one `active`
+  adventure run per campaign run**, enforced by a partial unique index
   (`uq_adventure_runs_active … WHERE status = 'active'`), not a constraint —
   Postgres has no partial unique constraint, only a partial unique index.
 - **No scene column and no party position.** Position belongs to the creature,
@@ -243,7 +245,7 @@ Append-only: written once, never edited, never deleted.
 
 ## 8. Surface
 
-Eight endpoints exist, all authenticated; `POST` and `PATCH` are also
+Nine endpoints exist, all authenticated; `POST` and `PATCH` are also
 CSRF-guarded:
 
 | Method & path | Behaviour |
@@ -253,6 +255,7 @@ CSRF-guarded:
 | `GET /api/v1/playthrough/campaign/{runId}` | One of the caller's runs |
 | `PATCH /api/v1/playthrough/campaign/{runId}` | Renames the run for `{"title": …}` — `200` and the run |
 | `POST /api/v1/playthrough/campaign/{runId}/character` | Creates the run's one player character — `201` and the character |
+| `POST /api/v1/playthrough/campaign/{runId}/adventure` | Enters the next adventure the campaign lists that this game has no record of — `201` and the adventure run |
 | `POST /api/v1/playthrough/campaign/{runId}/archive` | Puts the run away, or deletes it if it was never started — `204`, no body |
 | `GET /api/v1/playthrough/campaign/{runId}/events` | The run's player-visible transcript, oldest first — `200` and the entries |
 | `GET /api/v1/playthrough/campaign/{runId}/stream` | Tells the caller when the transcript above has grown — no cost route exists anywhere; §11 |
@@ -261,24 +264,27 @@ A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else — the row, not its state. A character reads as `id, name,
 currentHp, maxHp, armourClass` and nothing else (`CharacterRead`) — a
 `GameObject` row (§6), narrowed to what a player needs to see of their own
-sheet. An event reads as `id, type, turnId, payload, createdAt` and nothing
-else (`EventRead`) — no `visibility`, because this endpoint only ever answers
-`player`-visible rows, and no cost, because that is bookkeeping for the run,
-not for the player reading it.
+sheet. An adventure run reads as `id, adventureId, status, startedAt` and
+nothing else (`AdventureRunRead`) — the row itself, before anyone has moved
+through it. An event reads as `id, type, turnId, payload, createdAt` and
+nothing else (`EventRead`) — no `visibility`, because this endpoint only ever
+answers `player`-visible rows, and no cost, because that is bookkeeping for
+the run, not for the player reading it.
 
 The service (`service.py`) exposes `start_campaign_run`, `list_campaign_runs`,
 `get_campaign_run`, `create_character`, `rename_campaign_run`,
-`archive_campaign_run`, `activate_campaign_run`, `append_event`,
-`list_events` and `run_cost`, called as `service.f(...)`. Every one of them
-takes the acting user, and every one that takes a run id calls the internal
-`_require_member` first — **except `append_event`**, which is never called
-directly from a route and trusts the mechanic calling it to have checked
-membership already (see below). A run belonging to someone else and a run
-that does not exist answer identically — **not found** — so no one can probe
-for the existence of another player's game. `_require_writable`, also
-internal, raises `RunArchivedError` on an `archived` run; `rename_campaign_run`
-and `create_character` call it right after `_require_member`. `run_cost` is
-the one function on this list with no route calling it at all — §10.
+`archive_campaign_run`, `activate_campaign_run`, `enter_adventure`,
+`append_event`, `list_events` and `run_cost`, called as `service.f(...)`.
+Every one of them takes the acting user, and every one that takes a run id
+calls the internal `_require_member` first — **except `append_event`**,
+which is never called directly from a route and trusts the mechanic calling
+it to have checked membership already (see below). A run belonging to
+someone else and a run that does not exist answer identically — **not
+found** — so no one can probe for the existence of another player's game.
+`_require_writable`, also internal, raises `RunArchivedError` on an
+`archived` run; `rename_campaign_run`, `create_character` and
+`enter_adventure` call it right after `_require_member`. `run_cost` is the
+one function on this list with no route calling it at all — §10.
 
 **Starting a run** does three things at once, because none of them makes
 sense without the others: it pins the campaign's current content version onto
@@ -286,11 +292,12 @@ the run for its whole life, so a later change to the authored content cannot
 alter a game already in progress; it makes the starter the run's owning
 member (`campaign_run_members`, §4); and it instantiates every object the
 campaign's adventures declare — every placement, every carried item — into
-`objects` (§6), none of them positioned in any scene yet, because entering an
-adventure is a separate, explicit step still to come. **The player's own
-creature is not among them**: a run leaves `start_campaign_run` in `setup`,
-its world populated but its character still to come. It appends no `events`
-row (§7). Starting the same run twice is refused by the uniqueness of
+`objects` (§6), none of them positioned in any scene yet: positioning happens
+only when that object's adventure is entered, a separate, explicit step
+(below). **The player's own creature is not among them**: a run leaves
+`start_campaign_run` in `setup`, its world populated but its character still
+to come. It appends no `events` row (§7). Starting the same run twice is
+refused by the uniqueness of
 `(campaign_run_id, instance_key)` on `objects` (§6) rather than by an explicit
 check.
 
@@ -327,6 +334,32 @@ route yet; it exists for the first-narration step a later phase adds to call.
 Called on an already-`active` run it is a no-op; called on anything else it
 raises `InvalidRunStatusError`.
 
+**Entering an adventure** is `enter_adventure`, behind the new endpoint
+above. It only runs against a `ready` or `active` run — anything else raises
+the same `InvalidRunStatusError` activating a run raises on a bad transition
+— then asks the run's pinned campaign for its adventure list and takes the
+first id in it that this campaign run has no `adventure_runs` row for at
+all: that is **the next adventure**, read from the campaign's own list every
+time rather than from any pointer this module keeps, so "what is next" and
+"is anything left" are both answered the same way. Nothing left to take
+raises `AdventureExhaustedError` — the same refusal a completed adventure's
+id would meet, since a row already existing is enough to skip it regardless
+of what `status` that row holds; there is no re-entering an adventure once
+it has one. Finding one, it inserts the new `adventure_runs` row and, in the
+same transaction, positions two families of `objects` (§6): the adventure's
+own cast — its creatures and fixtures, matched by `source_adventure_id`,
+carried items excluded — moves to the scene each was authored into
+(`scene_id = source_scene_id`); every member's character, wherever it was
+made, moves to the adventure's `entry_scene`. Nothing else in the run is
+touched, and a carried item stays with whoever carries it. It appends one
+`adventure_started` event, visible to the player, carrying the new adventure
+run's id, then commits once. **It does not move the campaign run's own
+`status`**: a run becomes `active` at its first narration
+(`activate_campaign_run`, above), not at its first adventure. **A second
+entry while one is already `active` is refused** — `AdventureActiveError`,
+raised when the insert collides with `uq_adventure_runs_active` (§5) rather
+than by a check made ahead of the insert.
+
 **Appending an event** is `append_event`, and it is the **only** function
 anywhere in the tree that writes to `events` (§7) — nothing else in the
 module, and nothing outside it, inserts a row there. It takes the run, the
@@ -362,9 +395,11 @@ this document exists to flag, is §9.
 
 Errors this module raises: an unknown-or-foreign run and a campaign the
 content does not know are **not found**; a run already started, a second
-character on a run, a write against an archived run and an invalid status
-transition are each a **conflict** (`ALREADY_STARTED`, `CHARACTER_EXISTS`,
-`RUN_ARCHIVED`, `INVALID_RUN_STATUS`); a payload that does not match its
+character on a run, a write against an archived run, an invalid status
+transition, entering an adventure while one is already under way and
+entering when none is left to enter are each a **conflict**
+(`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`, `INVALID_RUN_STATUS`,
+`ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`); a payload that does not match its
 type's shape is a **validation error** (`InvalidEventPayloadError`).
 
 ## 9. The transcript's order is the order of ids — and why that is only safe today
