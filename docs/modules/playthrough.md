@@ -10,11 +10,12 @@ activity, not an entity: **no table is called `playthrough`**, and no row is "a
 playthrough".
 
 Today the module ships its five tables and their migrations, plus the surface
-that starts a campaign run, gives it its character, renames it, reads it back
-and puts it away (§8): a service of seven functions behind six authenticated
-endpoints. Entering an adventure, positioning objects and appending events
-remain future work; this document describes the tables and the surface that
-exist, not the lifecycle still to come.
+that starts a campaign run, gives it its character, renames it, reads it back,
+appends to its transcript, reads that transcript back and puts the run away
+(§8): a service of nine functions behind seven authenticated endpoints.
+Entering an adventure and positioning objects remain future work; this
+document describes the tables and the surface that exist, not the lifecycle
+still to come.
 
 ## 1. What the module owns, and what it does not
 
@@ -233,10 +234,13 @@ Append-only: written once, never edited, never deleted.
   and it is a bare column precisely because there is no table to point at.
 - **Cost is stored per event, not per run.** A run's spend is a sum over its
   events, which cannot drift from the events that caused it.
+- **One function writes this table, and one endpoint reads the player's half
+  of it** — `append_event` and the transcript read, §8. How ids end up
+  ordering that read, and the one condition that makes doing so safe, is §9.
 
 ## 8. Surface
 
-Six endpoints exist, all authenticated; `POST` and `PATCH` are also
+Seven endpoints exist, all authenticated; `POST` and `PATCH` are also
 CSRF-guarded:
 
 | Method & path | Behaviour |
@@ -247,23 +251,29 @@ CSRF-guarded:
 | `PATCH /api/v1/playthrough/campaign/{runId}` | Renames the run for `{"title": …}` — `200` and the run |
 | `POST /api/v1/playthrough/campaign/{runId}/character` | Creates the run's one player character — `201` and the character |
 | `POST /api/v1/playthrough/campaign/{runId}/archive` | Puts the run away, or deletes it if it was never started — `204`, no body |
+| `GET /api/v1/playthrough/campaign/{runId}/events` | The run's player-visible transcript, oldest first — `200` and the entries |
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else — the row, not its state. A character reads as `id, name,
 currentHp, maxHp, armourClass` and nothing else (`CharacterRead`) — a
 `GameObject` row (§6), narrowed to what a player needs to see of their own
-sheet.
+sheet. An event reads as `id, type, turnId, payload, createdAt` and nothing
+else (`EventRead`) — no `visibility`, because this endpoint only ever answers
+`player`-visible rows, and no cost, because that is bookkeeping for the run,
+not for the player reading it.
 
 The service (`service.py`) exposes `start_campaign_run`, `list_campaign_runs`,
 `get_campaign_run`, `create_character`, `rename_campaign_run`,
-`archive_campaign_run` and `activate_campaign_run`, called as
-`service.f(...)`. Every one of them takes the acting user, and every one that
-takes a run id calls the internal `_require_member` first. A run belonging to
-someone else and a run that does not exist answer identically — **not
-found** — so no one can probe for the existence of another player's game.
-`_require_writable`, also internal, raises `RunArchivedError` on an
-`archived` run; `rename_campaign_run` and `create_character` call it right
-after `_require_member`.
+`archive_campaign_run`, `activate_campaign_run`, `append_event` and
+`list_events`, called as `service.f(...)`. Every one of them takes the
+acting user, and every one that takes a run id calls the internal
+`_require_member` first — **except `append_event`**, which is never called
+directly from a route and trusts the mechanic calling it to have checked
+membership already (see below). A run belonging to someone else and a run
+that does not exist answer identically — **not found** — so no one can probe
+for the existence of another player's game. `_require_writable`, also
+internal, raises `RunArchivedError` on an `archived` run; `rename_campaign_run`
+and `create_character` call it right after `_require_member`.
 
 **Starting a run** does three things at once, because none of them makes
 sense without the others: it pins the campaign's current content version onto
@@ -312,8 +322,76 @@ route yet; it exists for the first-narration step a later phase adds to call.
 Called on an already-`active` run it is a no-op; called on anything else it
 raises `InvalidRunStatusError`.
 
+**Appending an event** is `append_event`, and it is the **only** function
+anywhere in the tree that writes to `events` (§7) — nothing else in the
+module, and nothing outside it, inserts a row there. It takes the run, the
+entry's `type`, who may see it (`visibility`), the entry's payload, and
+optionally the turn it belongs to, the member who caused it, and the model
+usage it cost. It checks the payload — a dict or the type's own payload
+model — against `EVENT_PAYLOADS[type]`, the twelve-entry registry in
+`schemas.py` that fixes the shape each of the twelve kinds promises
+(`narration`, `player_action`, `roll_requested`, `roll`, `question`,
+`tool_call`, `scene_entered`, `adventure_started`, `adventure_completed`,
+`system`, `error`, `warning`), and stores the validated result camelCase. An
+unknown type, an unknown visibility, or a payload that does not match its
+type's shape raises `InvalidEventPayloadError` and **writes nothing** — not
+a partial row, not a row with a wrong-shaped payload. Model usage, when
+given, copies its token counts across and turns its cost into
+`Decimal(str(usage.cost_usd))`, never `Decimal(float)`, so the exact figure
+survives. `append_event` `add`s and `flush`es, so the new row's id exists for
+whatever caused it to be written, but it **never commits**: the mechanic
+recording its own work — a roll, a scene entered, a tool called — commits
+once, after it has also made whatever state change the event describes, so
+the two land together or not at all. It makes **no membership check**,
+because by the time anything calls it, something upstream already has.
+
+**Reading the transcript** is `list_events`, behind
+`GET …/{runId}/events`. It answers the run's `player`-visible events, oldest
+first, in pages: `after`, an entry id, is exclusive — the answer starts
+strictly after it — and `limit` defaults to 200 and never exceeds 500. The
+DM-only entries `append_event` also wrote are never in this answer, though
+they remain in `events` exactly as `archive_campaign_run` leaves the whole
+table: present, and readable by anyone with a reason to read it directly,
+just not through this endpoint. The ordering, and the one thing about it
+this document exists to flag, is §9.
+
 Errors this module raises: an unknown-or-foreign run and a campaign the
 content does not know are **not found**; a run already started, a second
 character on a run, a write against an archived run and an invalid status
 transition are each a **conflict** (`ALREADY_STARTED`, `CHARACTER_EXISTS`,
-`RUN_ARCHIVED`, `INVALID_RUN_STATUS`).
+`RUN_ARCHIVED`, `INVALID_RUN_STATUS`); a payload that does not match its
+type's shape is a **validation error** (`InvalidEventPayloadError`).
+
+## 9. The transcript's order is the order of ids — and why that is only safe today
+
+The read in §8 does exactly one thing to put the transcript in order: it
+sorts `events` by `id`. Nothing else — no `created_at`, no sequence column,
+no `ORDER BY … , id`. That is enough today because `id` is a ULID, which
+sorts chronologically by construction, and because **one process** mints
+every id this module ever writes: the whole backend runs as a single
+process, so every id it hands out is drawn from that one process's own clock
+and its own counter, and comparing two ids is the same as comparing when
+they were minted.
+
+That guarantee belongs to the process, not to the id format. A ULID's
+ordering comes from its own generating process's clock, read at millisecond
+resolution. Two ids minted by *different* processes in the same millisecond
+carry no relationship to each other beyond that shared millisecond — each
+process's clock and counter are its own. If this API ever ran as more than
+one process, two events genuinely appended one after the other could be
+minted by two different processes in the same millisecond, sort in the
+wrong order, and a reader paging the transcript would see them swapped —
+silently, since nothing about the read would signal that anything had gone
+wrong.
+
+The project accepts this today because the app runs as one process end to
+end, so the failure mode above cannot occur. The fix is known and is not
+being built now: a database-issued sequence — an integer the database itself
+hands out as each row is inserted, ordered by the database's own commit
+order rather than by a client-generated id — would remove the dependency on
+a single minting process, at the cost of a schema change and a second sort
+key everywhere the transcript is read. That cost is not worth paying before
+the app has a reason to run as more than one process. **Anyone adding a
+second process to this API must revisit this ordering before anything
+else** — it is the one thing in this module that a second process would
+silently break.

@@ -71,8 +71,8 @@ Owns a player's playthrough of a campaign and who may act in it.
 
 ## Surface
 
-Six endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring an
-authenticated caller (`POST` and `PATCH` are also CSRF-guarded):
+Seven endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring
+an authenticated caller (`POST` and `PATCH` are also CSRF-guarded):
 
 - `POST /api/v1/playthrough/campaign` with `{"campaignId": …}` — starts a
   campaign run, answering `201` and the run.
@@ -87,10 +87,17 @@ authenticated caller (`POST` and `PATCH` are also CSRF-guarded):
 - `POST /api/v1/playthrough/campaign/{runId}/archive` — puts the run away
   (or, for a run still `setup`, deletes it outright — see §Owns), answering
   `204` with no body.
+- `GET /api/v1/playthrough/campaign/{runId}/events` with optional `after`
+  (an entry id, exclusive) and `limit` (`Query`, default 200, max 500) —
+  the run's `player`-visible transcript, ordered by `id`, oldest first;
+  `dm`-visible entries are never in the answer though they stay in the
+  table.
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else. A character reads as `id, name, currentHp, maxHp,
-armourClass` and nothing else — `CharacterRead`.
+armourClass` and nothing else — `CharacterRead`. An event reads as `id,
+type, turnId, payload, createdAt` and nothing else — `EventRead`; no
+`visibility`, no cost, no run id.
 
 Service functions (`service.py`), called as `service.f(...)`:
 
@@ -126,12 +133,41 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `_require_writable` — internal; raises `RunArchivedError` when the run is
   `archived`. Called by `rename_campaign_run` and `create_character` before
   they touch anything.
+- `append_event` — the **only** function in the tree that writes to
+  `events`. Takes the run, `type`, `visibility`, a payload (dict or the
+  type's own payload model), and optionally `turn_id`, `actor_member_id`
+  and a `core.llm.service.Usage`. Validates the payload against
+  `EVENT_PAYLOADS[type]`, the twelve-entry registry in `schemas.py`
+  (`narration`, `player_action`, `roll_requested`, `roll`, `question`,
+  `tool_call`, `scene_entered`, `adventure_started`, `adventure_completed`,
+  `system`, `error`, `warning`), and stores it `model_dump(by_alias=True)`.
+  An unknown type or visibility, or a payload that fails its type's shape,
+  raises `InvalidEventPayloadError` and writes nothing. `usage.cost_usd`
+  becomes `Decimal(str(...))`, never `Decimal(float)`. `add`s and `flush`es
+  so the new id exists — **never commits**; the caller commits once, so the
+  event and the state change it describes land together or not at all. No
+  membership check — every caller has already made one.
+- `list_events` — the caller's `player`-visible events for a run, ordered by
+  `id`, `after` exclusive, `limit` capped at 500 (default 200). Checks
+  membership; `dm`-visible rows are excluded, not merely hidden downstream.
 
 Every service function takes the acting user and checks membership before
-touching a run. A run belonging to someone else and a run that does not
-exist answer identically — not found — so no one can probe for the
-existence of another player's game. Errors: an unknown or foreign run and an
-unknown campaign are not found; a run already started, a second character, an
-archived run refusing a write, and an invalid status transition are each a
-domain conflict (`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
-`INVALID_RUN_STATUS`).
+touching a run, except `append_event`, which every one of its callers has
+already checked on the caller's behalf. A run belonging to someone else and
+a run that does not exist answer identically — not found — so no one can
+probe for the existence of another player's game. Errors: an unknown or
+foreign run and an unknown campaign are not found; a run already started, a
+second character, an archived run refusing a write, and an invalid status
+transition are each a domain conflict (`ALREADY_STARTED`, `CHARACTER_EXISTS`,
+`RUN_ARCHIVED`, `INVALID_RUN_STATUS`); a payload not matching its type's
+shape is a validation error (`InvalidEventPayloadError`).
+
+**The transcript read sorts by `id` alone, and that is only safe because one
+process mints every id.** `id` is a ULID, chronological by construction, but
+that ordering is guaranteed only within one generating process's clock —
+ids from two different processes carry no ordering guarantee against each
+other in the same millisecond. This backend runs as a single process today,
+so the read's `ORDER BY id` is always correct; the fix if that ever changes
+is a database-issued sequence, not built now because it is not yet needed.
+The full reasoning, for whoever adds a second process, lives in
+`docs/modules/playthrough.md` §9.
