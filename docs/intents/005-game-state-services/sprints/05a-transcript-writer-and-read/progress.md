@@ -9,10 +9,10 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| qa | open | |
+| 1 | done | `append_event`, twelve payload models, the only-writer guard |
+| 2 | done | `list_events` and the events read route |
+| 3 | done | module doc §9 and README, with the id-ordering caveat |
+| qa | done | 3 acceptance tests; AC5 reworked once, it had skipped silently |
 
 Status: `open | running | done | failed`
 
@@ -25,6 +25,9 @@ Status: `open | running | done | failed`
 - Backlog row 05 became rows 05a and 05b; 05b is issue #33, new. Rows 06 and 07 depended on "05" and now depend
   on 05a alone, which is all their work needs.
 - Research is copied unchanged into both halves rather than referenced across directories.
+- `compose.yaml` now mounts `./docs` read-only into the CLI container. AC5 asserts on a document the test
+  container could not see, so its test skipped in every environment — green forever, proving nothing. Several
+  later phases ship documentation criteria and now have somewhere to look.
 
 ## Backlog proposals
 
