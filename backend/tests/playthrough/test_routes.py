@@ -11,11 +11,13 @@ never imported by name (AGENTS.md) -- exactly as `tests/users/test_routes.py`
 does it for its own module.
 """
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
 from app.core.ids import generate_id
+from app.core.settings import get_settings
 from app.modules.auth import service as auth_service
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import (
@@ -701,3 +703,89 @@ def test_list_events_limit_above_500_is_refused(
 
     assert_error_envelope(response, status=422, code="VALIDATION_ERROR")
     assert calls == []
+
+
+# --- WI2: the live signal (I3, not covered by the acceptance suite) -------
+
+
+def _stream_path(run_id: str) -> str:
+    return f"/api/v1/playthrough/campaign/{run_id}/stream"
+
+
+@contextmanager
+def _pinned_sse_settings(monkeypatch, *, poll_interval: str, max_lifetime: str):
+    """Pins both SSE settings tiny so a header check does not sit for the
+    2 s/300 s production defaults, mirroring qa's own
+    `test_acceptance_cost_and_live_signal.py::_pinned_sse_settings`."""
+    monkeypatch.setenv("SSE_POLL_INTERVAL_SECONDS", poll_interval)
+    monkeypatch.setenv("SSE_MAX_LIFETIME_SECONDS", max_lifetime)
+    get_settings.cache_clear()
+    try:
+        yield
+    finally:
+        get_settings.cache_clear()
+
+
+def test_stream_campaign_run_without_session_cookie_returns_401(client, monkeypatch):
+    calls = []
+
+    async def fake_latest_event_id(db, **kwargs):
+        calls.append(kwargs)
+        return generate_id()
+
+    monkeypatch.setattr(playthrough_service, "latest_event_id", fake_latest_event_id)
+
+    response = client.get(_stream_path("some-run-id"))
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"
+    assert calls == []
+
+
+def test_stream_campaign_run_foreign_and_unknown_run_answer_the_identical_not_found_envelope(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    # I3: membership is checked before the `StreamingResponse` is returned,
+    # so a refusal arrives as the ordinary envelope, not as a stream that
+    # opens and immediately dies -- and a foreign run and an unknown run
+    # stay indistinguishable, exactly like every other route (← D12).
+    _stub_auth(monkeypatch)
+
+    async def fake_latest_event_id_foreign(db, **kwargs):
+        raise CampaignRunNotFoundError(kwargs["run_id"])
+
+    monkeypatch.setattr(playthrough_service, "latest_event_id", fake_latest_event_id_foreign)
+
+    foreign_response = client.get(
+        _stream_path("someone-elses-run-id"), headers=session_cookie_header("a-valid-cookie")
+    )
+    unknown_response = client.get(
+        _stream_path("no-such-run-id"), headers=session_cookie_header("a-valid-cookie")
+    )
+
+    foreign_error = assert_error_envelope(foreign_response, status=404, code="NOT_FOUND")
+    unknown_error = assert_error_envelope(unknown_response, status=404, code="NOT_FOUND")
+    assert foreign_error == unknown_error
+    assert "text/event-stream" not in foreign_response.headers.get("content-type", "")
+
+
+def test_stream_campaign_run_response_headers(
+    client, monkeypatch, session_cookie_header
+):
+    _stub_auth(monkeypatch)
+    steady_id = generate_id()
+
+    async def fake_latest_event_id(db, **kwargs):
+        return steady_id
+
+    monkeypatch.setattr(playthrough_service, "latest_event_id", fake_latest_event_id)
+
+    with _pinned_sse_settings(monkeypatch, poll_interval="0.01", max_lifetime="0.05"):
+        with client.stream(
+            "GET", _stream_path("some-run-id"), headers=session_cookie_header("a-valid-cookie")
+        ) as response:
+            assert response.status_code == 200, response.read()
+            assert response.headers["content-type"].startswith("text/event-stream")
+            assert response.headers["cache-control"] == "no-cache"
+            assert response.headers["x-accel-buffering"] == "no"
+            response.read()
