@@ -169,7 +169,9 @@ def test_use_exit_moves_the_actor_and_records_scene_entered_and_a_dm_tool_call(p
             playthrough_db, user_id=user_id, campaign_id=CAMPAIGN_ID
         )
         character = await service.create_character(playthrough_db, user_id=user_id, run_id=run.id)
-        adventure_run = await service.enter_adventure(playthrough_db, user_id=user_id, run_id=run.id)
+        adventure_run = await service.enter_adventure(
+            playthrough_db, user_id=user_id, run_id=run.id
+        )
 
         result = await service.use_exit(
             playthrough_db, user_id=user_id, actor_id=character.id, exit_id=TO_THORNWAY
@@ -258,7 +260,9 @@ def test_use_exit_ends_the_adventure_and_finishes_the_game_without_touching_posi
             playthrough_db, user_id=user_id, campaign_id=CAMPAIGN_ID
         )
         character = await service.create_character(playthrough_db, user_id=user_id, run_id=run.id)
-        adventure_run = await service.enter_adventure(playthrough_db, user_id=user_id, run_id=run.id)
+        adventure_run = await service.enter_adventure(
+            playthrough_db, user_id=user_id, run_id=run.id
+        )
 
         for exit_id in ("to-thornway", "to-lair-maw", "to-lair-hollow"):
             await service.use_exit(
