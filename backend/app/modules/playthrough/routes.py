@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.core.db import DbSession
 from app.core.errors import ApiError
@@ -9,6 +9,7 @@ from app.modules.playthrough.errors import PlaythroughError
 from app.modules.playthrough.schemas import (
     CampaignRunRead,
     CharacterRead,
+    EventRead,
     RenameCampaignRunRequest,
     StartCampaignRunRequest,
 )
@@ -111,3 +112,23 @@ async def archive_campaign_run(run_id: str, auth: CsrfAuth, db: DbSession) -> No
         await service.archive_campaign_run(db, user_id=auth.user.id, run_id=run_id)
     except PlaythroughError as exc:
         raise ApiError(exc.code) from exc
+
+
+@router.get(
+    "/campaign/{run_id}/events",
+    responses={401: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope}},
+)
+async def list_events(
+    run_id: str,
+    auth: CurrentAuth,
+    db: DbSession,
+    after: str | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+) -> list[EventRead]:
+    try:
+        events = await service.list_events(
+            db, user_id=auth.user.id, run_id=run_id, after=after, limit=limit
+        )
+    except PlaythroughError as exc:
+        raise ApiError(exc.code) from exc
+    return [EventRead.model_validate(event) for event in events]

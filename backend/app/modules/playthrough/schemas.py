@@ -27,6 +27,20 @@ class RenameCampaignRunRequest(CamelModel):
     title: str = Field(min_length=1, max_length=120)
 
 
+class EventRead(CamelModel):
+    """One transcript entry, on the wire -- `id, type, turnId, payload,
+    createdAt` and nothing else (WI2): no visibility (a read only ever
+    carries `player` rows), no cost, no run id. `payload` is already
+    camelCase in storage (`append_event` writes it `by_alias=True`) and
+    passes through unmapped."""
+
+    id: str
+    type: str
+    turn_id: str | None
+    payload: dict[str, Any]
+    created_at: datetime
+
+
 class CharacterRead(CamelModel):
     """The character, on the wire -- `id, name, currentHp, maxHp,
     armourClass` and nothing else (I2): no state, no keys, no ownership."""

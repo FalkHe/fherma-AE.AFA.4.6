@@ -440,3 +440,35 @@ async def append_event(
     db.add(event)
     await db.flush()
     return event
+
+
+async def list_events(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    after: str | None = None,
+    limit: int = 200,
+) -> list[Event]:
+    """The caller's `player`-visible transcript for `run_id`, oldest first.
+
+    `_require_member` first, exactly like every other function that takes a
+    `run_id` -- a foreign or unknown run raises `CampaignRunNotFoundError`
+    before anything else runs. Ordered by `id` alone (safe today because one
+    process mints every id -- README.md, `docs/modules/playthrough.md`
+    §9); `after`, when given, is exclusive. `dm`-visible rows are filtered
+    out of the query itself, not merely absent from what the caller renders.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+
+    stmt = (
+        select(Event)
+        .where(Event.campaign_run_id == run_id, Event.visibility == "player")
+        .order_by(Event.id)
+        .limit(limit)
+    )
+    if after is not None:
+        stmt = stmt.where(Event.id > after)
+
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
