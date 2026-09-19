@@ -22,16 +22,20 @@ route reaches yet — as `@pytest.mark.database` acceptance tests under `make ba
 | 04 | Implement `create_character` (seed sheet, carried items, `setup → ready`), rename/archive/unarchive, archived read-only; fix `docs/general/model.md` lifecycle rows | 01, 03 | #24 | done |
 | 05a | Implement `append_event` + payload models and `GET …/events?after=`; record the id-ordering caveat | 02, 03 | #25 | done |
 | 05b | Implement `app playthrough cost` and the SSE `updated` signal `GET …/stream` | 05a | #33 | done |
-| 06 | Implement `enter_adventure` (placement, `adventure_started`) and `use_exit` (scene move / adventure end / campaign finish) | 01, 04, 05a | #26 | open |
+| 06a | Implement `enter_adventure` (placement, `adventure_started`) and its route | 01, 04, 05a | #26 | running |
+| 06b | Implement `use_exit` (scene move / adventure end / campaign finish) and its recorded refusal | 06a | #34 | open |
 | 07 | Implement `dice.py`, formula derivation, `request_player_roll`/`resolve_roll_request`/`roll`/`passive_check`, `resolve_check`/`resolve_save`, single consumption, `awaiting`, `app playthrough roll` | 05a | #27 | open |
-| 08 | Implement `interact`, `take`/`drop`/`give`, the one-action-per-turn count, `use_item` seam | 06, 07 | #28 | open |
-| 09 | Implement `attack`, `damage`, `roll_initiative` as events-only combat; prove no combat state exists | 06, 07 | #29 | open |
+| 08 | Implement `interact`, `take`/`drop`/`give`, the one-action-per-turn count, `use_item` seam | 06b, 07 | #28 | open |
+| 09 | Implement `attack`, `damage`, `roll_initiative` as events-only combat; prove no combat state exists | 06b, 07 | #29 | open |
 
 Outcomes — the one verifiable statement per sprint — live in each `sprints/NN-*/brief.md` (`## Outcome`).
 
 ## Notes
 
-- Parallelism: 01 ‖ 02 · 06 ‖ 07 (after 05a) · 08 ‖ 09.
+- Parallelism: 01 ‖ 02 · 06a ‖ 07 (after 05a) · 08 ‖ 09.
+- **06 was split into 06a and 06b** at the mechanic boundary, on the precedent set for 05: entering an adventure
+  and using an exit are two mechanics, and one sprint carried both plus a route, four error classes and two
+  positioning statements. 06b needs 06a.
 - **05 was split into 05a and 05b** on the product owner's instruction: one sprint carried four surfaces — the
   writer, the read, the cost command and the live signal. 05b needs 05a; 06 and 07 need only 05a.
 - **02 is its own sprint**: migration `0007` serves 03/04 (A1, A2) *and* 05 (A3); folding it into 03 would put one
