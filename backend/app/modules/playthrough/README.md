@@ -71,8 +71,10 @@ Owns a player's playthrough of a campaign and who may act in it.
 
 ## Surface
 
-Seven endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring
-an authenticated caller (`POST` and `PATCH` are also CSRF-guarded):
+Eight endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring
+an authenticated caller (`POST` and `PATCH` are also CSRF-guarded). Cost has
+no endpoint at all — see the CLI command and the note below the service
+list.
 
 - `POST /api/v1/playthrough/campaign` with `{"campaignId": …}` — starts a
   campaign run, answering `201` and the run.
@@ -92,6 +94,13 @@ an authenticated caller (`POST` and `PATCH` are also CSRF-guarded):
   the run's `player`-visible transcript, ordered by `id`, oldest first;
   `dm`-visible entries are never in the answer though they stay in the
   table.
+- `GET /api/v1/playthrough/campaign/{runId}/stream` — `text/event-stream`
+  (`cache-control: no-cache`, `x-accel-buffering: no`); membership is
+  checked before the `StreamingResponse` is built, so a refusal is an
+  ordinary error envelope, never a stream that opens and dies. Per poll:
+  `data: {"type":"updated","id":"<ulid>"}\n\n` when the latest event id has
+  changed since the last tick, else `: keepalive\n\n`. Carries no payload —
+  the client re-reads `GET …/events` on receiving it (← D10).
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else. A character reads as `id, name, currentHp, maxHp,
@@ -150,6 +159,40 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `list_events` — the caller's `player`-visible events for a run, ordered by
   `id`, `after` exclusive, `limit` capped at 500 (default 200). Checks
   membership; `dm`-visible rows are excluded, not merely hidden downstream.
+- `latest_event_id` — the highest `id` among a run's events, or `None`.
+  Checks membership. The only function the stream endpoint below calls on
+  every poll.
+- `run_cost` — `SUM(cost_usd)` over the run's events, whole and grouped by
+  `turn_id` (the `NULL`-turn group last), both as `Decimal`, never a float.
+  Checks membership like every other read. Called only from the `app
+  playthrough cost` CLI command below — no route calls it, and none is
+  meant to.
+
+Cost has **no HTTP route anywhere in this module, on purpose**: it is a
+developer's number, not a player's, meant for a developer drawer the
+frontend does not have yet (← D14). Until that drawer exists, the only way
+to read it is `app playthrough cost <run-id> --user <user-id>` (Typer,
+`playthrough/cli.py`), which prints the run's total and then one
+`turn <turn-id>: <amount>` line per turn (`turn -: <amount>` for the
+turnless group), or `f"{exc.code}: {exc}"` to stderr and exit `1` when the
+caller is not a member (`NOT_FOUND`). A test asserts no route exposes cost,
+so a future endpoint added elsewhere in the app cannot reintroduce it by
+accident.
+
+The stream (`GET …/stream`, above) polls `service.latest_event_id` on an
+interval, sends the `updated` message when it has changed since the last
+tick or a keepalive when it has not, and ends the generator on
+`await request.is_disconnected()`, on
+`GeneratorExit`, or once `sse_max_lifetime_seconds` has elapsed since the
+stream opened — whichever comes first; each tick rolls back rather than
+holding a transaction open. Both `sse_poll_interval_seconds` (default `2.0`)
+and `sse_max_lifetime_seconds` (default `300.0`) are settings, read inside
+the handler rather than at import time, so a test can pin them small. There
+is no background worker and nothing subscribes to the database for
+changes — the handler polls, which is enough at this size. A client whose
+connection ends this way simply reconnects, as any server-sent event stream
+does; nothing on the server distinguishes that reconnect from a first
+connection.
 
 Every service function takes the acting user and checks membership before
 touching a run, except `append_event`, which every one of its callers has
