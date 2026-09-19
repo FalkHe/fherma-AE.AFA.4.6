@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,8 @@ from app.modules.content import service as content_service
 from app.modules.content.errors import ContentNotFoundError
 from app.modules.content.schemas import LoadedCampaign, ObjectTemplate, SeedCharacter
 from app.modules.playthrough.errors import (
+    AdventureActiveError,
+    AdventureExhaustedError,
     CampaignNotFoundError,
     CampaignRunExistsError,
     CampaignRunNotFoundError,
@@ -28,7 +30,13 @@ from app.modules.playthrough.errors import (
     InvalidRunStatusError,
     RunArchivedError,
 )
-from app.modules.playthrough.models import CampaignRun, CampaignRunMember, Event, GameObject
+from app.modules.playthrough.models import (
+    AdventureRun,
+    CampaignRun,
+    CampaignRunMember,
+    Event,
+    GameObject,
+)
 from app.modules.playthrough.schemas import EVENT_PAYLOADS, CharacterState, RunCost, TurnCost
 
 _ZERO_COST = Decimal("0.000000")
@@ -371,6 +379,111 @@ async def activate_campaign_run(db: AsyncSession, *, user_id: str, run_id: str) 
     await db.commit()
     await db.refresh(run)
     return run
+
+
+async def enter_adventure(db: AsyncSession, *, user_id: str, run_id: str) -> AdventureRun:
+    """Enters the next adventure the pinned campaign declares that this
+    run has no `adventure_runs` row for yet, positions its cast and every
+    member character, and records that it began (WI1, AC1).
+
+    `_require_member` -> `_get_run` -> `_require_writable` -> the run's
+    status must be `ready` or `active` (`InvalidRunStatusError`
+    otherwise). Does not touch the campaign run's own status: the first
+    narration moves it to `active`, not entry (← D3,
+    `activate_campaign_run`).
+
+    "Next" is the first id in `campaign.adventures` with no
+    `adventure_runs` row in this run -- the query behind that carries no
+    status filter, so a `completed` row exhausts an id exactly the same
+    way an `active` one would. None left raises `AdventureExhaustedError`,
+    which is therefore also AC4's refusal for re-entering a completed
+    adventure, not a separate code.
+
+    Inserts the new `AdventureRun` (`status='active'`), flushes, then two
+    `UPDATE objects` statements: the first positions that adventure's cast
+    (matched by `source_adventure_id`, excluding anything with an owner --
+    carried items are never repositioned), the second positions every
+    member character (matched by `member_id IS NOT NULL` alone, since a
+    character made before any adventure existed has no
+    `source_adventure_id` for the first statement to match on).
+    `append_event` records `adventure_started` at `player` visibility with
+    the new adventure run's id, then one commit.
+
+    A second `active` row for this run collides with
+    `uq_adventure_runs_active`; that specific `IntegrityError` is rolled
+    back and translated to `AdventureActiveError`. Only that constraint is
+    caught -- any other integrity failure propagates unchanged, rather
+    than the wide catch sprint 03 used for a different constraint.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    run = await _get_run(db, run_id)
+    _require_writable(run)
+
+    if run.status not in ("ready", "active"):
+        raise InvalidRunStatusError(run_id)
+
+    loaded = content_service.load_campaign(run.campaign_id, run.content_version)
+
+    entered = await db.execute(
+        select(AdventureRun.adventure_id).where(AdventureRun.campaign_run_id == run_id)
+    )
+    entered_ids = set(entered.scalars().all())
+
+    next_adventure_id = next(
+        (
+            adventure_id
+            for adventure_id in loaded.campaign.adventures
+            if adventure_id not in entered_ids
+        ),
+        None,
+    )
+    if next_adventure_id is None:
+        raise AdventureExhaustedError(run_id)
+
+    adventure = loaded.adventures[next_adventure_id]
+    adventure_run = AdventureRun(
+        campaign_run_id=run_id, adventure_id=next_adventure_id, status="active"
+    )
+
+    try:
+        db.add(adventure_run)
+        await db.flush()
+
+        await db.execute(
+            update(GameObject)
+            .where(
+                GameObject.campaign_run_id == run_id,
+                GameObject.source_adventure_id == next_adventure_id,
+                GameObject.owner_object_id.is_(None),
+            )
+            .values(adventure_run_id=adventure_run.id, scene_id=GameObject.source_scene_id)
+        )
+        await db.execute(
+            update(GameObject)
+            .where(
+                GameObject.campaign_run_id == run_id,
+                GameObject.member_id.is_not(None),
+            )
+            .values(adventure_run_id=adventure_run.id, scene_id=adventure.entry_scene)
+        )
+
+        await append_event(
+            db,
+            run_id=run_id,
+            type="adventure_started",
+            visibility="player",
+            payload={"adventure_run_id": adventure_run.id},
+        )
+
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if "uq_adventure_runs_active" not in str(exc.orig):
+            raise
+        raise AdventureActiveError(run_id) from exc
+
+    await db.refresh(adventure_run)
+    return adventure_run
 
 
 async def append_event(
