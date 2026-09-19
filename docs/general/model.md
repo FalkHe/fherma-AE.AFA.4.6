@@ -43,9 +43,11 @@ KNOWLEDGE
   survive adventure boundaries.
 - **Everything under a campaign run cascades from it.** `adventure_runs`,
   `objects`, `events` and the phase-6 journal are owned rows with no independent
-  existence. Nothing is ever deleted in normal operation (see Lifecycle); the
-  cascades are declared so that referential integrity holds if an operator purge
-  ever lands.
+  existence. A run that has actually been played is never deleted in normal
+  operation (see Lifecycle); the cascades are declared so that referential
+  integrity holds if an operator purge ever lands, and so that putting away a
+  run abandoned before it ever got a character can remove it, and everything
+  under it, in one operation.
 - **Campaign is a full domain entity** with a stable id — it just lives in a
   file rather than a table. Campaign-Definition ids carry **no foreign key**;
   their referential integrity is loader-time validation, not a database
@@ -117,7 +119,9 @@ instance without a lookup table.
 a monster *is* an NPC, and "monster" only means "ships a stat block and is
 usually hostile" — a Campaign-Definition trait, not a storage kind. The player
 character is likewise not a kind of its own; it is a creature identified by the
-user who owns it.
+user who owns it. Unlike every other object the content declares, though, it
+carries no authored template: it is made when the player creates their
+character, not instantiated from one when the run starts.
 
 One generic table buys uniform targeting, one `update_object` tool instead of
 several, and campaign-scoped character state for free. It costs schema
@@ -141,8 +145,9 @@ layer to invent. Abilities, inventory, disposition, injuries and improvised
 traits stay in the blob.
 
 Objects are instantiated **eagerly when the run starts**: everything the pinned
-content version's templates and placements declare, across all its adventures.
-No lazy creation during play, no half-populated scenes.
+content version's templates and placements declare, across all its adventures
+— except the player's own creature, which the run does not yet have. No lazy
+creation during play, no half-populated scenes.
 
 ### A carried object is its own row, pointing at its owner
 
@@ -306,18 +311,30 @@ adventures, so it lives in the campaign-scoped file.
 
 ## Lifecycle
 
-Built in Phase 5 — Game State Services. Nothing below runs yet; the tables it
-writes exist.
+Built across Phase 5 — Game State Services. Starting a run, giving it its
+character and putting it away already run today; entering an adventure and
+moving a run into active play remain later steps of the same phase.
 
 | Action | Effect |
 |---|---|
-| Start a campaign run | Pin the campaign and content version; create the owner member row; instantiate **all** objects the pinned Campaign-Definition declares, the player's creature among them, from the seed player character |
+| Start a campaign run | Pin the campaign and content version; create the owner member row; instantiate every object the pinned Campaign-Definition declares, other than the player's own creature — the run exists and its world is in place, but it has no character yet |
+| Create the character | Build the player's creature from the seed player character, carrying its starting equipment as real objects of its own; the run now has its one character and moves on from freshly started |
 | Start an adventure | Create an `adventure_runs` row; place that adventure's cast — the player's creature among them — in the scenes the content puts them in |
-| Archive | The player-facing removal gesture — a status change; nothing is deleted |
+| The first narration | Moves a run with a character into active play — the step exists already, but nothing yet triggers it; a later phase wires it in |
+| Archive | Puts a run away, subject to the shelf life below |
 
-**Nothing is ever deleted**: archiving is a status change, there is no delete
-route and no purge command, so the event stream and the cost record it carries
-survive a run the player has put away.
+A run that has reached a character, active play or a finished story can be
+archived. There is no way back: an archived run is kept only so its story can
+be read again, never played on further, and every write to it is refused —
+though it still lists among the player's runs and still reads. A run archived
+before it ever got a character is different: it was never really played, so
+archiving it at that point deletes it outright — the run, its membership and
+everything instantiated for it — and the player is not asked twice.
+
+**Nothing else is ever deleted**: for a run that reached a character or
+beyond, archiving is a status change, there is no delete route and no purge
+command, so the event stream and the cost record it carries survive a run the
+player has put away.
 
 ## Known gaps
 

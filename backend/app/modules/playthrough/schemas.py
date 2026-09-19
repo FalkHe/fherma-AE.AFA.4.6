@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from app.core.schemas import CamelModel
+from app.modules.content.schemas import Abilities
 
 
 class StartCampaignRunRequest(CamelModel):
@@ -19,3 +20,32 @@ class CampaignRunRead(CamelModel):
     title: str | None
     status: str
     created_at: datetime
+
+
+class RenameCampaignRunRequest(CamelModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
+class CharacterRead(CamelModel):
+    """The character, on the wire -- `id, name, currentHp, maxHp,
+    armourClass` and nothing else (I2): no state, no keys, no ownership."""
+
+    id: str
+    name: str
+    current_hp: int
+    max_hp: int
+    armour_class: int
+
+
+class CharacterState(BaseModel):
+    """The character's `state` column (I5), written whole from the seed
+    sheet and never mutated in place -- a plain `BaseModel`, not a
+    `CamelModel`: this is storage, not wire shape. Carried items keep the
+    column's `{}` default; only the character has no `template_id` to
+    carry this data instead."""
+
+    abilities: Abilities
+    race: str
+    character_class: str
+    background: str
+    appearance: str
