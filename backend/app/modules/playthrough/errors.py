@@ -103,6 +103,38 @@ class InvalidRunStatusError(PlaythroughError):
         super().__init__(f"campaign run status does not allow this transition: {run_id}")
 
 
+class AdventureActiveError(PlaythroughError):
+    """This run already has another adventure `active`.
+
+    Translated from the `IntegrityError` `uq_adventure_runs_active`
+    raises when `enter_adventure` tries to insert a second `active` row
+    for the same run -- there is no pre-check. Only that constraint is
+    caught; any other integrity failure propagates unchanged.
+    """
+
+    code = ErrorCode.ADVENTURE_ACTIVE
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        super().__init__(f"campaign run already has an active adventure: {run_id}")
+
+
+class AdventureExhaustedError(PlaythroughError):
+    """Every adventure the pinned campaign declares already has an
+    `adventure_runs` row in this run -- there is nothing left to enter.
+
+    Raised alike whether every adventure has been played through or the
+    caller is re-entering one that already completed: both leave no
+    adventure id without a row (← AC4).
+    """
+
+    code = ErrorCode.ADVENTURE_EXHAUSTED
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        super().__init__(f"campaign run has no adventure left to enter: {run_id}")
+
+
 class InvalidEventPayloadError(PlaythroughError):
     """`append_event` was asked to write a `type` or `visibility` it does
     not know, or a `payload` that fails the model `EVENT_PAYLOADS[type]`

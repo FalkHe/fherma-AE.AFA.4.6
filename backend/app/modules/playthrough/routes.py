@@ -13,6 +13,7 @@ from app.modules.auth.dependencies import CsrfAuth, CurrentAuth
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import PlaythroughError
 from app.modules.playthrough.schemas import (
+    AdventureRunRead,
     CampaignRunRead,
     CharacterRead,
     EventRead,
@@ -81,6 +82,24 @@ async def create_character(run_id: str, auth: CsrfAuth, db: DbSession) -> Charac
     except PlaythroughError as exc:
         raise ApiError(exc.code) from exc
     return CharacterRead.model_validate(character)
+
+
+@router.post(
+    "/campaign/{run_id}/adventure",
+    status_code=201,
+    responses={
+        401: {"model": ErrorEnvelope},
+        403: {"model": ErrorEnvelope},
+        404: {"model": ErrorEnvelope},
+        409: {"model": ErrorEnvelope},
+    },
+)
+async def enter_adventure(run_id: str, auth: CsrfAuth, db: DbSession) -> AdventureRunRead:
+    try:
+        adventure_run = await service.enter_adventure(db, user_id=auth.user.id, run_id=run_id)
+    except PlaythroughError as exc:
+        raise ApiError(exc.code) from exc
+    return AdventureRunRead.model_validate(adventure_run)
 
 
 @router.patch(

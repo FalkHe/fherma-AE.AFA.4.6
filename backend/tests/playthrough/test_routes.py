@@ -21,6 +21,8 @@ from app.core.settings import get_settings
 from app.modules.auth import service as auth_service
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import (
+    AdventureActiveError,
+    AdventureExhaustedError,
     CampaignNotFoundError,
     CampaignRunExistsError,
     CampaignRunNotFoundError,
@@ -94,6 +96,19 @@ def _make_character(**overrides):
         member_id=generate_id(),
         template_id=None,
         instance_key="pc:member-placeholder:1",
+    )
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
+
+
+def _make_adventure_run(**overrides):
+    fields = dict(
+        id=generate_id(),
+        campaign_run_id=generate_id(),
+        adventure_id="goblins-of-greenhollow",
+        status="active",
+        started_at=datetime.now(UTC),
+        completed_at=None,
     )
     fields.update(overrides)
     return SimpleNamespace(**fields)
@@ -596,6 +611,164 @@ def test_archived_run_still_reads_but_refuses_rename_and_character_creation(
         headers=_auth_headers(session_cookie_header),
     )
     assert_error_envelope(character_response, status=409, code="RUN_ARCHIVED")
+
+
+# --- WI2: entering an adventure (I1-I4 not covered by the acceptance suite) --
+
+
+def test_enter_adventure_response_has_exactly_the_camelcase_field_set(
+    client, monkeypatch, session_cookie_header
+):
+    _stub_auth(monkeypatch)
+    adventure_run = _make_adventure_run()
+
+    async def fake_enter(db, *, user_id, run_id):
+        return adventure_run
+
+    monkeypatch.setattr(playthrough_service, "enter_adventure", fake_enter)
+
+    response = client.post(
+        f"/api/v1/playthrough/campaign/{adventure_run.campaign_run_id}/adventure",
+        headers=_auth_headers(session_cookie_header),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert set(body.keys()) == {"id", "adventureId", "status", "startedAt"}
+
+
+def test_enter_adventure_without_session_cookie_returns_401(client, monkeypatch):
+    calls = []
+
+    async def fake_enter(db, *, user_id, run_id):
+        calls.append((user_id, run_id))
+        return _make_adventure_run()
+
+    monkeypatch.setattr(playthrough_service, "enter_adventure", fake_enter)
+
+    response = client.post("/api/v1/playthrough/campaign/some-run-id/adventure")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"
+    assert calls == []
+
+
+def test_enter_adventure_without_csrf_header_returns_403_and_never_calls_service(
+    client, monkeypatch, session_cookie_header
+):
+    _stub_auth(monkeypatch)
+    calls = []
+
+    async def fake_enter(db, *, user_id, run_id):
+        calls.append((user_id, run_id))
+        return _make_adventure_run()
+
+    monkeypatch.setattr(playthrough_service, "enter_adventure", fake_enter)
+
+    response = client.post(
+        "/api/v1/playthrough/campaign/some-run-id/adventure",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "CSRF_TOKEN_INVALID"
+    assert calls == []
+
+
+def test_enter_adventure_translates_adventure_active_error_to_envelope(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    _stub_auth(monkeypatch)
+
+    async def fake_enter(db, *, user_id, run_id):
+        raise AdventureActiveError(run_id)
+
+    monkeypatch.setattr(playthrough_service, "enter_adventure", fake_enter)
+
+    response = client.post(
+        "/api/v1/playthrough/campaign/some-run-id/adventure",
+        headers=_auth_headers(session_cookie_header),
+    )
+
+    assert_error_envelope(response, status=409, code="ADVENTURE_ACTIVE")
+
+
+def test_enter_adventure_translates_adventure_exhausted_error_to_envelope(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    _stub_auth(monkeypatch)
+
+    async def fake_enter(db, *, user_id, run_id):
+        raise AdventureExhaustedError(run_id)
+
+    monkeypatch.setattr(playthrough_service, "enter_adventure", fake_enter)
+
+    response = client.post(
+        "/api/v1/playthrough/campaign/some-run-id/adventure",
+        headers=_auth_headers(session_cookie_header),
+    )
+
+    assert_error_envelope(response, status=409, code="ADVENTURE_EXHAUSTED")
+
+
+def test_enter_adventure_translates_invalid_run_status_error_to_envelope(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    _stub_auth(monkeypatch)
+
+    async def fake_enter(db, *, user_id, run_id):
+        raise InvalidRunStatusError(run_id)
+
+    monkeypatch.setattr(playthrough_service, "enter_adventure", fake_enter)
+
+    response = client.post(
+        "/api/v1/playthrough/campaign/some-run-id/adventure",
+        headers=_auth_headers(session_cookie_header),
+    )
+
+    assert_error_envelope(response, status=409, code="INVALID_RUN_STATUS")
+
+
+def test_enter_adventure_translates_run_archived_error_to_envelope(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    _stub_auth(monkeypatch)
+
+    async def fake_enter(db, *, user_id, run_id):
+        raise RunArchivedError(run_id)
+
+    monkeypatch.setattr(playthrough_service, "enter_adventure", fake_enter)
+
+    response = client.post(
+        "/api/v1/playthrough/campaign/some-run-id/adventure",
+        headers=_auth_headers(session_cookie_header),
+    )
+
+    assert_error_envelope(response, status=409, code="RUN_ARCHIVED")
+
+
+def test_enter_adventure_foreign_and_unknown_run_answer_the_identical_not_found_envelope(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    _stub_auth(monkeypatch)
+
+    async def fake_enter_foreign(db, *, user_id, run_id):
+        raise CampaignRunNotFoundError(run_id)
+
+    monkeypatch.setattr(playthrough_service, "enter_adventure", fake_enter_foreign)
+
+    foreign_response = client.post(
+        "/api/v1/playthrough/campaign/someone-elses-run-id/adventure",
+        headers=_auth_headers(session_cookie_header),
+    )
+    unknown_response = client.post(
+        "/api/v1/playthrough/campaign/no-such-run-id/adventure",
+        headers=_auth_headers(session_cookie_header),
+    )
+
+    foreign_error = assert_error_envelope(foreign_response, status=404, code="NOT_FOUND")
+    unknown_error = assert_error_envelope(unknown_response, status=404, code="NOT_FOUND")
+    assert foreign_error == unknown_error
 
 
 # --- WI2: the transcript read (I1-I4 not covered by the acceptance suite) --

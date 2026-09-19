@@ -71,7 +71,7 @@ Owns a player's playthrough of a campaign and who may act in it.
 
 ## Surface
 
-Eight endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring
+Nine endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring
 an authenticated caller (`POST` and `PATCH` are also CSRF-guarded). Cost has
 no endpoint at all — see the CLI command and the note below the service
 list.
@@ -86,6 +86,11 @@ list.
 - `POST /api/v1/playthrough/campaign/{runId}/character` — creates the run's
   one player character from its pinned campaign's seed sheet and moves the
   run to `ready`, answering `201` and the character.
+- `POST /api/v1/playthrough/campaign/{runId}/adventure` — enters the next
+  adventure the campaign's own list names that this run has no record of
+  yet, positions that adventure's cast and every member's character, and
+  appends an `adventure_started` event, answering `201` and the adventure
+  run.
 - `POST /api/v1/playthrough/campaign/{runId}/archive` — puts the run away
   (or, for a run still `setup`, deletes it outright — see §Owns), answering
   `204` with no body.
@@ -104,9 +109,10 @@ list.
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else. A character reads as `id, name, currentHp, maxHp,
-armourClass` and nothing else — `CharacterRead`. An event reads as `id,
-type, turnId, payload, createdAt` and nothing else — `EventRead`; no
-`visibility`, no cost, no run id.
+armourClass` and nothing else — `CharacterRead`. An adventure run reads as
+`id, adventureId, status, startedAt` and nothing else — `AdventureRunRead`.
+An event reads as `id, type, turnId, payload, createdAt` and nothing else —
+`EventRead`; no `visibility`, no cost, no run id.
 
 Service functions (`service.py`), called as `service.f(...)`:
 
@@ -137,11 +143,24 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `activate_campaign_run` — `ready → active`, already `active` a no-op,
   any other status `InvalidRunStatusError`. No route calls it: it exists for
   a later phase's first-narration step to call (← D3).
+- `enter_adventure` — requires the run `ready` or `active`
+  (`InvalidRunStatusError` otherwise); reads the next id off the pinned
+  campaign's own adventure list — the first one this run has no
+  `adventure_runs` row for — refusing with `AdventureExhaustedError` when
+  none is left (a completed adventure's id is never entered again either).
+  Inserts the new `active` row, then in the same transaction positions the
+  adventure's cast (`source_adventure_id` match, carried items excluded) at
+  each one's authored scene and every member's character at the adventure's
+  `entry_scene`; nothing else is touched. Appends one `adventure_started`
+  event and commits once. Leaves the campaign run's own `status` untouched —
+  that changes at the first narration, not here. A second entry while one is
+  `active` collides with `uq_adventure_runs_active` and is re-raised as
+  `AdventureActiveError`.
 - `_require_member` — internal; every function above that takes a run id
   calls it first to check membership before doing anything else.
 - `_require_writable` — internal; raises `RunArchivedError` when the run is
-  `archived`. Called by `rename_campaign_run` and `create_character` before
-  they touch anything.
+  `archived`. Called by `rename_campaign_run`, `create_character` and
+  `enter_adventure` before they touch anything.
 - `append_event` — the **only** function in the tree that writes to
   `events`. Takes the run, `type`, `visibility`, a payload (dict or the
   type's own payload model), and optionally `turn_id`, `actor_member_id`
@@ -200,10 +219,12 @@ already checked on the caller's behalf. A run belonging to someone else and
 a run that does not exist answer identically — not found — so no one can
 probe for the existence of another player's game. Errors: an unknown or
 foreign run and an unknown campaign are not found; a run already started, a
-second character, an archived run refusing a write, and an invalid status
-transition are each a domain conflict (`ALREADY_STARTED`, `CHARACTER_EXISTS`,
-`RUN_ARCHIVED`, `INVALID_RUN_STATUS`); a payload not matching its type's
-shape is a validation error (`InvalidEventPayloadError`).
+second character, an archived run refusing a write, an invalid status
+transition, a second adventure entered while one is active, and entering
+with none left to enter are each a domain conflict (`ALREADY_STARTED`,
+`CHARACTER_EXISTS`, `RUN_ARCHIVED`, `INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`,
+`ADVENTURE_EXHAUSTED`); a payload not matching its type's shape is a
+validation error (`InvalidEventPayloadError`).
 
 **The transcript read sorts by `id` alone, and that is only safe because one
 process mints every id.** `id` is a ULID, chronological by construction, but

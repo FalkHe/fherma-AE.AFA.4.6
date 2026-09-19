@@ -42,6 +42,17 @@ class EventRead(CamelModel):
     created_at: datetime
 
 
+class AdventureRunRead(CamelModel):
+    """One adventure run, on the wire -- `id, adventureId, status,
+    startedAt` and nothing else (I1): the adventure run's internals
+    (`campaignRunId`, `completedAt`, `updatedAt`) stay internal."""
+
+    id: str
+    adventure_id: str
+    status: str
+    started_at: datetime
+
+
 class CharacterRead(CamelModel):
     """The character, on the wire -- `id, name, currentHp, maxHp,
     armourClass` and nothing else (I2): no state, no keys, no ownership."""
