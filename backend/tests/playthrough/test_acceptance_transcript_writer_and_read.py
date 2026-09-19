@@ -168,8 +168,14 @@ class _RecordingSession:
 
 
 class _EventConstructorVisitor(ast.NodeVisitor):
-    """Records, for every `Event(...)` call site found anywhere in the
-    backend tree, the name of the function (if any) enclosing it."""
+    """Records, for every `Event(...)` construction found anywhere in the
+    backend tree, the name of the function (if any) enclosing it. Matches
+    both construction forms: a bare `Event(...)` (`ast.Name`) and
+    `<module>.Event(...)` (`ast.Attribute`) -- the latter is the form
+    `AGENTS.md` prescribes for reaching another module's internals ("only
+    its `service.py` / `models.py`"), so it is exactly the shape a future
+    sprint's mechanic would write when it calls `models.Event(...)`
+    directly instead of going through `append_event`."""
 
     def __init__(self) -> None:
         self.call_sites: list[str] = []
@@ -183,9 +189,25 @@ class _EventConstructorVisitor(ast.NodeVisitor):
     visit_AsyncFunctionDef = visit_FunctionDef  # noqa: N815
 
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
-        if isinstance(node.func, ast.Name) and node.func.id == "Event":
+        if isinstance(node.func, ast.Name):
+            name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            name = node.func.attr
+        else:
+            name = None
+        if name == "Event":
             self.call_sites.append(self._function_stack[-1] if self._function_stack else "<module>")
         self.generic_visit(node)
+
+
+def _event_call_sites_in_source(source: str) -> list[str]:
+    """Every enclosing-function name the visitor records for `source`
+    (`"<module>"` for a call at top level) -- exercises the visitor itself
+    against a small string, so the tree-wide scan below is never trusted to
+    have been the only thing that ever ran the failure path."""
+    visitor = _EventConstructorVisitor()
+    visitor.visit(ast.parse(source))
+    return visitor.call_sites
 
 
 def _event_constructor_call_sites() -> set[str]:
@@ -246,8 +268,18 @@ def test_ac1_every_kind_validates_its_own_shape_and_only_one_function_writes():
 
     asyncio.run(_scenario())
 
+    # The guard itself, on two small source strings, one per construction
+    # form -- a guard nobody has watched fail is not a guard. Both the bare
+    # name and the attribute form must be caught, and an unrelated call
+    # sharing no name with `Event` must not be.
+    assert _event_call_sites_in_source("def f():\n    Event(a=1)\n") == ["f"]
+    assert _event_call_sites_in_source("def f():\n    models.Event(a=1)\n") == ["f"]
+    assert _event_call_sites_in_source("def f():\n    EventFactory(a=1)\n") == []
+
     # Nothing in the schema stops a second module writing `events` directly
-    # -- this is the only thing that would catch it.
+    # -- this is the only thing that would catch it, in either the bare or
+    # the attribute-qualified form (`models.Event(...)`, the shape
+    # `AGENTS.md` prescribes for reaching another module's internals).
     call_sites = _event_constructor_call_sites()
     assert call_sites == {"app/modules/playthrough/service.py:append_event"}, call_sites
 
