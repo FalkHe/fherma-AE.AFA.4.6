@@ -31,3 +31,8 @@ Status: `open | running | done | failed`
 <none yet>
 
 ## Verify
+
+Round 1: changes-requested — AC3 and AC4b OK; AC2's behaviour is right (the verifier read the refusal back from a
+second connection and found it durable) but its test is not: both refusal tests read through the same session
+that wrote the row, where a flushed-but-uncommitted row is visible anyway. Deleting the commit in the refusal
+path leaves the database suite fully green, so the crux of I3 is unprotected.

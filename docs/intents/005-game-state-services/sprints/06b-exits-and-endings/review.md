@@ -35,3 +35,7 @@ everyone stays where they stood, so the ending can still be described.
 Brief: docs/intents/005-game-state-services/sprints/06b-exits-and-endings/brief.md
 
 ## Verdict
+
+Round 1: changes requested — the DM's note of a refused attempt is only ever read back from inside the failed
+attempt itself, so if that note were lost the tests would still pass. It needs pinning from the outside, so a
+later change cannot silently drop the very record a refusal exists to leave behind.
