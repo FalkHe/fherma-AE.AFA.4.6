@@ -9,15 +9,21 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| qa | open | |
+| 1 | done | `run_cost`, the cost command, the no-route guard |
+| 2 | done | `latest_event_id`, the stream route, two settings |
+| 3 | done | module doc sections for cost and the signal |
+| qa | done | 2 acceptance tests |
 
 Status: `open | running | done | failed`
 
 ## Issues
 
+- **A shared test-fixture bug surfaced here and was fixed here.** `get_engine()` and `get_sessionmaker()` are
+  cached, and the scratch-database fixture cleared only the settings cache — so the first test to build an engine
+  pinned it for the whole run, aimed at a database later dropped. Nothing had built one in-process before this
+  sprint's CLI tests, so the hole had never shown. The fixture now disposes and resets both caches.
+- `make backend-test` now deselects the database-marked tests instead of relying on them skipping because no
+  Postgres answers. That reliance made the gate depend on whether the developer's stack happened to be running.
 - The second half of the split sprint 05; 05a landed first and is merged. Research predates it, so the plan tells
   implementers to read the landed code and treat the research as the contract.
 
