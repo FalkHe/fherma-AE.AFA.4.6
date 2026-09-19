@@ -28,7 +28,12 @@ test is a documented hazard in this suite (`test_acceptance_adventure_progress
 .py`), which is why the two halves never touch the same session and the
 database half never goes through `TestClient`.
 
-AC5 reads the shipped module documentation directly -- no code, no mocks.
+AC5 reads the shipped module documentation directly -- no code, no mocks --
+both `docs/modules/playthrough.md` (mounted read-only into the test
+container at `/docs`, per `compose.yaml`) and the in-tree module
+`README.md`, matched on whitespace-normalised substrings so a prose reflow
+in either document can never break this on wording the criterion does not
+actually depend on.
 
 No `pytest-asyncio` in this suite (`AGENTS.md` gotchas); every async call in
 the database-backed scenario is wrapped in a single `asyncio.run(...)`.
@@ -460,32 +465,37 @@ def test_ac2_the_player_visible_transcript_orders_pages_and_hides_dm_entries(
     asyncio.run(_scenario())
 
 
-def test_ac5_the_module_doc_states_the_id_ordering_caveat():
+DOC_PATH = REPO_ROOT / "docs" / "modules" / "playthrough.md"
+README_PATH = APP_ROOT / "modules" / "playthrough" / "README.md"
+
+
+def _assert_states_the_id_ordering_caveat(content: str, *, source: Path) -> None:
+    """The three ideas AC5 asks for -- matched as independent substrings
+    against whitespace-normalised text (`docs/modules/playthrough.md` and
+    the module `README.md` wrap their prose at different widths, so a
+    literal multi-word phrase can straddle a line break in one document and
+    not the other) -- never a whole sentence, so either document's wording
+    can still be edited without this test caring."""
+    normalized = " ".join(content.split())
+
+    # The transcript's order comes from the entry ids.
+    assert "by `id`" in normalized, source
+
+    # That holds only because a single process mints every one of them.
+    assert "one process" in normalized, source
+    assert "mints" in normalized, source
+
+    # It would break the moment the app ran as more than one process.
+    assert "second process" in normalized or "two different processes" in normalized, source
+
+
+def test_ac5_the_module_doc_and_readme_state_the_id_ordering_caveat():
     # <- AC5
-    doc_path = REPO_ROOT / "docs" / "modules" / "playthrough.md"
-    if not doc_path.exists():
-        # `compose.yaml` binds only `./backend` into the `app-cli` container
-        # (and the image itself is built from the `backend/` context alone)
-        # -- `docs/`, a sibling of `backend/` at the repository root, is
-        # never present inside it. Same idiom as `tests/database.py`'s
-        # `scratch_db`: skip cleanly when the external thing this check
-        # needs is not reachable from here, rather than fail for a reason
-        # that has nothing to do with the criterion.
-        pytest.skip(
-            "docs/modules/playthrough.md is outside the backend container's "
-            "mounted tree (compose.yaml binds only ./backend) -- run this "
-            "check from a checkout of the full repository."
-        )
-    content = doc_path.read_text()
+    assert DOC_PATH.exists(), (
+        f"expected {DOC_PATH} to exist -- docs/ is mounted read-only into "
+        "the test container at /docs (compose.yaml)"
+    )
+    _assert_states_the_id_ordering_caveat(DOC_PATH.read_text(), source=DOC_PATH)
 
-    # The read orders the transcript by event id alone.
-    assert "by `id`" in content or "by id" in content.lower()
-
-    # It rests on exactly one process minting every id -- the caveat.
-    assert "one process" in content
-    assert "mints" in content
-
-    # It says what running as more than one process would break: two
-    # events written in true order could come back swapped, silently.
-    assert "more than one process" in content
-    assert "swapped" in content or "wrong order" in content
+    assert README_PATH.exists(), f"expected {README_PATH} to exist"
+    _assert_states_the_id_ordering_caveat(README_PATH.read_text(), source=README_PATH)
