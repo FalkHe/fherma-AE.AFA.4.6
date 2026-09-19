@@ -37,7 +37,7 @@ Intents and sprints live in `docs/intents/` (fhit plugin: `/fhit:intent`, `/fhit
 
 - Provider: gitlab
 - Human: f4lkh3
-- Agent: st3lla
+- Agent: st3ll4
 
 Project docs are indexed in `docs/README.md`. `docs/roadmap/` is history, not
 current state — where a roadmap doc and the code disagree, the code wins.
@@ -45,7 +45,7 @@ current state — where a roadmap doc and the code disagree, the code wins.
 We're using GitLab.
 Merrequests and workitems have to be assigned:
 - Mergerequests always to `f4lkh3`. 
-- AI Agent Workitems/Issues to `st3lla` 
+- AI Agent Workitems/Issues to `st3ll4` 
 - Human in the loop Workitems/Issues to `f4lkh3`
 
 ## Your Role
