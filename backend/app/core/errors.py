@@ -22,6 +22,9 @@ class ErrorCode(StrEnum):
     CSRF_TOKEN_INVALID = "CSRF_TOKEN_INVALID"
     USERNAME_TAKEN = "USERNAME_TAKEN"
     ALREADY_STARTED = "ALREADY_STARTED"
+    RUN_ARCHIVED = "RUN_ARCHIVED"
+    CHARACTER_EXISTS = "CHARACTER_EXISTS"
+    INVALID_RUN_STATUS = "INVALID_RUN_STATUS"
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
@@ -49,6 +52,9 @@ _ERROR_INFO: dict[ErrorCode, tuple[int, str]] = {
     ErrorCode.CSRF_TOKEN_INVALID: (403, "CSRF token missing or invalid."),
     ErrorCode.USERNAME_TAKEN: (409, "That username is already taken."),
     ErrorCode.ALREADY_STARTED: (409, "This campaign run has already been started."),
+    ErrorCode.RUN_ARCHIVED: (409, "This campaign run is archived and cannot be changed."),
+    ErrorCode.CHARACTER_EXISTS: (409, "This campaign run already has a character."),
+    ErrorCode.INVALID_RUN_STATUS: (409, "This campaign run's status does not allow that."),
     ErrorCode.NOT_FOUND: (404, "Resource not found."),
     ErrorCode.METHOD_NOT_ALLOWED: (405, "Method not allowed."),
     ErrorCode.INTERNAL_ERROR: (500, "An unexpected error occurred."),

@@ -7,7 +7,10 @@ from app.modules.playthrough.errors import (
     CampaignNotFoundError,
     CampaignRunExistsError,
     CampaignRunNotFoundError,
+    CharacterExistsError,
+    InvalidRunStatusError,
     PlaythroughError,
+    RunArchivedError,
 )
 
 
@@ -27,3 +30,21 @@ def test_campaign_run_exists_carries_already_started():
     exc = CampaignRunExistsError("greenhollow")
     assert isinstance(exc, PlaythroughError)
     assert exc.code == ErrorCode.ALREADY_STARTED
+
+
+def test_run_archived_carries_run_archived():
+    exc = RunArchivedError("run-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.RUN_ARCHIVED
+
+
+def test_character_exists_carries_character_exists():
+    exc = CharacterExistsError("run-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.CHARACTER_EXISTS
+
+
+def test_invalid_run_status_carries_invalid_run_status():
+    exc = InvalidRunStatusError("run-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.INVALID_RUN_STATUS

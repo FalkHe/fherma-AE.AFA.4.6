@@ -61,3 +61,43 @@ class CampaignRunExistsError(PlaythroughError):
     def __init__(self, campaign_id: str) -> None:
         self.campaign_id = campaign_id
         super().__init__(f"campaign run already started: {campaign_id}")
+
+
+class RunArchivedError(PlaythroughError):
+    """The run is `archived`, which refuses every write.
+
+    Raised by `_require_writable` -- rename, character creation, and
+    sprint 06's `enter_adventure` all call it first. There is no unarchive:
+    an archived run stays read-only forever.
+    """
+
+    code = ErrorCode.RUN_ARCHIVED
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        super().__init__(f"campaign run is archived: {run_id}")
+
+
+class CharacterExistsError(PlaythroughError):
+    """This run's member already has a character.
+
+    A Stage-01 game rule enforced in the service, not the schema (← 003-
+    D13): nothing in the `objects` table stops a second `member_id` match,
+    the pre-check in `create_character` does.
+    """
+
+    code = ErrorCode.CHARACTER_EXISTS
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        super().__init__(f"campaign run already has a character: {run_id}")
+
+
+class InvalidRunStatusError(PlaythroughError):
+    """The run's current status does not allow the requested transition."""
+
+    code = ErrorCode.INVALID_RUN_STATUS
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        super().__init__(f"campaign run status does not allow this transition: {run_id}")
