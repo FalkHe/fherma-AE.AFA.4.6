@@ -34,3 +34,7 @@ Status: `open | running | done | failed`
 <none yet>
 
 ## Verify
+
+Round 1: changes-requested — AC2 and AC5 OK; AC1's only-writer guard matches a bare `Event(` call but not
+`models.Event(`, the attribute form that `AGENTS.md`'s own cross-module rule prescribes and that sprints 06-09
+will use. The verifier proved it by adding a second writer in that form and watching both tests still pass.

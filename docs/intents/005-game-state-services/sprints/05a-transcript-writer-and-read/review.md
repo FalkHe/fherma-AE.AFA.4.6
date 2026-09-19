@@ -34,3 +34,7 @@ order, paging through it, never seeing what the DM keeps to itself.
 Brief: docs/intents/005-game-state-services/sprints/05a-transcript-writer-and-read/brief.md
 
 ## Verdict
+
+Round 1: changes requested — the safeguard meant to keep exactly one way of writing to the transcript only
+recognises one of the two ordinary ways of writing one, so a later change could quietly add a second writer
+and nothing would notice.
