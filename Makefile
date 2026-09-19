@@ -57,8 +57,11 @@ langfuse-down: ## Stop the optional Langfuse tracing stack (leaves the app stack
 test: backend-test frontend-test ## Run both test suites
 .PHONY: test
 
-backend-test: ## Run backend pytest suite (app-cli service)
-	$(RUN_BACKEND) pytest
+backend-test: ## Run backend pytest suite, engine-free (app-cli service)
+	# `-m "not database"` deselects rather than relying on the database tests
+	# skipping: they skip only when no Postgres *answers*, so with the dev
+	# stack up they would run here, against no scratch database.
+	$(RUN_BACKEND) pytest -m "not database"
 .PHONY: backend-test
 
 backend-test-db: ## Run the database-backed backend pytest suite (starts postgres, app-cli joins its network)
