@@ -13,6 +13,14 @@ alone, following the idea in `tests/content/conftest.py`'s
 `build_version_dir` without importing it -- the two suites' fixtures stay
 independent.
 
+One test at the bottom (`test_enter_adventure_leaves_the_callers_loaded_
+objects_readable_after_the_active_refusal`) is `@pytest.mark.database`: it
+pins the `uq_adventure_runs_active` refusal against a real `AsyncSession`,
+because the regression it guards -- a session-wide rollback expiring
+every ORM object the caller already holds -- is a real SQLAlchemy session
+behaviour `FakeSession` cannot reproduce (it has no lazy-loading or expiry
+machinery at all). Every other test in this file stays engine-free.
+
 No `pytest-asyncio` in this suite (AGENTS.md gotchas): every async call is
 wrapped in a single `asyncio.run(...)` per test.
 """
@@ -22,7 +30,7 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Update
+from sqlalchemy import Update, text
 from sqlalchemy.exc import IntegrityError
 
 from app.core.ids import generate_id
@@ -156,6 +164,29 @@ class FakeResult:
         return self._scalars
 
 
+class _FakeNestedTransaction:
+    """Stands in for the SAVEPOINT `AsyncSession.begin_nested()` opens.
+
+    On the way out with an exception it only records that the savepoint
+    rolled back (`session.nested_rollbacks`) -- it never touches the
+    outer session's own state (`rolled_back`, `added`, `persisted`), the
+    same way a real `ROLLBACK TO SAVEPOINT` leaves the outer transaction
+    and every object already in the session's identity map alone. It
+    never suppresses the exception.
+    """
+
+    def __init__(self, session: "FakeSession") -> None:
+        self._session = session
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if exc_type is not None:
+            self._session.nested_rollbacks += 1
+        return False
+
+
 class FakeSession:
     """Engine-free stand-in for `AsyncSession`, tailored to
     `enter_adventure`.
@@ -174,6 +205,11 @@ class FakeSession:
     that constraint in `.orig` -- state persists across calls against the
     same instance, so two `enter_adventure` calls against one `db` can
     observe the real translation without a database.
+
+    `rolled_back` counts only a full, session-wide `rollback()` -- the
+    thing `enter_adventure` must never call on this path any more (that
+    is the regression this suite pins); `nested_rollbacks` counts a
+    savepoint unwinding through `begin_nested()` instead.
     """
 
     def __init__(self, *results, id_generator=generate_id):
@@ -184,6 +220,7 @@ class FakeSession:
         self.executed_updates: list[Update] = []
         self.committed = 0
         self.rolled_back = 0
+        self.nested_rollbacks = 0
         self._active_campaign_run_ids: set[str] = set()
 
     async def execute(self, stmt):
@@ -197,6 +234,9 @@ class FakeSession:
 
     def add_all(self, objs):
         self.added.extend(objs)
+
+    def begin_nested(self):
+        return _FakeNestedTransaction(self)
 
     async def flush(self):
         pending, self.added = self.added, []
@@ -396,7 +436,13 @@ def test_enter_adventure_translates_the_partial_unique_index_violation(two_trail
 
     assert isinstance(excinfo.value.__cause__, IntegrityError)
     assert db.committed == 1
-    assert db.rolled_back == 1
+    # <- the regression this pins: the collision unwinds through a
+    # SAVEPOINT, never a full session rollback -- a full rollback would
+    # expire every ORM object the caller already holds (`run`, above),
+    # and the caller's next ordinary attribute access on one of those
+    # would raise `MissingGreenlet` outside an async context.
+    assert db.rolled_back == 0
+    assert db.nested_rollbacks == 1
     # <- the refused attempt appended no second event: only the first
     # call's `adventure_started` ever made it into `persisted`.
     events = [obj for obj in db.persisted if isinstance(obj, Event)]
@@ -425,4 +471,59 @@ def test_enter_adventure_does_not_swallow_an_unrelated_integrity_error():
         asyncio.run(service.enter_adventure(db, user_id="user-1", run_id="run-1"))
 
     assert "uq_adventure_runs_campaign_run_id" in str(excinfo.value.orig)
-    assert db.rolled_back == 1
+    assert db.rolled_back == 0
+    assert db.nested_rollbacks == 1
+
+
+# --- regression: the ADVENTURE_ACTIVE refusal must not expire the caller's
+# own already-loaded objects (a real-session hazard `FakeSession` cannot
+# reproduce) ------------------------------------------------------------
+
+
+@pytest.mark.database
+def test_enter_adventure_leaves_the_callers_loaded_objects_readable_after_the_active_refusal(
+    playthrough_db, two_trails_campaign
+):
+    """A session-wide `db.rollback()` on the `uq_adventure_runs_active`
+    collision used to expire every ORM object the *session* held, not just
+    the failed insert -- including `run` here, loaded before the second
+    `enter_adventure` call. Its next ordinary attribute access then needed
+    a lazy reload with no async context to do it in, and raised
+    `MissingGreenlet` (exactly the failure qa's own
+    `test_ac1_entering_again_while_one_is_active_is_refused_with_its_own_code`
+    hit). The insert now unwinds through a SAVEPOINT instead, so `run`
+    stays readable and the failed insert still leaves no second row."""
+
+    async def _scenario():
+        user_id = generate_id()
+        await playthrough_db.execute(
+            text("INSERT INTO users (id, username, password_hash) VALUES (:id, :username, 'x')"),
+            {"id": user_id, "username": "savepoint-owner"},
+        )
+        await playthrough_db.commit()
+
+        run = await service.start_campaign_run(
+            playthrough_db, user_id=user_id, campaign_id=TWO_TRAILS_CAMPAIGN_ID
+        )
+        await service.create_character(playthrough_db, user_id=user_id, run_id=run.id)
+
+        first = await service.enter_adventure(playthrough_db, user_id=user_id, run_id=run.id)
+        assert first.adventure_id == "trail-one"
+
+        with pytest.raises(AdventureActiveError):
+            await service.enter_adventure(playthrough_db, user_id=user_id, run_id=run.id)
+
+        # <- the regression itself: `run` was loaded before the refusal and
+        # must stay readable with no further database round trip.
+        assert run.status == "ready"
+        assert run.campaign_id == TWO_TRAILS_CAMPAIGN_ID
+
+        remaining = (
+            await playthrough_db.execute(
+                text("SELECT count(*) FROM adventure_runs WHERE campaign_run_id = :id"),
+                {"id": run.id},
+            )
+        ).scalar_one()
+        assert remaining == 1
+
+    asyncio.run(_scenario())
