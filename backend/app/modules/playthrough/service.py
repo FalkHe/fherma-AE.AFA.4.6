@@ -399,21 +399,30 @@ async def enter_adventure(db: AsyncSession, *, user_id: str, run_id: str) -> Adv
     which is therefore also AC4's refusal for re-entering a completed
     adventure, not a separate code.
 
-    Inserts the new `AdventureRun` (`status='active'`), flushes, then two
-    `UPDATE objects` statements: the first positions that adventure's cast
-    (matched by `source_adventure_id`, excluding anything with an owner --
-    carried items are never repositioned), the second positions every
-    member character (matched by `member_id IS NOT NULL` alone, since a
-    character made before any adventure existed has no
-    `source_adventure_id` for the first statement to match on).
-    `append_event` records `adventure_started` at `player` visibility with
-    the new adventure run's id, then one commit.
+    The insert is speculative -- it may collide with
+    `uq_adventure_runs_active` -- so it runs inside its own SAVEPOINT
+    (`db.begin_nested()`), not the outer transaction: undoing it that way
+    touches only the failed statement. A plain `db.rollback()` here would
+    expire every ORM object the *session* holds, not just this
+    function's own; the caller's already-loaded objects (its `run`, say)
+    would then raise `MissingGreenlet` on their next ordinary attribute
+    access, since an expired attribute needs a lazy reload and there is no
+    async context left to do it in outside a real request. This is the
+    same hazard the verifier recorded against 05b's `latest_event_id`,
+    which rolls back for a different reason. Only `uq_adventure_runs_active`
+    is translated to `AdventureActiveError`; any other integrity failure
+    propagates unchanged, rather than the wide catch sprint 03 used for a
+    different constraint.
 
-    A second `active` row for this run collides with
-    `uq_adventure_runs_active`; that specific `IntegrityError` is rolled
-    back and translated to `AdventureActiveError`. Only that constraint is
-    caught -- any other integrity failure propagates unchanged, rather
-    than the wide catch sprint 03 used for a different constraint.
+    Once the insert holds, two `UPDATE objects` statements run in the
+    outer transaction: the first positions that adventure's cast (matched
+    by `source_adventure_id`, excluding anything with an owner -- carried
+    items are never repositioned), the second positions every member
+    character (matched by `member_id IS NOT NULL` alone, since a character
+    made before any adventure existed has no `source_adventure_id` for the
+    first statement to match on). `append_event` records
+    `adventure_started` at `player` visibility with the new adventure
+    run's id, then one commit.
     """
     await _require_member(db, run_id=run_id, user_id=user_id)
     run = await _get_run(db, run_id)
@@ -446,42 +455,41 @@ async def enter_adventure(db: AsyncSession, *, user_id: str, run_id: str) -> Adv
     )
 
     try:
-        db.add(adventure_run)
-        await db.flush()
-
-        await db.execute(
-            update(GameObject)
-            .where(
-                GameObject.campaign_run_id == run_id,
-                GameObject.source_adventure_id == next_adventure_id,
-                GameObject.owner_object_id.is_(None),
-            )
-            .values(adventure_run_id=adventure_run.id, scene_id=GameObject.source_scene_id)
-        )
-        await db.execute(
-            update(GameObject)
-            .where(
-                GameObject.campaign_run_id == run_id,
-                GameObject.member_id.is_not(None),
-            )
-            .values(adventure_run_id=adventure_run.id, scene_id=adventure.entry_scene)
-        )
-
-        await append_event(
-            db,
-            run_id=run_id,
-            type="adventure_started",
-            visibility="player",
-            payload={"adventure_run_id": adventure_run.id},
-        )
-
-        await db.commit()
+        async with db.begin_nested():
+            db.add(adventure_run)
+            await db.flush()
     except IntegrityError as exc:
-        await db.rollback()
         if "uq_adventure_runs_active" not in str(exc.orig):
             raise
         raise AdventureActiveError(run_id) from exc
 
+    await db.execute(
+        update(GameObject)
+        .where(
+            GameObject.campaign_run_id == run_id,
+            GameObject.source_adventure_id == next_adventure_id,
+            GameObject.owner_object_id.is_(None),
+        )
+        .values(adventure_run_id=adventure_run.id, scene_id=GameObject.source_scene_id)
+    )
+    await db.execute(
+        update(GameObject)
+        .where(
+            GameObject.campaign_run_id == run_id,
+            GameObject.member_id.is_not(None),
+        )
+        .values(adventure_run_id=adventure_run.id, scene_id=adventure.entry_scene)
+    )
+
+    await append_event(
+        db,
+        run_id=run_id,
+        type="adventure_started",
+        visibility="player",
+        payload={"adventure_run_id": adventure_run.id},
+    )
+
+    await db.commit()
     await db.refresh(adventure_run)
     return adventure_run
 
