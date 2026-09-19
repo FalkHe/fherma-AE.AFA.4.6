@@ -38,3 +38,9 @@ Brief: docs/intents/005-game-state-services/sprints/05a-transcript-writer-and-re
 Round 1: changes requested — the safeguard meant to keep exactly one way of writing to the transcript only
 recognises one of the two ordinary ways of writing one, so a later change could quietly add a second writer
 and nothing would notice.
+
+Round 2: approve — the transcript records and reads back: every entry is checked against the shape its kind
+promises before anything is written, a player's transcript comes back oldest first and pages through it, and
+the entries the DM keeps to itself stay out of the answer while remaining in the record. The safeguard that
+keeps exactly one way of writing to the transcript now catches both ordinary ways a second writer could be
+added, and demonstrates that on each of them rather than only on the code as it stands today.

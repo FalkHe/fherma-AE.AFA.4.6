@@ -20,7 +20,7 @@ route reaches yet — as `@pytest.mark.database` acceptance tests under `make ba
 | 02 | Check schema + model against the mechanics; migration `0007` for status set, nullable `template_id`, twelve event types; fix `temperature` type; update 003 tests and docs | – | #22 | done |
 | 03 | Build the service/route skeleton and `start_campaign_run` + list; instantiate all objects unpositioned; establish the membership gate | 02 | #23 | done |
 | 04 | Implement `create_character` (seed sheet, carried items, `setup → ready`), rename/archive/unarchive, archived read-only; fix `docs/general/model.md` lifecycle rows | 01, 03 | #24 | done |
-| 05a | Implement `append_event` + payload models and `GET …/events?after=`; record the id-ordering caveat | 02, 03 | #25 | running |
+| 05a | Implement `append_event` + payload models and `GET …/events?after=`; record the id-ordering caveat | 02, 03 | #25 | done |
 | 05b | Implement `app playthrough cost` and the SSE `updated` signal `GET …/stream` | 05a | #33 | open |
 | 06 | Implement `enter_adventure` (placement, `adventure_started`) and `use_exit` (scene move / adventure end / campaign finish) | 01, 04, 05a | #26 | open |
 | 07 | Implement `dice.py`, formula derivation, `request_player_roll`/`resolve_roll_request`/`roll`/`passive_check`, `resolve_check`/`resolve_save`, single consumption, `awaiting`, `app playthrough roll` | 05a | #27 | open |

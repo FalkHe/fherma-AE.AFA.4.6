@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-19
 updated: 2026-09-19
-stage: draft
+stage: done
 ---
 # Progress: Sprint 05a
 
@@ -38,3 +38,8 @@ Status: `open | running | done | failed`
 Round 1: changes-requested — AC2 and AC5 OK; AC1's only-writer guard matches a bare `Event(` call but not
 `models.Event(`, the attribute form that `AGENTS.md`'s own cross-module rule prescribes and that sprints 06-09
 will use. The verifier proved it by adding a second writer in that form and watching both tests still pass.
+
+Round 2: approve — both guards widened to the attribute form and proven by probe in each file; the verifier
+also narrowed each visitor back on purpose to confirm the self-checks fail on their own rather than restating
+the implementation. Nothing else changed; AC2 and AC5 stood from round 1. Gates green: lint, 832 backend,
+53 frontend, 41 database.
