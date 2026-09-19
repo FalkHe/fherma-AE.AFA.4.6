@@ -769,9 +769,7 @@ def test_stream_campaign_run_foreign_and_unknown_run_answer_the_identical_not_fo
     assert "text/event-stream" not in foreign_response.headers.get("content-type", "")
 
 
-def test_stream_campaign_run_response_headers(
-    client, monkeypatch, session_cookie_header
-):
+def test_stream_campaign_run_response_headers(client, monkeypatch, session_cookie_header):
     _stub_auth(monkeypatch)
     steady_id = generate_id()
 
@@ -780,12 +778,14 @@ def test_stream_campaign_run_response_headers(
 
     monkeypatch.setattr(playthrough_service, "latest_event_id", fake_latest_event_id)
 
-    with _pinned_sse_settings(monkeypatch, poll_interval="0.01", max_lifetime="0.05"):
-        with client.stream(
+    with (
+        _pinned_sse_settings(monkeypatch, poll_interval="0.01", max_lifetime="0.05"),
+        client.stream(
             "GET", _stream_path("some-run-id"), headers=session_cookie_header("a-valid-cookie")
-        ) as response:
-            assert response.status_code == 200, response.read()
-            assert response.headers["content-type"].startswith("text/event-stream")
-            assert response.headers["cache-control"] == "no-cache"
-            assert response.headers["x-accel-buffering"] == "no"
-            response.read()
+        ) as response,
+    ):
+        assert response.status_code == 200, response.read()
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert response.headers["cache-control"] == "no-cache"
+        assert response.headers["x-accel-buffering"] == "no"
+        response.read()

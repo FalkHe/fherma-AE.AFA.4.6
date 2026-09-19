@@ -509,3 +509,31 @@ async def run_cost(db: AsyncSession, *, user_id: str, run_id: str) -> RunCost:
     ]
     total = sum((turn.total for turn in turns), _ZERO_COST)
     return RunCost(total=total, turns=turns)
+
+
+async def latest_event_id(db: AsyncSession, *, user_id: str, run_id: str) -> str | None:
+    """The id of the most recently written event for `run_id`, or `None`
+    when it has none yet -- the whole of the SSE stream's per-tick signal
+    (AC4, WI2). Ids sort in write order (research.md "Id ordering"), so
+    `max(id)` alone tells the stream route whether anything is new; the
+    signal carries no content (← D10) -- a changed id means the caller
+    refetches the transcript through `list_events`, never a second way of
+    reading it.
+
+    `_require_member` first, exactly like every other function that takes a
+    `run_id`: a foreign or unknown run raises `CampaignRunNotFoundError`
+    before the query runs. This doubles as the route's membership gate,
+    checked once before the stream opens and again on every poll.
+
+    Rolls back on the way out of a successful call: this function is
+    polled for as long as the stream stays open (up to
+    `sse_max_lifetime_seconds`), and a read-only transaction left open
+    between polls would pin a connection idle for that whole span.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+
+    stmt = select(func.max(Event.id)).where(Event.campaign_run_id == run_id)
+    result = await db.execute(stmt)
+    current_id = result.scalar_one_or_none()
+    await db.rollback()
+    return current_id

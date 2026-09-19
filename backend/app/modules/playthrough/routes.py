@@ -1,8 +1,14 @@
-from fastapi import APIRouter, Query
+import asyncio
+import json
+import time
+
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import StreamingResponse
 
 from app.core.db import DbSession
 from app.core.errors import ApiError
 from app.core.schemas import ErrorEnvelope
+from app.core.settings import get_settings
 from app.modules.auth.dependencies import CsrfAuth, CurrentAuth
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import PlaythroughError
@@ -132,3 +138,59 @@ async def list_events(
     except PlaythroughError as exc:
         raise ApiError(exc.code) from exc
     return [EventRead.model_validate(event) for event in events]
+
+
+@router.get(
+    "/campaign/{run_id}/stream",
+    responses={401: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope}},
+)
+async def stream_campaign_run(
+    run_id: str, request: Request, auth: CurrentAuth, db: DbSession
+) -> StreamingResponse:
+    """Says only "there is something new" (← D10) -- no content, no
+    address of its own beyond that, so the client always refetches the
+    transcript through `list_events`. Membership is checked here, before
+    the `StreamingResponse` is ever returned, so a foreign or unknown run
+    answers the ordinary error envelope instead of a stream that opens and
+    immediately dies (I3).
+
+    Settings are read through `get_settings()` inside the handler, not at
+    import time, so a test can pin them small (I3).
+    """
+    try:
+        last_id = await service.latest_event_id(db, user_id=auth.user.id, run_id=run_id)
+    except PlaythroughError as exc:
+        raise ApiError(exc.code) from exc
+
+    settings = get_settings()
+    poll_interval = settings.sse_poll_interval_seconds
+    max_lifetime = settings.sse_max_lifetime_seconds
+
+    async def _events():
+        seen_id = last_id
+        started = time.monotonic()
+        while True:
+            if await request.is_disconnected():
+                return
+            if time.monotonic() - started >= max_lifetime:
+                return
+
+            await asyncio.sleep(poll_interval)
+
+            try:
+                current_id = await service.latest_event_id(db, user_id=auth.user.id, run_id=run_id)
+            except PlaythroughError:
+                return
+
+            if current_id != seen_id:
+                seen_id = current_id
+                payload = json.dumps({"type": "updated", "id": current_id}, separators=(",", ":"))
+                yield f"data: {payload}\n\n"
+            else:
+                yield ": keepalive\n\n"
+
+    return StreamingResponse(
+        _events(),
+        media_type="text/event-stream",
+        headers={"cache-control": "no-cache", "x-accel-buffering": "no"},
+    )
