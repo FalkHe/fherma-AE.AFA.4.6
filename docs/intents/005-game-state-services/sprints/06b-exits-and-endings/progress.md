@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-19
 updated: 2026-09-19
-stage: draft
+stage: done
 ---
 # Progress: Sprint 06b
 
@@ -36,3 +36,9 @@ Round 1: changes-requested — AC3 and AC4b OK; AC2's behaviour is right (the ve
 second connection and found it durable) but its test is not: both refusal tests read through the same session
 that wrote the row, where a flushed-but-uncommitted row is visible anyway. Deleting the commit in the refusal
 path leaves the database suite fully green, so the crux of I3 is unprotected.
+
+Round 2: approve — AC2's guard now reads the refusal record, the unchanged world and the player's silent
+transcript through an engine the test builds itself on the scratch database after the raise. The verifier
+confirmed `git diff` over `backend/app/` is empty since round 1, then stripped the commit from the refusal path
+itself and watched AC2 fail on exactly that assertion while AC3 stayed green. Gates: lint, 835 engine-free,
+53 frontend, 56 database.

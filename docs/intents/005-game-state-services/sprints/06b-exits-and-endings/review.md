@@ -39,3 +39,10 @@ Brief: docs/intents/005-game-state-services/sprints/06b-exits-and-endings/brief.
 Round 1: changes requested — the DM's note of a refused attempt is only ever read back from inside the failed
 attempt itself, so if that note were lost the tests would still pass. It needs pinning from the outside, so a
 later change cannot silently drop the very record a refusal exists to leave behind.
+
+Round 2: approve — the record of a refused attempt is now proven from outside the attempt that made it: the line
+that makes the record stick was removed on purpose and the check failed on exactly that point, then restored and
+everything passed again. A game can be started, given a character, entered, walked through its scenes and brought
+to an end — the party moves by taking exits, an exit that is not in the room is refused with nothing moved and
+only the DM told, and finishing the goblin hollow completes the adventure and ends the game with every figure
+left standing where it was.
