@@ -227,6 +227,7 @@ def _write_two_adventure_campaign(root: Path) -> None:
     )
 
 
+@pytest.mark.database
 def test_ac1_entering_answers_the_run_positions_the_world_and_records_the_start(
     client, session_cookie_header, assert_error_envelope, playthrough_db
 ):
@@ -476,6 +477,25 @@ def test_ac1_entering_again_while_one_is_active_is_refused_with_its_own_code(
         )
         assert first.adventure_id == FIRST_ADVENTURE_ID
         assert first.status == "active"
+
+        # A different, not-yet-entered adventure's own cast is left exactly
+        # where it started: no adventure run, no scene. This is the thing a
+        # player would notice first once a campaign ships more than one
+        # adventure, so it is pinned here rather than left to the refusal
+        # alone.
+        second_adventure_cast = (
+            await playthrough_db.execute(
+                text(
+                    "SELECT adventure_run_id, scene_id FROM objects WHERE campaign_run_id = :id "
+                    "AND source_adventure_id = :adventure_id AND owner_object_id IS NULL"
+                ),
+                {"id": run.id, "adventure_id": SECOND_ADVENTURE_ID},
+            )
+        ).all()
+        assert len(second_adventure_cast) > 0
+        for row in second_adventure_cast:
+            assert row.adventure_run_id is None
+            assert row.scene_id is None
 
         with pytest.raises(Exception) as exc_info:
             await playthrough_service.enter_adventure(
