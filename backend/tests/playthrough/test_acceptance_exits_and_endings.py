@@ -23,6 +23,17 @@ thornbrush screen in the maw, the goblin boss, a rank-and-file goblin and a
 wool sack in the hollow) -- AC3 reads every one of those positions back
 after the ending exit, not just the actor's own.
 
+The refusal half of AC2 is read back from a **second** connection to the
+same scratch database, opened after the refused `use_exit` call has
+already raised -- never from the session `use_exit` itself ran on. A
+flushed-but-uncommitted row is visible to the session that wrote it
+regardless of whether the service ever committed, so that session can
+never tell a genuinely persisted refusal apart from one that would vanish
+under the caller's rollback; only an independent connection can. Same
+pattern as `test_acceptance_cost_and_live_signal.py`'s own `writer_engine`,
+in reverse (there a second connection writes while the test's own session
+reads; here a second connection reads while the test's own session wrote).
+
 No `pytest-asyncio` in this suite (`AGENTS.md` gotchas): every async call
 in a test is wrapped in a single `asyncio.run(...)`.
 
@@ -33,9 +44,11 @@ and green once it does.
 
 import asyncio
 import json
+import os
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.errors import ErrorCode
 from app.core.ids import generate_id
@@ -68,6 +81,24 @@ async def _actor_position(session, actor_id: str):
             {"id": actor_id},
         )
     ).one()
+
+
+class _second_connection:
+    """An `AsyncSession` on its own connection to the same scratch
+    database `playthrough_db` already pinned `DATABASE_URL` to -- never the
+    session under test. The only way to read what is genuinely committed
+    rather than merely flushed and still pending in the other session's
+    open transaction."""
+
+    async def __aenter__(self):
+        self._engine = create_async_engine(os.environ["DATABASE_URL"])
+        sessionmaker = async_sessionmaker(self._engine, expire_on_commit=False)
+        self._session = sessionmaker()
+        return self._session
+
+    async def __aexit__(self, *exc_info) -> None:
+        await self._session.close()
+        await self._engine.dispose()
 
 
 def _payload(row) -> dict:
@@ -158,30 +189,40 @@ def test_ac2_an_ordinary_exit_moves_the_actor_or_is_refused_and_recorded(playthr
             )
         assert exc_info.value.code == ErrorCode.EXIT_NOT_AVAILABLE
 
-        after_refusal = await _actor_position(playthrough_db, character.id)
-        assert after_refusal.scene_id == after_move.scene_id
-        assert after_refusal.adventure_run_id == after_move.adventure_run_id
+        # Everything below is read from a **second** connection -- never
+        # `playthrough_db`, the session `use_exit` just raised on. A row
+        # `append_event` only flushed (never committed) is still visible to
+        # the session that flushed it; only an independent connection can
+        # tell that apart from a row genuinely committed to the database,
+        # which is the entire point of the refusal recording its own commit
+        # before raising.
+        async with _second_connection() as reader:
+            after_refusal = await _actor_position(reader, character.id)
+            assert after_refusal.scene_id == after_move.scene_id
+            assert after_refusal.adventure_run_id == after_move.adventure_run_id
 
-        # The player's own read of the transcript shows nothing at all for
-        # the refusal -- same events, in the same order, as before it.
-        players_events_after_refusal = await playthrough_service.list_events(
-            playthrough_db, user_id=owner_id, run_id=run.id
-        )
-        assert [e.id for e in players_events_after_refusal] == [
-            e.id for e in players_events_before_refusal
-        ]
+            # The player's own read of the transcript shows nothing at all
+            # for the refusal -- same events, in the same order, as before
+            # it.
+            players_events_after_refusal = await playthrough_service.list_events(
+                reader, user_id=owner_id, run_id=run.id
+            )
+            assert [e.id for e in players_events_after_refusal] == [
+                e.id for e in players_events_before_refusal
+            ]
 
-        # The refusal is itself recorded -- a `tool_call` entry at `dm`
-        # visibility, marked `refused`, naming the mechanism, the actor and
-        # the exit asked for. It survived the failure: it is read back
-        # here, after the exception already propagated, with no rollback
-        # or extra commit of our own in between.
-        dm_calls_after = await _dm_tool_call_events(playthrough_db, run.id)
-        refused_calls = [p for p in dm_calls_after if p.get("result") == "refused"]
-        assert len(refused_calls) == 1
-        assert refused_calls[0].get("name") == "use_exit"
-        assert refused_calls[0].get("args", {}).get("actorId") == str(character.id)
-        assert refused_calls[0].get("args", {}).get("exitId") == TO_THORNWAY
+            # The refusal is itself recorded -- exactly one `tool_call`
+            # entry at `dm` visibility, marked `refused`, naming the
+            # mechanism, the actor and the exit asked for -- and it
+            # genuinely persisted: reachable from a connection that never
+            # saw the attempt that wrote it, not merely flushed into the
+            # writer's own still-open transaction.
+            dm_calls_after = await _dm_tool_call_events(reader, run.id)
+            refused_calls = [p for p in dm_calls_after if p.get("result") == "refused"]
+            assert len(refused_calls) == 1
+            assert refused_calls[0].get("name") == "use_exit"
+            assert refused_calls[0].get("args", {}).get("actorId") == str(character.id)
+            assert refused_calls[0].get("args", {}).get("exitId") == TO_THORNWAY
 
     asyncio.run(_scenario())
 
