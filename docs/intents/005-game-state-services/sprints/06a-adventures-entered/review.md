@@ -34,3 +34,9 @@ and what anyone carries stays with them. The transcript records that the adventu
 Brief: docs/intents/005-game-state-services/sprints/06a-adventures-entered/brief.md
 
 ## Verdict
+
+Round 1: changes requested — the check that entering an adventure puts the cast, the character and everything
+carried in the right places is left out of the database test run and silently skips when no database is there,
+so nothing would catch a future change that misplaces the world. Nothing proves yet that entering one adventure
+leaves another adventure's creatures where they are — the thing a player would notice first once a campaign
+ships more than one.

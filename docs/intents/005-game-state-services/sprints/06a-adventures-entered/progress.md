@@ -37,6 +37,19 @@ Status: `open | running | done | failed`
 
 ## Backlog proposals
 
-<none yet>
+- A test that takes the scratch-database fixture without the `database` marker lands in the engine-free suite and
+  skips whenever Postgres is absent. Nothing catches that today; a `conftest` check could refuse the combination.
+- 05b's `latest_event_id` expires the caller's ORM objects on every poll. Harmless for the stream's own session,
+  a hazard for any later caller that shares a request session.
 
 ## Verify
+
+Round 1: changes-requested — the behaviour is right (the verifier drove it against a real database and watched
+the world land correctly), but AC1's positioning test takes the scratch-database fixture without the `database`
+marker, so it is excluded from `make backend-test-db` and runs instead in the engine-free suite, where it skips
+without a Postgres. It passed only because the dev stack happened to be up. Second gap: nothing pins that a
+different adventure's cast stays unpositioned, though the two-adventure fixture is already in the file.
+
+Recorded from that pass: 05b's `latest_event_id` should **not** adopt this sprint's savepoint pattern — its
+rollback is load-bearing, releasing the read transaction between stream polls. Its own hazard (expiring a
+caller's objects) is real but wants a different fix, and a backlog line of its own.
