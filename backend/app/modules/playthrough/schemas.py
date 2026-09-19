@@ -91,12 +91,18 @@ class PlayerActionPayload(EventPayload):
 
 
 class RollRequestedPayload(EventPayload):
-    """`roll_requested` -- the roll the player is asked to make."""
+    """`roll_requested` -- the roll the player is asked to make.
+
+    `context` is free-form (`decisions/mechanics.md` gives it no shape of
+    its own -- the structured `{target_id?, item_id?, ability?, skill?}`
+    is the *mechanic's* argument, not necessarily what ends up stored), so
+    it is typed `Any` rather than constrained to a dict.
+    """
 
     kind: RollKind
     actor_id: str
     formula: str
-    context: dict[str, Any] = Field(default_factory=dict)
+    context: Any
 
 
 class RollPayload(EventPayload):
@@ -117,7 +123,7 @@ class QuestionPayload(EventPayload):
     it."""
 
     text: str
-    options: list[str] = Field(default_factory=list)
+    options: list[str]
 
 
 class ToolCallPayload(EventPayload):
@@ -125,10 +131,10 @@ class ToolCallPayload(EventPayload):
     ids it consumed."""
 
     name: str
-    args: dict[str, Any] = Field(default_factory=dict)
-    roll_ids: list[str] = Field(default_factory=list)
+    args: dict[str, Any]
+    roll_ids: list[str]
     result: Literal["ok", "refused"]
-    outcome: dict[str, Any] = Field(default_factory=dict)
+    outcome: dict[str, Any]
 
 
 class SceneEnteredPayload(EventPayload):
