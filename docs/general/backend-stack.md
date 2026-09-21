@@ -14,7 +14,7 @@ script `app`), argon2-cffi, structlog. LangChain (`langchain-core`,
 LangGraph is wired for its Postgres checkpointer only (`langgraph`,
 `langgraph-checkpoint-postgres`, `app/core/checkpointer/`): `AsyncPostgresSaver`
 persists agent state in its own `checkpoints` schema; no agent graph exists
-yet. Versions and floors live in `backend/pyproject.toml` and the committed
+yet. Langfuse (`langfuse`) is reached only through the `core/tracing/` seam. Versions and floors live in `backend/pyproject.toml` and the committed
 `backend/uv.lock`; Python is pinned to 3.12.
 
 Two packaging consequences of `uv sync --locked`, which installs the project
@@ -83,6 +83,31 @@ itself. Routes and dependencies never construct a `Response` — they take
 **stderr**. Stdout is reserved for command output, so
 `app openapi export > frontend/openapi.json` produces valid JSON. Never log a
 password, a session token or a CSRF token.
+
+### Tracing
+
+`app/core/tracing/service.py` is the only module that imports `langfuse`.
+`configure()` builds the client from `LANGFUSE_PUBLIC_KEY`,
+`LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` — an external instance; nothing
+is hosted in this repo. Any of the three blank means tracing is off and every
+function in the module is a no-op, which is the state a fresh checkout is in.
+Every Langfuse call is wrapped: an outage or a bad key produces a
+`tracing_failed` warning and a missing trace, never a failed model call.
+
+The `core/llm/` seam is what is instrumented. Chat goes through the LangChain
+`CallbackHandler` (`langchain_config()`), so model, token usage and cost are
+captured by the integration rather than computed here; embeddings and images
+go direct through the OpenRouter SDK, which LangChain cannot see, so they get
+manual `embedding` / `generation` observations (`observe()`). Each entry point
+opens one root span outside the retry loop — `generate-chat-reply`,
+`stream-chat-reply`, `embed-texts`, `generate-image` — so retried attempts
+appear as child observations of one trace instead of as separate traces.
+Observation names are verb-first and carry no dynamic values: evaluators,
+dashboards and saved filters target them by name, so they are an API.
+
+`mask_otel_spans()` redacts API keys and e-mail addresses out of span
+attributes at export time. `trace_context()` is the entry point for
+`user_id` / `session_id` once a request path calls the model.
 
 ### Security primitives
 

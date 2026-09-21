@@ -91,8 +91,8 @@ browser ──► frontend (Vite dev server, :5173)
 `app-web` runs `alembic upgrade head` and then uvicorn
 (`docker/entrypoint-web.sh`). The `app-cli` / `node-cli` containers behind the
 Compose `cli` profile reuse the same images, so lint and tests need no host
-toolchain. Optional Langfuse tracing lives in `compose.langfuse.yaml`, enabled
-per checkout via `COMPOSE_FILE`.
+toolchain. Langfuse tracing talks to an external instance, configured by the
+three `LANGFUSE_*` variables in `.env`; blank means off.
 
 There is **no background job runner and no Redis.** Every operation is
 request-scoped or a Typer CLI one-off. Anything that would once have been a

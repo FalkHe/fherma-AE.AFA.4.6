@@ -188,11 +188,11 @@ def test_ac1_retried_then_succeeds_prints_the_answer_with_no_failure_line(
     attempts = {"count": 0}
     original_invoke = recording_chat_open_router.invoke
 
-    def flaky_invoke(self, prompt):
+    def flaky_invoke(self, prompt, config=None):
         attempts["count"] += 1
         if attempts["count"] < 3:
             raise LlmUnavailableError()
-        return original_invoke(self, prompt)
+        return original_invoke(self, prompt, config)
 
     recording_chat_open_router.invoke = flaky_invoke
 

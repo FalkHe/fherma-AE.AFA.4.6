@@ -32,5 +32,5 @@ Aiming for ≥2 medium + 1 hard.
 | Easy 2 — personality | DM tone selectable per campaign run |
 | Easy 4 — model settings | Model and temperature in the developer drawer |
 
-Optional Langfuse tracing (`compose.langfuse.yaml`) covers hard task 2 when
-enabled, but is not counted above.
+Langfuse tracing of every model call (`core/tracing/`, external instance)
+covers hard task 2, but is not counted above.

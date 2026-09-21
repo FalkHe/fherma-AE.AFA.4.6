@@ -79,10 +79,11 @@ Test and lint targets run in one-off CLI containers (`app-cli`, `node-cli`,
 compose profile `cli`), so they work with the stack down. Run `make build`
 after changing dependencies so those images stay fresh.
 
-Optional Langfuse tracing lives in `compose.langfuse.yaml`. Enable it per
-checkout by adding it to `COMPOSE_FILE` in `.env`, filling in the
-`LANGFUSE_*` secrets that `.env.dist` documents, and running `make up`;
-without it the app behaves identically with tracing off.
+Langfuse tracing is wired into the LLM seam (`backend/app/core/tracing/`)
+and points at an external Langfuse instance — nothing is hosted here. Fill
+in `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` in
+`.env` to switch it on; leave any of them empty and the app behaves
+identically with tracing off. A Langfuse outage never fails a model call.
 
 ## Documentation
 

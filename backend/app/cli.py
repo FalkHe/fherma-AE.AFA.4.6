@@ -6,6 +6,7 @@ from app.core.checkpointer.commands import checkpoint_app
 from app.core.llm.commands import llm_app
 from app.core.logging import configure_logging
 from app.core.prompts.commands import prompt_app
+from app.core.tracing import service as tracing
 from app.main import create_app
 from app.modules.content.commands import content_app
 from app.modules.playthrough.commands import playthrough_app
@@ -17,6 +18,10 @@ cli = typer.Typer()
 @cli.callback()
 def main() -> None:
     configure_logging()
+    # `configure()` also registers the flush-on-exit hook a one-off command
+    # needs - Langfuse ingests on a background thread, so without it the
+    # process exits before the trace is sent.
+    tracing.configure()
 
 
 openapi_app = typer.Typer()

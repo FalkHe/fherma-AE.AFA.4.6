@@ -25,6 +25,16 @@ model's native width is what `EMBEDDING_DIMENSIONS` must be set to match
 (← AC5), and a returned vector of the wrong width raises rather than
 degrades - see `embed_texts()`'s own docstring.
 
+Every entry point here is traced through `core/tracing/` when Langfuse is
+configured, and behaves identically when it is not. Chat goes through the
+LangChain `CallbackHandler` that `tracing.langchain_config()` puts in the
+`config=` of `.invoke()`/`.stream()`, so model, tokens and cost are
+captured by the integration rather than assembled here; embeddings and
+images are invisible to LangChain (they go direct through the OpenRouter
+SDK) and so open their own `embedding` / `generation` observations. Each
+entry point's root observation opens *outside* `call_with_retry()`, so a
+retried call is one trace with one child per attempt.
+
 `generate_image()` (sprint 05) reuses the same client for
 `client.images.generate(...)` - images go direct through the OpenRouter
 SDK, never through LangChain (← D1): the SDK exposes `/images` directly and
@@ -59,6 +69,7 @@ from app.core.llm.errors import (
 )
 from app.core.llm.retry import call_with_retry, stream_with_retry
 from app.core.settings import get_settings
+from app.core.tracing import service as tracing
 
 logger = structlog.get_logger()
 
@@ -160,7 +171,9 @@ def chat(
 
     def _attempt() -> AIMessage:
         try:
-            message = chat_model(model=model, temperature=temperature).invoke(prompt)
+            message = chat_model(model=model, temperature=temperature).invoke(
+                prompt, config=tracing.langchain_config("invoke-chat-model")
+            )
         except Exception as exc:
             if (err := classify(exc)) is not None:
                 raise err from exc
@@ -169,7 +182,10 @@ def chat(
         raise_for_finish_reason(message)
         return message
 
-    return call_with_retry(_attempt, label="chat")
+    with tracing.observe("generate-chat-reply", input=prompt) as observation:
+        message = call_with_retry(_attempt, label="chat")
+        observation.update(output=message.text)
+        return message
 
 
 def chat_stream(
@@ -191,7 +207,9 @@ def chat_stream(
     """
 
     def _open() -> Iterator[AIMessageChunk]:
-        stream = chat_model(model=model, temperature=temperature).stream(prompt)
+        stream = chat_model(model=model, temperature=temperature).stream(
+            prompt, config=tracing.langchain_config("stream-chat-model")
+        )
         while True:
             try:
                 chunk = next(stream)
@@ -205,7 +223,21 @@ def chat_stream(
             yield chunk
             raise_for_finish_reason(chunk)
 
-    return stream_with_retry(_open, label="chat_stream")
+    def _traced() -> Iterator[AIMessageChunk]:
+        # The root span has to stay open for as long as the caller is
+        # consuming, so it is opened inside a generator rather than around
+        # `stream_with_retry()` - wrapping the call itself would close the
+        # span before the first chunk was ever read. Laziness is unchanged:
+        # nothing here runs until the caller's first `next()`.
+        with tracing.observe("stream-chat-reply", input=prompt) as observation:
+            total: AIMessageChunk | None = None
+            for chunk in stream_with_retry(_open, label="chat_stream"):
+                total = chunk if total is None else total + chunk
+                yield chunk
+            if total is not None:
+                observation.update(output=total.text)
+
+    return _traced()
 
 
 def usage_of(message: BaseMessage) -> Usage:
@@ -226,6 +258,29 @@ def usage_of(message: BaseMessage) -> Usage:
         total_tokens=usage_metadata.get("total_tokens", 0),
         cost_usd=cost,
     )
+
+
+def _trace_usage(usage: Usage) -> dict:
+    """Translate a `Usage` into the `usage_details` / `cost_details` keys a
+    Langfuse observation expects.
+
+    `input`/`output` are the two buckets Langfuse prices separately; every
+    token must land in exactly one of them, so `total` is passed
+    explicitly rather than left to be derived. Cost arrives from
+    OpenRouter as one figure with no per-bucket breakdown, hence
+    `{"total": ...}`; an absent cost is omitted entirely so Langfuse falls
+    back to its own model pricing instead of recording a zero.
+    """
+    details: dict = {
+        "usage_details": {
+            "input": usage.prompt_tokens,
+            "output": usage.completion_tokens,
+            "total": usage.total_tokens,
+        }
+    }
+    if usage.cost_usd is not None:
+        details["cost_details"] = {"total": usage.cost_usd}
+    return details
 
 
 def _usage_of_embeddings(usage: CreateEmbeddingsUsage | None) -> Usage:
@@ -320,22 +375,37 @@ def embed_texts(texts: Sequence[str], *, model: str | None = None) -> EmbeddingR
             raise LlmConfigurationError()
 
         requested_model = model if model is not None else settings.embedding_model
-        try:
-            response = build_sdk_client(settings.openrouter_api_key).embeddings.generate(
-                input=list(texts), model=requested_model
+        with tracing.observe(
+            "create-embeddings",
+            as_type="embedding",
+            model=requested_model,
+            input=list(texts),
+        ) as observation:
+            try:
+                response = build_sdk_client(settings.openrouter_api_key).embeddings.generate(
+                    input=list(texts), model=requested_model
+                )
+            except Exception as exc:
+                if (err := classify(exc)) is not None:
+                    raise err from exc
+                raise
+
+            vectors = _vectors_from_response(
+                response, expected_count=len(texts), requested_model=requested_model
             )
-        except Exception as exc:
-            if (err := classify(exc)) is not None:
-                raise err from exc
-            raise
+            usage = _usage_of_embeddings(response.usage)
+            # The vectors themselves are never sent: 1536 floats per text
+            # make the observation unreadable and tell a reviewer nothing
+            # the shape does not. Their shape is what actually gets
+            # debugged (← `_vectors_from_response`'s width check).
+            observation.update(
+                output={"vectorCount": len(vectors), "dimensions": len(vectors[0])},
+                **_trace_usage(usage),
+            )
+            return EmbeddingResult(vectors=vectors, usage=usage)
 
-        vectors = _vectors_from_response(
-            response, expected_count=len(texts), requested_model=requested_model
-        )
-        usage = _usage_of_embeddings(response.usage)
-        return EmbeddingResult(vectors=vectors, usage=usage)
-
-    return call_with_retry(_attempt, label="embed")
+    with tracing.observe("embed-texts", input={"textCount": len(texts)}):
+        return call_with_retry(_attempt, label="embed")
 
 
 def _usage_of_image(usage: SdkImageUsage | None) -> Usage:
@@ -414,26 +484,41 @@ def generate_image(prompt: str, *, model: str | None = None) -> ImageResult:
         server_url, _ = client.sdk_configuration.get_server_details()
         logger.info("llm_image_request", url=f"{server_url}/images", model=requested_model)
 
-        try:
-            response = client.images.generate(model=requested_model, prompt=prompt)
-        except Exception as exc:
-            if (err := classify(exc)) is not None:
-                raise err from exc
-            raise
+        with tracing.observe(
+            "create-image",
+            as_type="generation",
+            model=requested_model,
+            input=prompt,
+            metadata={"url": f"{server_url}/images"},
+        ) as observation:
+            try:
+                response = client.images.generate(model=requested_model, prompt=prompt)
+            except Exception as exc:
+                if (err := classify(exc)) is not None:
+                    raise err from exc
+                raise
 
-        if not isinstance(response, ImageGenerationResponse) or not response.data:
-            raise LlmMalformedError()
+            if not isinstance(response, ImageGenerationResponse) or not response.data:
+                raise LlmMalformedError()
 
-        try:
-            image_bytes = base64.b64decode(response.data[0].b64_json, validate=True)
-        except binascii.Error as exc:
-            raise LlmMalformedError() from exc
+            try:
+                image_bytes = base64.b64decode(response.data[0].b64_json, validate=True)
+            except binascii.Error as exc:
+                raise LlmMalformedError() from exc
 
-        if not image_bytes:
-            raise LlmMalformedError()
+            if not image_bytes:
+                raise LlmMalformedError()
 
-        media_type = response.data[0].media_type or "image/png"
-        usage = _usage_of_image(response.usage)
-        return ImageResult(image_bytes=image_bytes, media_type=media_type, usage=usage)
+            media_type = response.data[0].media_type or "image/png"
+            usage = _usage_of_image(response.usage)
+            # Wrapped as media, not as raw base64: Langfuse uploads the
+            # bytes once and renders the portrait inline in the trace,
+            # instead of the observation carrying a megabyte of text.
+            observation.update(
+                output=tracing.LangfuseMedia(content_bytes=image_bytes, content_type=media_type),
+                **_trace_usage(usage),
+            )
+            return ImageResult(image_bytes=image_bytes, media_type=media_type, usage=usage)
 
-    return call_with_retry(_attempt, label="image")
+    with tracing.observe("generate-image", input=prompt):
+        return call_with_retry(_attempt, label="image")

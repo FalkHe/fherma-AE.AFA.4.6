@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     image_model: str = "google/gemini-3.1-flash-image"
     sse_poll_interval_seconds: float = Field(default=2.0, gt=0)
     sse_max_lifetime_seconds: float = Field(default=300.0, gt=0)
+    # Langfuse tracing. All three blank (the default) means tracing off;
+    # the app then behaves identically, see `core/tracing/service.py`.
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = ""
 
 
 @lru_cache

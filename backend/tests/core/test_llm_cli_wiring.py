@@ -99,10 +99,10 @@ class FakeChatModel:
         self._answer = answer
         self._chunks = chunks or ["hel", "lo the", "re"]
 
-    def invoke(self, prompt: str) -> FakeMessage:
+    def invoke(self, prompt: str, config: dict | None = None) -> FakeMessage:
         return FakeMessage(self._answer)
 
-    def stream(self, prompt: str):
+    def stream(self, prompt: str, config: dict | None = None):
         for piece in self._chunks:
             yield FakeChunk(piece)
 

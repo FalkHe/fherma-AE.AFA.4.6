@@ -76,16 +76,21 @@ def recording_chat_open_router():
 
     class _RecordingChatOpenRouter:
         calls: list[dict] = []
+        configs: list = []
         response = None
         chunks: list = []
 
         def __init__(self, *args, **kwargs):
             type(self).calls.append(kwargs)
 
-        def invoke(self, prompt):
+        # `.configs` records the `config=` the seam passes through - the
+        # run name and, with tracing on, the Langfuse callback handler.
+        def invoke(self, prompt, config=None):
+            type(self).configs.append(config)
             return type(self).response
 
-        def stream(self, prompt):
+        def stream(self, prompt, config=None):
+            type(self).configs.append(config)
             yield from type(self).chunks
 
     return _RecordingChatOpenRouter

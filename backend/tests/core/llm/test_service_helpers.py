@@ -69,12 +69,15 @@ class _StubChatModel:
         self._chunks = chunks or []
         self._stream_error = stream_error
 
-    def invoke(self, prompt):
+    # `config=` is how the seam hands LangChain its run name and the
+    # Langfuse callback handler (`core/tracing/`); a real `BaseChatModel`
+    # accepts it on both methods.
+    def invoke(self, prompt, config=None):
         if self._invoke_error is not None:
             raise self._invoke_error
         return self._invoke_result
 
-    def stream(self, prompt):
+    def stream(self, prompt, config=None):
         yield from self._chunks
         if self._stream_error is not None:
             raise self._stream_error

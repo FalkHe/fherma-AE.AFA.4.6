@@ -45,7 +45,7 @@ skeletons and username/password authentication exist. The game agent does not.
 ## Infrastructure
 
 - `compose.yaml` → `app-web` (uvicorn :8000), `frontend` (Vite :5173), `postgres` (pgvector), plus `app-cli` / `node-cli` behind the `cli` profile for lint and tests with the stack down
-- `compose.langfuse.yaml` → optional tracing, enabled per checkout via `COMPOSE_FILE` in `.env`
+- Langfuse tracing → external instance, configured by the three `LANGFUSE_*` variables in `.env`; blank means off (`backend/app/core/tracing/`)
 - Root `Makefile` wraps every common operation; `make help` lists them
 - CI: `<TODO>`
 - Environments beyond local dev: `<TODO>`
