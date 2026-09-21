@@ -17,6 +17,11 @@ exercises it carries `@pytest.mark.database` and replaces
 `dice._rng` (module attribute) with a scripted `random.Random` subclass,
 never the service function itself, so the printed numbers are real,
 checkable output rather than an echoed stub.
+
+WI3 (sprint 006/01) adds `app playthrough narrate`, the command half of
+AC5. Like `cost` above -- not `roll` -- these tests fake the seam at
+`playthrough_service.append_event` (module attribute) and stay
+engine-free: no `@pytest.mark.database`.
 """
 
 import asyncio
@@ -32,7 +37,8 @@ from app.core.ids import generate_id
 from app.modules.content import service as content_service
 from app.modules.playthrough import dice
 from app.modules.playthrough import service as playthrough_service
-from app.modules.playthrough.errors import CampaignRunNotFoundError
+from app.modules.playthrough.errors import CampaignRunNotFoundError, InvalidEventPayloadError
+from app.modules.playthrough.models import Event
 from app.modules.playthrough.schemas import RunCost, TurnCost
 
 runner = CliRunner()
@@ -223,3 +229,56 @@ def test_roll_with_a_malformed_custom_expression_exits_1_naming_the_expression(p
     assert result.stdout == ""
     assert "VALIDATION_ERROR" in result.stderr
     assert "not-a-dice-expression" in result.stderr
+
+
+# --- `app playthrough narrate` (WI3, sprint 006/01) -------------------------
+
+
+def test_narrate_appends_a_narration_event_and_prints_its_id(monkeypatch):
+    async def fake_append_event(db, *, run_id, type, visibility, payload):
+        assert run_id == RUN_ID
+        assert type == "narration"
+        assert visibility == "player"
+        assert payload == {"text": "The door creaks open."}
+        return Event(id="event-narration-1")
+
+    monkeypatch.setattr(playthrough_service, "append_event", fake_append_event)
+
+    result = runner.invoke(cli, ["playthrough", "narrate", RUN_ID, "The door creaks open."])
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert result.stdout == "event: event-narration-1\n"
+
+
+def test_narrate_with_player_action_flag_appends_a_player_action_event(monkeypatch):
+    async def fake_append_event(db, *, run_id, type, visibility, payload):
+        assert run_id == RUN_ID
+        assert type == "player_action"
+        assert visibility == "player"
+        assert payload == {"text": "I search the chest."}
+        return Event(id="event-player-action-1")
+
+    monkeypatch.setattr(playthrough_service, "append_event", fake_append_event)
+
+    result = runner.invoke(
+        cli,
+        ["playthrough", "narrate", RUN_ID, "I search the chest.", "--player-action"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert result.stdout == "event: event-player-action-1\n"
+
+
+def test_narrate_on_a_writer_refusal_exits_1_with_the_error_code_on_stderr(monkeypatch):
+    async def failing_append_event(db, *, run_id, type, visibility, payload):
+        raise InvalidEventPayloadError(f"unknown event type: {type}")
+
+    monkeypatch.setattr(playthrough_service, "append_event", failing_append_event)
+
+    result = runner.invoke(cli, ["playthrough", "narrate", RUN_ID, "The door creaks open."])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr.strip() == "VALIDATION_ERROR: unknown event type: narration"

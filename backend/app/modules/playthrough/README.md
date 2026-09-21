@@ -445,6 +445,16 @@ offending text to stderr and exit `1`. Spending a roll has no CLI command
 of its own yet — nothing outside the test suite calls `resolve_check` or
 `resolve_save` today.
 
+`app playthrough narrate <run-id> "<text>" [--player-action]` (Typer,
+`commands.py`) is an operator command with no membership gate, like `app
+srd status`: no `--user`. It writes one `narration` event, or one
+`player_action` event with `--player-action`, both `player`-visible and
+carrying `{"text": <text>}`, through `append_event` — the module's one
+writer — commits, and prints `event: <id>`. A refusal from `append_event`
+fails exactly like `cost` and `roll` do: `f"{exc.code}: {exc}"` to stderr
+and exit `1`. An unknown run id is not caught here — `append_event` does
+no run lookup — and surfaces as the database's own error instead.
+
 **Interacting, taking, dropping, giving, using an item, attacking and
 dealing damage all have no HTTP route either, for the same reason**:
 `interact`, `take`, `drop`, `give`, `use_item`, `attack` and `damage` are
