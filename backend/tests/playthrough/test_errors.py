@@ -7,6 +7,7 @@ from app.modules.playthrough.errors import (
     ActionNotAvailableError,
     AdventureActiveError,
     AdventureExhaustedError,
+    AlreadyActedError,
     CampaignNotFoundError,
     CampaignRunExistsError,
     CampaignRunNotFoundError,
@@ -111,3 +112,9 @@ def test_roll_required_carries_roll_required():
     exc = RollRequiredError("object-1", "cut it")
     assert isinstance(exc, PlaythroughError)
     assert exc.code == ErrorCode.ROLL_REQUIRED
+
+
+def test_already_acted_carries_already_acted():
+    exc = AlreadyActedError("actor-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.ALREADY_ACTED
