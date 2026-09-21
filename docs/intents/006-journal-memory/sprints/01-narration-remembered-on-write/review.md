@@ -34,3 +34,9 @@ already counts it. Nothing can be searched yet; that is the next sprint.
 Brief: docs/intents/006-journal-memory/sprints/01-narration-remembered-on-write/brief.md
 
 ## Verdict
+
+Round 1: approve — every line the Dungeon Master narrates is now stored together with a record of what it means,
+and what producing that record costs is booked onto the same line of the run's cost report. A player's own typed
+text is stored exactly as before with nothing extra added, and when the encoder fails the narration is still
+written and the run carries on untouched — all three confirmed by writing lines into a real run. Nothing can be
+searched yet; that is the next sprint by design.
