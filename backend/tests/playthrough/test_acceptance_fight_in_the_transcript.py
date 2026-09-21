@@ -159,6 +159,25 @@ EXPECTED_EVENTS_COLUMNS = {
     "created_at",
 }
 
+# Every key `objects.state` may ever carry, whole-run, character or
+# creature alike: `CharacterState`'s own declared fields
+# (`app.modules.playthrough.schemas.CharacterState`), `down` among them --
+# declared and written `False` at character creation, never added later
+# (only its *value* flips once a character is brought to zero, `AC2`'s own
+# story). A template-born creature's `state` stays `{}` -- nothing this
+# sprint's mechanics write to it -- so this exact set, not a delta, is what
+# a whole fight must still find true (AC4): an encounter, a turn order or
+# an `in_combat` flag, whatever it might be called, would show up here as
+# an extra key.
+EXPECTED_STATE_KEYS = {
+    "abilities",
+    "race",
+    "character_class",
+    "background",
+    "appearance",
+    "down",
+}
+
 
 class _ScriptedRandom(random_module.Random):
     """A `random.Random` subclass whose `randint` hands back a fixed,
@@ -660,6 +679,10 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
         )
         target_goblin, miss_goblin = goblin_ids[0], goblin_ids[1]
 
+        # `down` starts `False` at character creation -- the observable
+        # this AC's own damage-at-zero story flips, later, to `True`.
+        assert _state(await _object_row(playthrough_db, character.id))["down"] is False
+
         # -- Turn 1: a hit against `target_goblin`, then damage bound to
         # it -- lowering current_hp without clamping yet.
         turn1 = generate_id()
@@ -939,7 +962,7 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
         after_char1 = await _object_row(playthrough_db, character.id)
         assert after_char1.current_hp == CHARACTER_MAX_HP - 8 == 4
         assert after_char1.is_alive is True
-        assert _state(after_char1).get("down") is not True
+        assert _state(after_char1)["down"] is False
 
         turn5 = generate_id()
         goblin_hit2_roll = await _rolled(
@@ -1116,12 +1139,13 @@ def test_ac4_initiative_rolls_and_no_fight_is_ever_stored(playthrough_db):
         )
 
         # -- The schema's own shape, and every key `objects.state` has
-        # ever carried, captured before any fight mechanic runs -- the
-        # baseline the whole fight below must not widen except by `down`.
+        # ever carried, already exactly the expected set before any fight
+        # mechanic runs -- `down` is a character-state field declared and
+        # written `False` at creation, not something combat adds.
         assert await _table_names(playthrough_db) == EXPECTED_TABLES
         assert await _column_names(playthrough_db, "objects") == EXPECTED_OBJECTS_COLUMNS
         assert await _column_names(playthrough_db, "events") == EXPECTED_EVENTS_COLUMNS
-        state_keys_before = await _state_keys(playthrough_db, run.id)
+        assert await _state_keys(playthrough_db, run.id) == EXPECTED_STATE_KEYS
 
         # -- Rolling for who goes first: exactly two `roll(initiative)`
         # events, and not one row of the world changes.
@@ -1355,13 +1379,12 @@ def test_ac4_initiative_rolls_and_no_fight_is_ever_stored(playthrough_db):
         assert _state(downed)["down"] is True
 
         # -- After a whole fight has been played out: the exact same
-        # tables and columns, and `state`'s own key set widened by
-        # exactly one key, `down` -- never an encounter, a turn order or
-        # an `in_combat` flag, whatever it might be called.
+        # tables and columns, and `state`'s own key set still exactly the
+        # expected one -- never an encounter, a turn order or an
+        # `in_combat` flag, whatever it might be called, on any object.
         assert await _table_names(playthrough_db) == EXPECTED_TABLES
         assert await _column_names(playthrough_db, "objects") == EXPECTED_OBJECTS_COLUMNS
         assert await _column_names(playthrough_db, "events") == EXPECTED_EVENTS_COLUMNS
-        state_keys_after = await _state_keys(playthrough_db, run.id)
-        assert state_keys_after - state_keys_before == {"down"}
+        assert await _state_keys(playthrough_db, run.id) == EXPECTED_STATE_KEYS
 
     asyncio.run(_scenario())
