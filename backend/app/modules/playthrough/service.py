@@ -29,8 +29,11 @@ from app.modules.playthrough.errors import (
     CharacterExistsError,
     ExitNotAvailableError,
     GameObjectNotFoundError,
+    InvalidDcError,
     InvalidEventPayloadError,
     InvalidRunStatusError,
+    RollNotFoundError,
+    RollNotUsableError,
     RollRequestNotFoundError,
     RunArchivedError,
 )
@@ -53,6 +56,11 @@ from app.modules.playthrough.schemas import (
 _ZERO_COST = Decimal("0.000000")
 
 _EVENT_VISIBILITIES = frozenset({"player", "dm"})
+
+# The SRD's own difficulty table (← D6); sprint 07a raised the authoring
+# floor to 5 to match, so both ends of the system now agree.
+_MIN_DC = 5
+_MAX_DC = 30
 
 
 def _build_object(
@@ -745,6 +753,208 @@ async def ask_player(
     await db.commit()
     await db.refresh(event)
     return event
+
+
+async def _get_roll_event(db: AsyncSession, roll_id: str) -> Event:
+    """The `roll` event named `roll_id`, with no run context yet --
+    `resolve_check`/`resolve_save` learn which run to gate from this row's
+    own `campaign_run_id`, exactly the way `_get_roll_request_event` learns
+    `resolve_roll_request`'s run from the `roll_requested` event it
+    answers. An unknown id, or one that names an event of any other type,
+    is refused identically (`RollNotFoundError`): there is nothing to
+    disambiguate them by.
+    """
+    result = await db.execute(select(Event).where(Event.id == roll_id))
+    event = result.scalar_one_or_none()
+    if event is None or event.type != "roll":
+        raise RollNotFoundError(roll_id)
+    return event
+
+
+async def _roll_already_spent(
+    db: AsyncSession, *, run_id: str, roll_id: str, turn_id: str | None
+) -> bool:
+    """True when some *successful* `tool_call` in this run-and-turn already
+    named `roll_id` in its `rollIds` -- the subtle half of `_consume_roll`
+    (WI1, I2): a merely `refused` attempt is never searched here, so it can
+    never burn the roll it named.
+    """
+    stmt = select(Event.payload).where(Event.campaign_run_id == run_id, Event.type == "tool_call")
+    stmt = stmt.where(Event.turn_id.is_(None) if turn_id is None else Event.turn_id == turn_id)
+    result = await db.execute(stmt)
+    return any(
+        payload["result"] == "ok" and roll_id in payload["rollIds"]
+        for payload in result.scalars().all()
+    )
+
+
+async def _consume_roll(
+    db: AsyncSession, *, run_id: str, roll_id: str, kind: RollKind, turn_id: str | None
+) -> Event:
+    """Decides, from the transcript alone, whether `roll_id` may be spent
+    as a `kind` roll in `run_id`'s open turn -- no consumption column
+    anywhere (WI1, I2).
+
+    In order: the event exists, is a `roll`, and belongs to `run_id`
+    (`RollNotFoundError` otherwise -- indistinguishable from an unknown id,
+    ← D12); its `kind` matches (a `custom` roll therefore fails every
+    check, deliberately) and its `turn_id` equals `turn_id` (`None` counts
+    as equal to `None`); it has not already been spent by an earlier
+    *successful* `tool_call` naming it. The last two conditions both raise
+    `RollNotUsableError` -- the caller records the refusal and commits it
+    before re-raising, this function never touches the transcript itself.
+    Returns the `roll` event when it may be spent.
+    """
+    event = await _get_roll_event(db, roll_id)
+    if event.campaign_run_id != run_id:
+        raise RollNotFoundError(roll_id)
+    if event.payload["kind"] != kind or event.turn_id != turn_id:
+        raise RollNotUsableError(roll_id)
+    if await _roll_already_spent(db, run_id=run_id, roll_id=roll_id, turn_id=turn_id):
+        raise RollNotUsableError(roll_id)
+    return event
+
+
+async def _refuse_roll(
+    db: AsyncSession,
+    *,
+    run_id: str,
+    name: str,
+    roll_id: str,
+    dc: int,
+    turn_id: str | None,
+    reason: str,
+) -> None:
+    """Records a roll-spending refusal where only the DM sees it (← D11)
+    and commits it alone -- the pattern `_refuse_exit` established:
+    `append_event` only flushes, and the caller's rollback on the way to
+    raising would erase the record. Names `roll_id` in `roll_ids` too, for
+    the record -- safe against `_roll_already_spent`'s scan, which only
+    ever looks at `result: "ok"` entries, never a `refused` one.
+    """
+    await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": name,
+            "args": {"rollId": roll_id, "dc": dc},
+            "roll_ids": [roll_id],
+            "result": "refused",
+            "outcome": {"reason": reason},
+        },
+    )
+    await db.commit()
+
+
+async def _resolve_roll_outcome(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    roll_id: str,
+    dc: int,
+    kind: RollKind,
+    name: str,
+    turn_id: str | None,
+) -> bool:
+    """Shared by `resolve_check` and `resolve_save`: turns `roll_id` into
+    pass or fail against `dc`, differing only in which `RollKind` the roll
+    must be and which mechanic name the transcript records (WI1, AC3).
+
+    Pass or fail lives on this call's own `tool_call`, never on the roll
+    itself (← D11) -- `_consume_roll` decides only whether the roll may be
+    spent, never what spending it means. `dc` outside 5-30 (← D6) and a
+    roll `_consume_roll` refuses are each recorded as a refusal and
+    committed (`_refuse_roll`) before the matching error is raised; an
+    unknown roll id, or one on a foreign run, surfaces as `NOT_FOUND`
+    before any run is known to record a refusal into, exactly like every
+    other lookup in this module (← D12).
+    """
+    roll_event = await _get_roll_event(db, roll_id)
+    run = await _require_ready_or_active_run(db, run_id=roll_event.campaign_run_id, user_id=user_id)
+
+    if not (_MIN_DC <= dc <= _MAX_DC):
+        await _refuse_roll(
+            db,
+            run_id=run.id,
+            name=name,
+            roll_id=roll_id,
+            dc=dc,
+            turn_id=turn_id,
+            reason=f"dc {dc} is outside {_MIN_DC}-{_MAX_DC}",
+        )
+        raise InvalidDcError(dc)
+
+    try:
+        consumed = await _consume_roll(
+            db, run_id=run.id, roll_id=roll_id, kind=kind, turn_id=turn_id
+        )
+    except RollNotUsableError:
+        await _refuse_roll(
+            db,
+            run_id=run.id,
+            name=name,
+            roll_id=roll_id,
+            dc=dc,
+            turn_id=turn_id,
+            reason="roll already spent, from another turn, or of another kind",
+        )
+        raise
+
+    total = consumed.payload["total"]
+    success = total >= dc
+    await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": name,
+            "args": {"rollId": roll_id, "dc": dc},
+            "roll_ids": [roll_id],
+            "result": "ok",
+            "outcome": {"total": total, "dc": dc, "success": success},
+        },
+    )
+    await db.commit()
+    return success
+
+
+async def resolve_check(
+    db: AsyncSession, *, user_id: str, roll_id: str, dc: int, turn_id: str | None = None
+) -> bool:
+    """Spends an `ability_check` roll against `dc`, appending the pass/fail
+    outcome on its own `tool_call` (WI1, AC3). See `_resolve_roll_outcome`
+    for the shared gate order, refusal recording and consumption rule."""
+    return await _resolve_roll_outcome(
+        db,
+        user_id=user_id,
+        roll_id=roll_id,
+        dc=dc,
+        kind="ability_check",
+        name="resolve_check",
+        turn_id=turn_id,
+    )
+
+
+async def resolve_save(
+    db: AsyncSession, *, user_id: str, roll_id: str, dc: int, turn_id: str | None = None
+) -> bool:
+    """Spends a `saving_throw` roll against `dc`, appending the pass/fail
+    outcome on its own `tool_call` (WI1, AC3). See `_resolve_roll_outcome`
+    for the shared gate order, refusal recording and consumption rule."""
+    return await _resolve_roll_outcome(
+        db,
+        user_id=user_id,
+        roll_id=roll_id,
+        dc=dc,
+        kind="saving_throw",
+        name="resolve_save",
+        turn_id=turn_id,
+    )
 
 
 async def _refuse_exit(

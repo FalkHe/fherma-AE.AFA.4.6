@@ -127,8 +127,14 @@ def _roll_event(event_id="roll-1", *, campaign_run_id="run-1", kind="ability_che
         type="roll",
         visibility="player",
         turn_id=turn_id,
-        payload={"kind": kind, "actorId": "actor-1", "formula": "1d20", "faces": [10],
-                 "modifier": 0, "total": 10},
+        payload={
+            "kind": kind,
+            "actorId": "actor-1",
+            "formula": "1d20",
+            "faces": [10],
+            "modifier": 0,
+            "total": 10,
+        },
     )
 
 
@@ -153,7 +159,10 @@ def test_resolve_check_raises_roll_not_found_for_an_event_that_is_not_a_roll():
     from app.modules.playthrough.models import Event as _Event
 
     other = _Event(
-        id="event-1", campaign_run_id="run-1", type="question", visibility="player",
+        id="event-1",
+        campaign_run_id="run-1",
+        type="question",
+        visibility="player",
         payload={"text": "Well?", "options": []},
     )
     db = FakeSession(FakeResult(scalar=other))
@@ -305,7 +314,9 @@ def test_resolve_check_refuses_a_custom_roll_and_the_roll_stays_recorded(playthr
         assert refused[0].visibility == "dm"
         assert refused[0].payload["name"] == "resolve_check"
         assert refused[0].payload["result"] == "refused"
-        assert refused[0].payload["rollIds"] == []
+        # <- names the roll it tried to spend, for the record; only ever
+        # excluded from `_roll_already_spent`'s scan by its own `result`.
+        assert refused[0].payload["rollIds"] == [rolled.id]
 
     asyncio.run(_scenario())
 
@@ -432,4 +443,3 @@ def test_resolve_check_refuses_a_saving_throw_roll_kind_mismatch(playthrough_db)
         assert success is True
 
     asyncio.run(_scenario())
-
