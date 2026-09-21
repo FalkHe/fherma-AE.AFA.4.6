@@ -9,10 +9,10 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| qa | open | |
+| 1 | done | `attack` and `damage`, seven guards broken and caught |
+| 2 | done | `roll_initiative`, and the schema-wide proof of no combat state |
+| 3 | done | module doc §20-§22 and README, both left reading as finished |
+| qa | done | 4 acceptance tests; AC4's last assertion reworked once |
 
 Status: `open | running | done | failed`
 
@@ -26,6 +26,13 @@ Status: `open | running | done | failed`
   making death saving throws, not simply down. This sprint sets `down` and stops there, which is what the brief
   specifies; nothing yet narrates death saves, and nothing ends a run whose character never gets up. That belongs
   to phase 8, which narrates, and wants the product owner's ruling before it is built. Flagged in `review.md`.
+
+- A coordination gap between two work items, caught before shipping: qa's AC4 asserted that a character's stored
+  state gained the key `down` over the course of a fight, but `down` is a declared field written at creation, so
+  the difference was always empty and the assertion could never hold. It now asserts the exact key set instead,
+  which is what the criterion is really about, and the `down` false-to-true observation moved to AC2 where it
+  belongs. qa proved the new form bites by adding a combat flag and a `fight_tracker` column and watching both be
+  caught.
 
 ## Backlog proposals
 
