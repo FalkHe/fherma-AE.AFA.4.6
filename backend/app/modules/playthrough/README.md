@@ -410,7 +410,15 @@ Service functions (`service.py`), called as `service.f(...)`:
   becomes `Decimal(str(...))`, never `Decimal(float)`. `add`s and `flush`es
   so the new id exists — **never commits**; the caller commits once, so the
   event and the state change it describes land together or not at all. No
-  membership check — every caller has already made one.
+  membership check — every caller has already made one. A non-blank
+  `narration` is also embedded through `core.llm.service.embed_texts`
+  (off the event loop via `asyncio.to_thread`) before the row is built: on
+  a right-width vector the columns and `get_settings().embedding_model`
+  are stored and the embedding's own usage is added on top of the
+  caller's `prompt_tokens`/`cost_usd`; any failure or wrong-width vector
+  leaves both columns `NULL`, logs one `warning` and never raises, so a
+  lost embedding never loses the narration. Every other event type never
+  calls the seam.
 - `list_events` — the caller's `player`-visible events for a run, ordered by
   `id`, `after` exclusive, `limit` capped at 500 (default 200). Checks
   membership; `dm`-visible rows are excluded, not merely hidden downstream.

@@ -6,16 +6,20 @@ called `service.f(...)` -- never import the functions by name, the test
 suite's monkeypatching depends on it (AGENTS.md).
 """
 
+import asyncio
 from decimal import Decimal
 from typing import Any
 
+import structlog
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ids import generate_id
+from app.core.llm import service as llm_service
 from app.core.llm.service import Usage
+from app.core.settings import get_settings
 from app.modules.content import service as content_service
 from app.modules.content.errors import ContentNotFoundError
 from app.modules.content.schemas import LoadedCampaign, ObjectTemplate, SeedCharacter
@@ -44,6 +48,7 @@ from app.modules.playthrough.errors import (
     RunArchivedError,
 )
 from app.modules.playthrough.models import (
+    EMBEDDING_WIDTH,
     AdventureRun,
     CampaignRun,
     CampaignRunMember,
@@ -58,6 +63,8 @@ from app.modules.playthrough.schemas import (
     RunCost,
     TurnCost,
 )
+
+logger = structlog.get_logger()
 
 _ZERO_COST = Decimal("0.000000")
 
@@ -2145,6 +2152,18 @@ async def append_event(
     **no membership check** of its own: every caller is already gated
     (`_require_member` or equivalent) before it reaches here, and this
     function must not add a second, redundant gate.
+
+    `narration` (AC2-AC4): a non-blank `text` is embedded through the core
+    `embed_texts()` seam (`llm_service.embed_texts`, off the event loop via
+    `asyncio.to_thread` -- the seam is synchronous and its retry sleeps
+    real time) before the row is built. On a right-width success, the
+    vector and `get_settings().embedding_model` are stored and the
+    embedding's own `usage` is added on top of the caller's `prompt_tokens`
+    /`cost_usd` (each summed only where present; `completion_tokens` stays
+    the caller's alone). Any exception from the seam, or a vector of the
+    wrong width, leaves both columns `NULL`, logs one `warning` and never
+    raises -- a lost embedding must never lose the narration itself (D4).
+    Every other event type takes none of this: no call, no columns set.
     """
     model_cls = EVENT_PAYLOADS.get(type)
     if model_cls is None:
@@ -2167,6 +2186,27 @@ async def append_event(
             f"got {payload.__class__.__name__}"
         )
 
+    embedding_vector: list[float] | None = None
+    embedding_model: str | None = None
+    embedding_usage: Usage | None = None
+    if type == "narration" and validated.text.strip():
+        try:
+            result = await asyncio.to_thread(llm_service.embed_texts, [validated.text])
+        except Exception as exc:  # noqa: BLE001 - AC4: never let this reach the caller
+            logger.warning("narration_embedding_failed", run_id=run_id, error=str(exc))
+        else:
+            vector = result.vectors[0]
+            if len(vector) == EMBEDDING_WIDTH:
+                embedding_vector = vector
+                embedding_model = get_settings().embedding_model
+                embedding_usage = result.usage
+            else:
+                logger.warning(
+                    "narration_embedding_failed",
+                    run_id=run_id,
+                    error=f"embedding width {len(vector)} != {EMBEDDING_WIDTH}",
+                )
+
     event = Event(
         campaign_run_id=run_id,
         actor_member_id=actor_member_id,
@@ -2174,12 +2214,22 @@ async def append_event(
         type=type,
         visibility=visibility,
         payload=validated.model_dump(by_alias=True),
+        embedding=embedding_vector,
+        embedding_model=embedding_model,
     )
+
+    prompt_token_parts = [u.prompt_tokens for u in (usage, embedding_usage) if u is not None]
+    if prompt_token_parts:
+        event.prompt_tokens = sum(prompt_token_parts)
     if usage is not None:
-        event.prompt_tokens = usage.prompt_tokens
         event.completion_tokens = usage.completion_tokens
-        if usage.cost_usd is not None:
-            event.cost_usd = Decimal(str(usage.cost_usd))
+    cost_parts = [
+        Decimal(str(u.cost_usd))
+        for u in (usage, embedding_usage)
+        if u is not None and u.cost_usd is not None
+    ]
+    if cost_parts:
+        event.cost_usd = sum(cost_parts)
 
     db.add(event)
     await db.flush()
