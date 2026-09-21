@@ -437,6 +437,16 @@ Service functions (`service.py`), called as `service.f(...)`:
   no `embedding IS NOT NULL` filter and no call to the embedding seam at
   all. A run with no narration returns `[]`. Reads into `NarrationRead`
   (`id, createdAt, text`) — deliberately not `EventRead`.
+- `recall` — the `k` (default 5) `narration` events from anywhere in the
+  run whose meaning is closest to a `query`, closest first, no relevance
+  floor. Same operator gate as `recap` (`_get_run`, no `user_id`). Embeds
+  `query` exactly once through `llm_service.embed_texts`, off the event
+  loop; any seam failure propagates unchanged, unlike a write. Orders
+  `narration` rows with `embedding IS NOT NULL` by
+  `Event.embedding.cosine_distance` — the same predicates and operator
+  the `ix_events_embedding_narration` partial index serves, so a row that
+  failed to be encoded is never a candidate. A run with no narration
+  returns `[]`. Reads into `NarrationRead` like `recap`.
 
 Cost has **no HTTP route anywhere in this module, on purpose**: it is a
 developer's number, not a player's, meant for a developer drawer the

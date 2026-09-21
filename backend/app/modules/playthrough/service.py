@@ -2415,9 +2415,7 @@ async def recap(db: AsyncSession, *, run_id: str, n: int = 5) -> list[NarrationR
     ]
 
 
-async def recall(
-    db: AsyncSession, *, run_id: str, query: str, k: int = 5
-) -> list[NarrationRead]:
+async def recall(db: AsyncSession, *, run_id: str, query: str, k: int = 5) -> list[NarrationRead]:
     """The `k` narration events from anywhere in the run whose meaning is
     closest to `query`, closest first -- an answer to a question asked of
     the whole campaign run, never scoped to whichever adventure is
