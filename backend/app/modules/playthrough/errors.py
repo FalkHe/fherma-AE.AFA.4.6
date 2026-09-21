@@ -147,6 +147,19 @@ class GameObjectNotFoundError(PlaythroughError):
         super().__init__(f"object not found: {object_id}")
 
 
+class RollRequestNotFoundError(PlaythroughError):
+    """No `roll_requested` event answers `request_id` -- either no event
+    at all, or one of a different type. `resolve_roll_request` is the only
+    place this can originate; there is no membership context yet, exactly
+    the way `GameObjectNotFoundError` has none for `use_exit`."""
+
+    code = ErrorCode.NOT_FOUND
+
+    def __init__(self, request_id: str) -> None:
+        self.request_id = request_id
+        super().__init__(f"roll request not found: {request_id}")
+
+
 class ExitNotAvailableError(PlaythroughError):
     """The exit `use_exit` was asked to use is not on the actor's current
     scene -- including an actor with no scene at all, the same refusal

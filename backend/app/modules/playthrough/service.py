@@ -19,6 +19,7 @@ from app.core.llm.service import Usage
 from app.modules.content import service as content_service
 from app.modules.content.errors import ContentNotFoundError
 from app.modules.content.schemas import LoadedCampaign, ObjectTemplate, SeedCharacter
+from app.modules.playthrough import dice
 from app.modules.playthrough.errors import (
     AdventureActiveError,
     AdventureExhaustedError,
@@ -30,6 +31,7 @@ from app.modules.playthrough.errors import (
     GameObjectNotFoundError,
     InvalidEventPayloadError,
     InvalidRunStatusError,
+    RollRequestNotFoundError,
     RunArchivedError,
 )
 from app.modules.playthrough.models import (
@@ -39,7 +41,14 @@ from app.modules.playthrough.models import (
     Event,
     GameObject,
 )
-from app.modules.playthrough.schemas import EVENT_PAYLOADS, CharacterState, RunCost, TurnCost
+from app.modules.playthrough.schemas import (
+    EVENT_PAYLOADS,
+    CharacterState,
+    RollKind,
+    RollRequestedPayload,
+    RunCost,
+    TurnCost,
+)
 
 _ZERO_COST = Decimal("0.000000")
 
@@ -507,6 +516,235 @@ async def _get_game_object(db: AsyncSession, object_id: str) -> GameObject:
     if obj is None:
         raise GameObjectNotFoundError(object_id)
     return obj
+
+
+async def _require_ready_or_active_run(
+    db: AsyncSession, *, run_id: str, user_id: str
+) -> CampaignRun:
+    """`use_exit`'s own gate order, for a run already known by id:
+    `_require_member` -> `_get_run` -> `_require_writable` -> the run must
+    be `ready` or `active` (`InvalidRunStatusError` otherwise). Shared by
+    every WI2 producer that takes a `run_id` directly (`ask_player`) or
+    resolves one from something else it was given
+    (`_resolve_actor_and_run`, `resolve_roll_request`).
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    run = await _get_run(db, run_id)
+    _require_writable(run)
+    if run.status not in ("ready", "active"):
+        raise InvalidRunStatusError(run.id)
+    return run
+
+
+async def _resolve_actor_and_run(
+    db: AsyncSession, *, actor_id: str, user_id: str
+) -> tuple[GameObject, CampaignRun]:
+    """Loads the actor `actor_id` names, with no run context yet -- exactly
+    `use_exit`'s own first step -- then gates the run it belongs to."""
+    actor = await _get_game_object(db, actor_id)
+    run = await _require_ready_or_active_run(db, run_id=actor.campaign_run_id, user_id=user_id)
+    return actor, run
+
+
+async def _get_roll_request_event(db: AsyncSession, request_id: str) -> Event:
+    """The `roll_requested` event named `request_id`, with no run context
+    yet -- `resolve_roll_request` learns which run to gate from this row's
+    own `campaign_run_id`, the same way `use_exit` learns its run from the
+    actor it loads first. An unknown id, or one that names an event of any
+    other type, is refused identically (`RollRequestNotFoundError`): there
+    is nothing to disambiguate them by.
+    """
+    result = await db.execute(select(Event).where(Event.id == request_id))
+    event = result.scalar_one_or_none()
+    if event is None or event.type != "roll_requested":
+        raise RollRequestNotFoundError(request_id)
+    return event
+
+
+async def _append_roll_requested(
+    db: AsyncSession,
+    *,
+    run: CampaignRun,
+    actor: GameObject,
+    kind: RollKind,
+    context: Any,
+    visibility: str,
+    turn_id: str | None,
+) -> Event:
+    """Derives the formula from `kind` and `actor` alone (← D6 -- never a
+    number a caller passed) and appends `roll_requested` at `visibility`.
+    Shared by `request_player_roll` (always `player`, since the player is
+    the one being asked) and `roll` (whatever visibility its caller asked
+    for)."""
+    formula = dice.derive_formula(
+        kind, actor, context, campaign_id=run.campaign_id, version=run.content_version
+    )
+    return await append_event(
+        db,
+        run_id=run.id,
+        type="roll_requested",
+        visibility=visibility,
+        turn_id=turn_id,
+        payload={"kind": kind, "actor_id": actor.id, "formula": formula, "context": context},
+    )
+
+
+async def _append_roll(
+    db: AsyncSession, *, run: CampaignRun, request_event: Event, turn_id: str | None
+) -> Event:
+    """Answers `request_event` with a `roll`, re-using its own stored
+    `formula`, `kind` and `actor_id` verbatim and at its own visibility --
+    re-deriving here could hand back a different formula than the one
+    already promised (I3). Shared by `resolve_roll_request` and `roll`."""
+    requested = RollRequestedPayload.model_validate(request_event.payload)
+    rolled = dice.roll(requested.formula)
+    return await append_event(
+        db,
+        run_id=run.id,
+        type="roll",
+        visibility=request_event.visibility,
+        turn_id=turn_id,
+        payload={
+            "request_id": request_event.id,
+            "kind": requested.kind,
+            "actor_id": requested.actor_id,
+            "formula": requested.formula,
+            "faces": rolled.faces,
+            "modifier": rolled.modifier,
+            "total": rolled.total,
+        },
+    )
+
+
+async def request_player_roll(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    actor_id: str,
+    kind: RollKind,
+    context: Any,
+    turn_id: str | None = None,
+) -> Event:
+    """Asks the player to make a roll of `kind`, appending `roll_requested`
+    at `player` visibility -- the player is the one being asked. The
+    event's own id is the request id `resolve_roll_request` answers later
+    (WI2, AC2)."""
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+    event = await _append_roll_requested(
+        db, run=run, actor=actor, kind=kind, context=context, visibility="player", turn_id=turn_id
+    )
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def resolve_roll_request(
+    db: AsyncSession, *, user_id: str, request_id: str, turn_id: str | None = None
+) -> Event:
+    """Answers the `roll_requested` event named `request_id` with a `roll`,
+    re-using its stored `formula`, `kind`, `actor_id` and `visibility`
+    verbatim (WI2, AC2)."""
+    request_event = await _get_roll_request_event(db, request_id)
+    run = await _require_ready_or_active_run(
+        db, run_id=request_event.campaign_run_id, user_id=user_id
+    )
+    event = await _append_roll(db, run=run, request_event=request_event, turn_id=turn_id)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def roll(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    actor_id: str,
+    kind: RollKind,
+    context: Any,
+    visibility: str = "dm",
+    turn_id: str | None = None,
+) -> Event:
+    """Requests and answers a roll in one call, both at `visibility` (`dm`
+    by default -- a roll nobody was asked to make). Appends both
+    `roll_requested` and `roll`; the latter is returned (WI2, AC2)."""
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+    requested = await _append_roll_requested(
+        db,
+        run=run,
+        actor=actor,
+        kind=kind,
+        context=context,
+        visibility=visibility,
+        turn_id=turn_id,
+    )
+    event = await _append_roll(db, run=run, request_event=requested, turn_id=turn_id)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def passive_check(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    actor_id: str,
+    ability: str,
+    dc: int,
+    turn_id: str | None = None,
+) -> bool:
+    """A passive score -- `10` plus the named ability's modifier, no die
+    rolled at all -- against `dc`. Recorded as a `tool_call` at `dm`, never
+    a `roll`: it has no faces and must never be consumable by a later
+    sprint's check consumer (WI2, AC2)."""
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+    abilities = dice._actor_abilities(
+        actor, campaign_id=run.campaign_id, version=run.content_version
+    )
+    modifier = dice._ability_modifier(getattr(abilities, ability))
+    passive_score = 10 + modifier
+    success = passive_score >= dc
+    await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "passive_check",
+            "args": {"actorId": actor_id, "ability": ability, "dc": dc},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {"passiveScore": passive_score, "dc": dc, "success": success},
+        },
+    )
+    await db.commit()
+    return success
+
+
+async def ask_player(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    text: str,
+    options: list[str],
+    turn_id: str | None = None,
+) -> Event:
+    """Puts a question to the player -- the next `player_action` may answer
+    it (`PlayerActionPayload.answers_question_id`). Appends `question` at
+    `player` visibility (WI2, AC4a)."""
+    run = await _require_ready_or_active_run(db, run_id=run_id, user_id=user_id)
+    event = await append_event(
+        db,
+        run_id=run.id,
+        type="question",
+        visibility="player",
+        turn_id=turn_id,
+        payload={"text": text, "options": options},
+    )
+    await db.commit()
+    await db.refresh(event)
+    return event
 
 
 async def _refuse_exit(

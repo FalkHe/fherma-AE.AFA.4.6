@@ -54,7 +54,7 @@ class ItemTemplate(ObjectTemplateBase):
 
 class FixtureCheck(ContentModel):
     action: ProseText
-    dc: int = Field(ge=1, le=30)
+    dc: int = Field(ge=5, le=30)
     success: ProseText
     bypassed_by: list[ContentId] = Field(default_factory=list)
 
@@ -72,7 +72,7 @@ ObjectTemplate = Annotated[
 
 class Secret(ContentModel):
     fact: ProseText
-    dc: int = Field(ge=1, le=30)
+    dc: int = Field(ge=5, le=30)
     discovered_by: ProseText
 
 
