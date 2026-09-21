@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Session view" description="Goblin Pub DM agent: chat log, dice results, composer and party rail." -->
+<helmet><script src="./ds-base.js"></script><style>body{margin:0;background:#0B0E09}</style></helmet>
+<div style="display:flex;height:100vh;font-family:'Alegreya Sans',system-ui,sans-serif;color:#F2ECDE;background:#0B0E09">
+<div style="flex:1;min-width:0;display:flex;flex-direction:column;background-image:radial-gradient(100% 70% at 0% 0%, rgba(110,145,66,.12), transparent 60%)">
+<header style="display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid rgba(226,214,186,.08);background:#12160F">
+<div><div style="font:700 1.125rem/1.2 Alegreya,Georgia,serif">The Rotting Stump</div><div style="font-size:.78125rem;color:#9E947F">Session 6 · comedic tone · autosaving</div></div>
+</header>
+<div style="flex:1;min-height:0;overflow:auto;padding:22px 28px 8px">
+<div style="max-width:760px;margin:0 auto;display:grid;gap:14px">
+<x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.SceneImage" chapter="Chapter 2" caption="The Rotting Stump, past midnight" height="{{ sceneHeight }}" hint-size="100%,170px">Scene art slot — supply real artwork</x-import>
+<x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Divider" label="Session 6 · Round 3" hint-size="100%,40px"></x-import>
+<x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.ChatMessage" role="dm" author="The Dungeon Master" time="21:02" hint-size="100%,90px">The Rotting Stump leans over the path like it is listening. Warm light bleeds through the shutters, and somebody inside is losing an argument about a barrel.</x-import>
+<x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.ChatMessage" role="player" author="Brakka" time="21:04" hint-size="100%,70px">I push the door open with my boot and walk in like I own the place.</x-import>
+<x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.ChatMessage" role="system" hint-size="100%,36px">Intimidation check · DC 13</x-import>
+<div style="display:flex;justify-content:center"><x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.DiceRoll" label="Intimidation" notation="1d20+5" breakdown="12 + 5" total="{{ rollTotal }}" outcome="neutral" hint-size="220px,64px"></x-import></div>
+<x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.ChatMessage" role="dm" author="The Dungeon Master" time="21:05" hint-size="100%,90px">Three goblins look up. The one holding the ladle decides, quickly and visibly, that you are a guest and not a problem.</x-import>
+</div>
+</div>
+<div style="padding:8px 28px 22px"><div style="max-width:760px;margin:0 auto"><x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.ChatComposer" value="{{ draft }}" onChange="{{ setDraft }}" hint-size="100%,140px"></x-import></div></div>
+</div>
+<aside style="width:300px;flex:0 0 auto;border-left:1px solid rgba(226,214,186,.08);background:#12160F;padding:18px;overflow:auto;display:grid;gap:12px;align-content:start">
+<span style="font-family:'Alegreya SC',Georgia,serif;font-size:.78125rem;letter-spacing:.14em;color:#9E947F">PARTY · ROUND 3</span>
+<sc-for list="{{ party }}" as="member" hint-placeholder-count="4">
+<x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.PlayerStatCard" name="{{ member.name }}" subtitle="{{ member.subtitle }}" hp="{{ member.hp }}" ac="{{ member.ac }}" initiative="{{ member.initiative }}" conditions="{{ member.conditions }}" active="{{ member.active }}" compact="{{ true }}" hint-size="100%,150px"></x-import>
+</sc-for>
+</aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { draft: "" };
+  renderVals() {
+    return {
+      sceneHeight: 170,
+      rollTotal: 17,
+      draft: this.state.draft,
+      setDraft: (v) => this.setState({ draft: v }),
+      party: [
+        { name: "Brakka Nine-Fingers", subtitle: "Goblin Rogue · Level 4", hp: { value: 24, max: 32 }, ac: 15, initiative: 3, conditions: [], active: true },
+        { name: "Ysolde Ashwake", subtitle: "Human Cleric · Level 4", hp: { value: 29, max: 30 }, ac: 18, initiative: 1, conditions: [], active: false },
+        { name: "Murk", subtitle: "Half-orc Druid · Level 3", hp: { value: 8, max: 27 }, ac: 13, initiative: 2, conditions: ["Poisoned"], active: false },
+        { name: "Pell Tumbleweed", subtitle: "Halfling Bard · Level 4", hp: { value: 22, max: 26 }, ac: 14, initiative: 4, conditions: [], active: false },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

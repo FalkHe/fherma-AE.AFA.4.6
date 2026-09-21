@@ -1,0 +1,24 @@
+:root{
+  /* Nothing in the pub was cut square. Radii are large and slightly uneven. */
+  --radius-xs:6px; --radius-sm:10px; --radius-md:14px; --radius-lg:20px; --radius-xl:28px;
+  --radius-pill:999px;
+  --radius-organic:22px 16px 24px 18px;
+  --radius-organic-soft:18px 22px 16px 20px;
+
+  --border-width:1px; /* @kind other */
+  --border-width-heavy:2px; /* @kind other */
+
+  --shadow-inset-top:inset 0 1px 0 rgba(243,236,222,.06);
+  --shadow-sm:0 1px 2px rgba(0,0,0,.5);
+  --shadow-md:0 6px 18px -6px rgba(0,0,0,.62), var(--shadow-inset-top);
+  --shadow-lg:0 20px 44px -18px rgba(0,0,0,.78), var(--shadow-inset-top);
+  --shadow-overlay:0 32px 80px -24px rgba(0,0,0,.85);
+  --glow-lantern:0 0 28px -6px rgba(232,169,74,.34);
+  --glow-moss:0 0 24px -8px rgba(143,178,92,.3);
+
+  /* Warm light pooling from the top of a panel, like a hanging lantern */
+  --wash-lantern:radial-gradient(120% 80% at 50% -20%, rgba(232,169,74,.10), transparent 62%); /* @kind other */
+  --wash-moss:radial-gradient(100% 70% at 0% 0%, rgba(110,145,66,.12), transparent 60%); /* @kind other */
+  --scrim-bottom:linear-gradient(to top, rgba(11,14,9,.92) 8%, rgba(11,14,9,0) 92%); /* @kind other */
+  --grain:repeating-linear-gradient(122deg, rgba(243,236,222,.014) 0 2px, transparent 2px 4px); /* @kind other */
+}

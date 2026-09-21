@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><script src="./ds-base.js"></script><style>body{margin:0;background:#0B0E09}a{color:#E8A94A}a:hover{color:#F0C078}</style></helmet>
+<div style="min-height:100vh;display:flex;font-family:'Alegreya Sans',system-ui,sans-serif;color:#F2ECDE;background:#0B0E09;background-image:radial-gradient(90% 60% at 0% 0%, rgba(110,145,66,.10), transparent 60%)">
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+
+    <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:1px solid rgba(226,214,186,.08);background:#12160F;position:sticky;top:0;z-index:5">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        <span style="{{ markStyle }}"><x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Icon" name="flame" size="{{ 17 }}" color="var(--lantern-300)" hint-size="17px,17px"></x-import></span>
+        <span style="font-family:'Alegreya SC',Georgia,serif;font-size:1.0625rem;letter-spacing:.06em;white-space:nowrap">Goblin Pub</span>
+      </div>
+      <div style="position:relative">
+        <button type="button" onClick="{{ toggleUserMenu }}" aria-label="Account" style="width:34px;height:34px;padding:0;border-radius:999px;background:var(--surface-timber);border:1px solid var(--border-timber);display:grid;place-items:center;font-family:'Alegreya SC',Georgia,serif;font-size:.8125rem;color:#E2D6BA;cursor:pointer" style-hover="background:var(--bark-700)">M</button>
+        <sc-if value="{{ userMenuOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;right:0;top:44px;min-width:200px;z-index:20;padding:8px;border-radius:16px;background:var(--surface-overlay);border:1px solid var(--border-strong);box-shadow:var(--shadow-overlay);display:grid;gap:2px">
+            <div style="padding:8px 10px 10px;border-bottom:1px solid var(--border-hairline);margin-bottom:4px">
+              <div style="font-family:Alegreya,Georgia,serif;font-weight:700;font-size:.9375rem">Maeve Corrigan</div>
+              <div style="font-size:.78125rem;color:#9E947F">maeve@goblinpub.app</div>
+            </div>
+            <button type="button" onClick="{{ signOut }}" style="display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:10px;background:transparent;color:#E2D6BA;font:inherit;font-size:.875rem;text-align:left;cursor:pointer" style-hover="background:rgba(243,236,222,.06)">
+              <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Icon" name="log-out" size="{{ 16 }}" hint-size="16px,16px"></x-import>Sign out
+            </button>
+          </div>
+        </sc-if>
+      </div>
+    </header>
+
+    <main style="{{ mainStyle }}">
+      <div style="max-width:1080px;margin:0 auto;width:100%;display:grid;gap:24px">
+
+        <section style="display:grid;gap:6px">
+          <h1 style="{{ welcomeStyle }}">Welcome back, Maeve.</h1>
+          <p style="margin:0;color:#9E947F;font-size:.9375rem">Three campaigns are waiting on you. The lantern is still lit.</p>
+        </section>
+
+        <section style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span style="font-family:'Alegreya SC',Georgia,serif;font-size:.78125rem;letter-spacing:.14em;color:#9E947F">MY CAMPAIGNS</span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <sc-for list="{{ filters }}" as="f" hint-placeholder-count="3">
+              <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Tag" selected="{{ f.selected }}" onClick="{{ f.onClick }}" hint-size="96px,30px">{{ f.label }}</x-import>
+            </sc-for>
+          </div>
+        </section>
+
+        <section style="display:grid;gap:12px">
+          <sc-for list="{{ campaigns }}" as="c" hint-placeholder-count="3">
+            <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Card" tone="{{ c.tone }}" padding="16px" style="{{ c.cardStyle }}" hint-size="100%,120px">
+              <div style="{{ c.rowStyle }}">
+                <div style="{{ c.thumbStyle }}">
+                  <span style="font-family:'Alegreya SC',Georgia,serif;font-size:.6875rem;letter-spacing:.14em;color:#6E6653">ART</span>
+                </div>
+                <div style="min-width:0;display:grid;gap:6px;align-content:start;flex:1">
+                  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <span style="font-family:Alegreya,Georgia,serif;font-weight:700;font-size:1.1875rem;line-height:1.2">{{ c.title }}</span>
+                    <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Badge" tone="{{ c.badgeTone }}" hint-size="80px,22px">{{ c.status }}</x-import>
+                  </div>
+                  <p style="margin:0;color:#9E947F;font-size:.875rem;text-wrap:pretty">{{ c.teaser }}</p>
+                  <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.75rem;color:#6E6653">
+                    <span>{{ c.progress }}</span><span>{{ c.party }}</span><span>{{ c.last }}</span>
+                  </div>
+                </div>
+                <div style="{{ c.actionStyle }}">
+                  <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Button" variant="{{ c.btnVariant }}" size="sm" icon="{{ c.btnIcon }}" hint-size="120px,34px">{{ c.btnLabel }}</x-import>
+                </div>
+              </div>
+            </x-import>
+          </sc-for>
+        </section>
+
+        <sc-if value="{{ showArchivedNote }}" hint-placeholder-val="{{ false }}">
+          <p style="margin:0;color:#6E6653;font-size:.8125rem">Archived campaigns stay hidden until you unarchive them. The log is saved either way.</p>
+        </sc-if>
+
+        <section>
+          <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Card" tone="timber" lantern="{{ true }}" padding="20px" hint-size="100%,110px">
+            <div style="{{ ctaRowStyle }}">
+              <div style="display:grid;gap:4px;min-width:0">
+                <span style="font-family:Alegreya,Georgia,serif;font-weight:700;font-size:1.25rem">Start a new campaign</span>
+                <span style="color:#C9BE9F;font-size:.875rem">Pick a story, gather a party, and the Dungeon Master takes it from there.</span>
+              </div>
+              <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Button" icon="plus" onClick="{{ openPicker }}" fullWidth="{{ ctaFullWidth }}" hint-size="180px,40px">Create new campaign</x-import>
+            </div>
+          </x-import>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <sc-if value="{{ pickerOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:40">
+      <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Dialog" title="Select a campaign" onClose="{{ closePicker }}" width="{{ dialogWidth }}" hint-size="100%,100%">
+        <div style="display:grid;gap:12px">
+          <p style="margin:0 0 4px;font-size:.875rem;color:#9E947F">Choose the story your party will play. You can rename it later.</p>
+          <div style="{{ pickerGridStyle }}">
+            <sc-for list="{{ catalog }}" as="p" hint-placeholder-count="4">
+              <div onClick="{{ p.onSelect }}" style="{{ p.style }}">
+                <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.SceneImage" caption="{{ p.title }}" height="{{ 116 }}" hint-size="100%,116px">Cover art slot</x-import>
+                <div style="padding:12px 14px 14px;display:grid;gap:8px">
+                  <p style="margin:0;font-size:.875rem;color:#C9BE9F;text-wrap:pretty">{{ p.teaser }}</p>
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                    <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.75rem;color:#6E6653">{{ p.adventures }} adventures</span>
+                    <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Badge" tone="{{ p.badgeTone }}" hint-size="70px,22px">{{ p.tone }}</x-import>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ creating }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;background:var(--surface-inset);border:1px solid var(--border-hairline)">
+              <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Icon" name="flame" size="{{ 16 }}" color="var(--lantern-300)" hint-size="16px,16px"></x-import>
+              <span style="font-size:.875rem;color:#C9BE9F">{{ creatingLabel }}</span>
+            </div>
+          </sc-if>
+        </div>
+      </x-import>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  state = { w: typeof window !== "undefined" ? window.innerWidth : 1200, filter: "In progress", pickerOpen: false, creating: null, userMenuOpen: false };
+
+  componentDidMount() {
+    this._onResize = () => this.setState({ w: window.innerWidth });
+    window.addEventListener("resize", this._onResize);
+  }
+  componentWillUnmount() { window.removeEventListener("resize", this._onResize); }
+
+  select(p) {
+    this.setState({ creating: p.title });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => this.setState({ creating: null, pickerOpen: false }), 2600);
+  }
+
+  renderVals() {
+    const w = this.state.w;
+    const mobile = w < 720, tablet = w >= 720 && w < 1080;
+
+    const all = [
+      { title: "The Rotting Stump", status: "In progress", teaser: "Six sessions deep in a goblin pub that keeps moving between two woods.", progress: "Session 6 of 12", party: "4 players", last: "Played 2 days ago", badgeTone: "accent" },
+      { title: "Bogwater Assizes", status: "New", teaser: "A courtroom under a marsh. Nobody has told the defendant he is dead.", progress: "Not started", party: "3 players", last: "Created yesterday", badgeTone: "moss" },
+      { title: "The Kettle Wars", status: "In progress", teaser: "Two goblin clans, one brewing recipe, and an increasingly nervous druid.", progress: "Session 2 of 8", party: "5 players", last: "Played 3 weeks ago", badgeTone: "accent" },
+      { title: "Ash of the Low King", status: "Archived", teaser: "Finished last winter. The barrow is sealed and the party went home rich.", progress: "Completed", party: "4 players", last: "Ended in March", badgeTone: "neutral" },
+    ];
+    const filter = this.state.filter;
+    const visible = all.filter(c => c.status === filter);
+
+    const campaigns = visible.map(c => ({
+      ...c,
+      tone: c.status === "Archived" ? "sunken" : "default",
+      cardStyle: { opacity: c.status === "Archived" ? 0.72 : 1 },
+      rowStyle: { display: "flex", gap: mobile ? 12 : 16, alignItems: mobile ? "flex-start" : "center", flexWrap: mobile ? "wrap" : "nowrap" },
+      thumbStyle: {
+        width: mobile ? "100%" : tablet ? 140 : 170, height: mobile ? 120 : tablet ? 100 : 112, flex: "0 0 auto", borderRadius: 16,
+        display: "grid", placeItems: "center", border: "1px solid var(--border-soft)",
+        background: "linear-gradient(155deg, var(--loam-700), var(--bark-900) 60%, var(--loam-900))",
+      },
+      actionStyle: { flex: mobile ? "1 1 100%" : "0 0 auto", display: "flex", justifyContent: mobile ? "flex-start" : "flex-end" },
+      btnVariant: c.status === "Archived" ? "ghost" : c.status === "New" ? "outline" : "primary",
+      btnIcon: c.status === "Archived" ? "book-open" : c.status === "New" ? "footprints" : "beer",
+      btnLabel: c.status === "Archived" ? "Unarchive" : c.status === "New" ? "Begin" : "Resume",
+    }));
+
+    const catalog = [
+      { title: "The Rotting Stump", teaser: "A pub that hides in the wood and only opens for people it likes.", adventures: 12, tone: "Comedic", badgeTone: "moss" },
+      { title: "Bogwater Assizes", teaser: "Marsh law, bad lawyers, and a verdict that will not stay buried.", adventures: 8, tone: "Mystery", badgeTone: "magic" },
+      { title: "The Kettle Wars", teaser: "Two clans brew for the same crown. Only one recipe survives.", adventures: 10, tone: "Skirmish", badgeTone: "accent" },
+      { title: "Ash of the Low King", teaser: "A barrow opens under the frost and something remembers your name.", adventures: 15, tone: "Grim", badgeTone: "danger" },
+    ];
+
+    return {
+      markStyle: {
+        width: 30, height: 30, borderRadius: 10, display: "grid", placeItems: "center",
+        background: "var(--accent-quiet)", border: "1px solid rgba(232,169,74,.34)",
+      },
+      userMenuOpen: this.state.userMenuOpen,
+      toggleUserMenu: () => this.setState(s => ({ userMenuOpen: !s.userMenuOpen })),
+      signOut: () => this.setState({ userMenuOpen: false }),
+      mainStyle: { flex: 1, padding: mobile ? "20px 16px 40px" : tablet ? "26px 24px 48px" : "34px 40px 56px" },
+      welcomeStyle: { margin: 0, font: `700 ${mobile ? "1.75rem" : "2rem"}/1.2 Alegreya, Georgia, serif` },
+      ctaRowStyle: {
+        display: "flex", gap: 16, alignItems: mobile ? "stretch" : "center",
+        justifyContent: "space-between", flexDirection: mobile ? "column" : "row",
+      },
+      ctaFullWidth: mobile,
+      pickerGridStyle: {
+        display: "grid", gap: 12,
+        gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fit, minmax(240px, 1fr))",
+        gridAutoRows: "max-content", alignContent: "start",
+        maxHeight: mobile ? "52vh" : "58vh", overflow: "auto", paddingRight: 2,
+      },
+      dialogWidth: mobile ? 420 : 720,
+      showArchivedNote: filter === "Archived",
+      filters: ["In progress", "New", "Archived"].map(label => ({
+        label, selected: filter === label, onClick: () => this.setState({ filter: label }),
+      })),
+      campaigns,
+      catalog: catalog.map(p => ({
+        ...p,
+        onSelect: () => this.select(p),
+        style: {
+          borderRadius: "var(--radius-organic)", overflow: "hidden", cursor: "pointer",
+          background: "var(--surface-card)",
+          border: `1px solid ${this.state.creating === p.title ? "rgba(232,169,74,.55)" : "var(--border-soft)"}`,
+          boxShadow: this.state.creating === p.title ? "var(--glow-lantern)" : "none",
+          transition: "var(--transition-control)",
+        },
+      })),
+      pickerOpen: this.state.pickerOpen,
+      openPicker: () => this.setState({ pickerOpen: true }),
+      closePicker: () => this.setState({ pickerOpen: false, creating: null }),
+      creating: !!this.state.creating,
+      creatingLabel: this.state.creating ? `Rolling up "${this.state.creating}" — taking you to the table.` : "",
+    };
+  }
+}
+
+</script>
+</body>
+</html>

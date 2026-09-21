@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><script src="./ds-base.js"></script><style>body{margin:0;background:#0B0E09}a{color:#E8A94A}a:hover{color:#F0C078}</style></helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;font-family:'Alegreya Sans',system-ui,sans-serif;color:#F2ECDE;background:#0B0E09;background-image:radial-gradient(90% 60% at 0% 0%, rgba(110,145,66,.10), transparent 60%)">
+
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:1px solid rgba(226,214,186,.08);background:#12160F;position:sticky;top:0;z-index:5">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0">
+      <a href="Dashboard.dc.html" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:#9E947F;font-size:.875rem">
+        <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Icon" name="chevron-left" size="{{ 16 }}" hint-size="16px,16px"></x-import>Campaigns
+      </a>
+    </div>
+    <span style="width:34px;height:34px;border-radius:999px;background:var(--surface-timber);border:1px solid var(--border-timber);display:grid;place-items:center;font-family:'Alegreya SC',Georgia,serif;font-size:.8125rem;color:#E2D6BA">M</span>
+  </header>
+
+  <main style="{{ mainStyle }}">
+    <div style="max-width:1080px;margin:0 auto;width:100%;display:grid;gap:26px">
+
+      <section style="display:grid;gap:10px;justify-items:start">
+        <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Badge" tone="moss" hint-size="110px,22px">Run created</x-import>
+        <h1 style="{{ titleStyle }}">The Rotting Stump</h1>
+        <p style="margin:0;color:#9E947F;font-size:.9375rem;max-width:62ch;text-wrap:pretty">A pub that hides in the wood and only opens for people it likes. Twelve adventures, one increasingly unreliable landlord.</p>
+      </section>
+
+      <section style="display:grid;gap:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span style="font-family:'Alegreya SC',Georgia,serif;font-size:.78125rem;letter-spacing:.14em;color:#9E947F">PARTY</span>
+          <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.75rem;color:#6E6653">{{ readyLabel }}</span>
+        </div>
+
+        <div style="{{ slotGridStyle }}">
+          <sc-for list="{{ players }}" as="p" hint-placeholder-count="2">
+            <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Card" tone="{{ p.tone }}" padding="16px" hint-size="100%,140px">
+              <div style="display:grid;gap:12px">
+                <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                  <span style="{{ p.avatarStyle }}">{{ p.initial }}</span>
+                  <div style="min-width:0;display:grid;gap:2px">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                      <span style="font-family:Alegreya,Georgia,serif;font-weight:700;font-size:1.0625rem">{{ p.name }}</span>
+                      <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Badge" tone="{{ p.roleTone }}" hint-size="60px,22px">{{ p.role }}</x-import>
+                    </div>
+                    <span style="font-size:.8125rem;color:#9E947F">{{ p.email }}</span>
+                  </div>
+                </div>
+                <div style="{{ p.stateBoxStyle }}">
+                  <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                    <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Icon" name="{{ p.stateIcon }}" size="{{ 16 }}" color="{{ p.stateColor }}" hint-size="16px,16px"></x-import>
+                    <span style="font-size:.875rem;color:#C9BE9F">{{ p.stateLabel }}</span>
+                  </div>
+                  <sc-if value="{{ p.needsCharacter }}" hint-placeholder-val="{{ false }}">
+                    <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Button" variant="{{ p.btnVariant }}" size="sm" icon="feather" onClick="{{ p.onCreate }}" disabled="{{ p.btnDisabled }}" hint-size="130px,34px">{{ p.btnLabel }}</x-import>
+                  </sc-if>
+                </div>
+              </div>
+            </x-import>
+          </sc-for>
+
+          <button type="button" onClick="{{ invite }}" style="{{ inviteStyle }}" style-hover="background:rgba(243,236,222,.05);border-color:rgba(232,169,74,.45)">
+            <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Icon" name="plus" size="{{ 20 }}" color="var(--lantern-300)" hint-size="20px,20px"></x-import>
+            <span style="font-size:.9375rem;color:#E2D6BA">Invite a player</span>
+            <span style="font-size:.8125rem;color:#6E6653">Up to six at the table</span>
+          </button>
+        </div>
+      </section>
+
+      <section style="display:grid;gap:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span style="font-family:'Alegreya SC',Georgia,serif;font-size:.78125rem;letter-spacing:.14em;color:#9E947F">ADVENTURES</span>
+          <sc-if value="{{ blocked }}" hint-placeholder-val="{{ false }}">
+            <span style="font-size:.8125rem;color:#9E947F">Every player needs a character before the first adventure can start.</span>
+          </sc-if>
+        </div>
+
+        <div style="display:grid;gap:10px">
+          <sc-for list="{{ chapters }}" as="ch" hint-placeholder-count="4">
+            <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Card" tone="{{ ch.tone }}" lantern="{{ ch.lantern }}" padding="16px" style="{{ ch.cardStyle }}" hint-size="100%,86px">
+              <div style="{{ ch.rowStyle }}">
+                <span style="{{ ch.numStyle }}">{{ ch.num }}</span>
+                <div style="min-width:0;display:grid;gap:4px;flex:1">
+                  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                    <span style="font-family:Alegreya,Georgia,serif;font-weight:700;font-size:1.125rem">{{ ch.title }}</span>
+                    <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Badge" tone="{{ ch.badgeTone }}" hint-size="80px,22px">{{ ch.state }}</x-import>
+                  </div>
+                  <p style="margin:0;font-size:.875rem;color:#9E947F;text-wrap:pretty">{{ ch.teaser }}</p>
+                </div>
+                <div style="{{ ch.actionStyle }}">
+                  <sc-if value="{{ ch.isNext }}" hint-placeholder-val="{{ true }}">
+                    <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Button" icon="beer" disabled="{{ blocked }}" hint-size="150px,40px">Start adventure</x-import>
+                  </sc-if>
+                  <sc-if value="{{ ch.locked }}" hint-placeholder-val="{{ false }}">
+                    <x-import component-from-global-scope="GoblinPubDesignSystem_dfb40c.Icon" name="lock" size="{{ 16 }}" color="#6E6653" hint-size="16px,16px"></x-import>
+                  </sc-if>
+                </div>
+              </div>
+            </x-import>
+          </sc-for>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = {
+    w: typeof window !== "undefined" ? window.innerWidth : 1200,
+    players: [
+      { name: "Maeve Corrigan", email: "maeve@goblinpub.app", role: "Owner", invited: false, character: null },
+    ],
+  };
+
+  componentDidMount() {
+    this._onResize = () => this.setState({ w: window.innerWidth });
+    window.addEventListener("resize", this._onResize);
+  }
+  componentWillUnmount() { window.removeEventListener("resize", this._onResize); }
+
+  invite() {
+    const pool = [
+      { name: "Tam Oakley", email: "tam@oakley.net" },
+      { name: "Ruaidhrí Banks", email: "r.banks@post.ie" },
+      { name: "Jo Feather", email: "jo@feather.co" },
+      { name: "Sena Vale", email: "sena@vale.dev" },
+      { name: "Ollie Brack", email: "ollie@brack.io" },
+    ];
+    const next = pool[this.state.players.length - 1];
+    if (!next) return;
+    this.setState(s => ({ players: [...s.players, { ...next, role: "Invited", invited: true, character: null }] }));
+  }
+
+  createCharacter(i) {
+    const names = ["Brakka Nine-Fingers · Goblin Rogue", "Ysolde Ashwake · Human Cleric", "Murk · Half-orc Druid", "Pell Tumbleweed · Halfling Bard", "Sorrel Quist · Elf Ranger", "Doon · Dwarf Fighter"];
+    this.setState(s => ({ players: s.players.map((p, j) => j === i ? { ...p, character: names[i] } : p) }));
+  }
+
+  renderVals() {
+    const w = this.state.w;
+    const mobile = w < 720, tablet = w >= 720 && w < 1080;
+    const list = this.state.players;
+    const ready = list.filter(p => p.character).length;
+    const blocked = ready < list.length;
+
+    const chapters = [
+      { num: "I", title: "A door in the wrong wood", teaser: "The party finds the Stump, and the Stump decides whether it was found." },
+      { num: "II", title: "The barrel argument", teaser: "Three goblins, one barrel, and a recipe nobody wants written down." },
+      { num: "III", title: "Debts of the landlord", teaser: "Somebody upstream has been paid to forget the pub exists." },
+      { num: "IV", title: "The wet crack", teaser: "Locked until the party finishes the third adventure." },
+    ].map((c, i) => {
+      const done = false, isNext = i === 0, locked = i > 0;
+      return {
+        ...c,
+        isNext, locked,
+        tone: isNext ? "timber" : "sunken",
+        lantern: isNext,
+        state: isNext ? (blocked ? "Waiting on party" : "Next up") : "Locked",
+        badgeTone: isNext ? (blocked ? "neutral" : "accent") : "neutral",
+        cardStyle: { opacity: locked ? 0.6 : 1 },
+        rowStyle: { display: "flex", gap: mobile ? 12 : 16, alignItems: mobile ? "flex-start" : "center", flexWrap: mobile ? "wrap" : "nowrap" },
+        numStyle: {
+          width: 44, height: 44, flex: "0 0 auto", borderRadius: 14, display: "grid", placeItems: "center",
+          fontFamily: "Alegreya, Georgia, serif", fontSize: "1.0625rem", color: isNext ? "#E8A94A" : "#6E6653",
+          background: "var(--surface-inset)", border: "1px solid var(--border-soft)",
+        },
+        actionStyle: { flex: mobile ? "1 1 100%" : "0 0 auto", display: "flex", justifyContent: mobile ? "flex-start" : "flex-end", alignItems: "center" },
+      };
+    });
+
+    return {
+      mainStyle: { flex: 1, padding: mobile ? "20px 16px 44px" : tablet ? "26px 24px 52px" : "34px 40px 60px" },
+      titleStyle: { margin: 0, font: `700 ${mobile ? "1.75rem" : "2.25rem"}/1.15 Alegreya, Georgia, serif` },
+      slotGridStyle: { display: "grid", gap: 12, gridTemplateColumns: mobile ? "1fr" : "repeat(auto-fit, minmax(300px, 1fr))", alignItems: "start" },
+      readyLabel: `${ready} of ${list.length} characters ready`,
+      blocked,
+      players: list.map((p, i) => ({
+        ...p,
+        initial: p.name.charAt(0),
+        tone: p.character ? "default" : "sunken",
+        roleTone: p.role === "Owner" ? "accent" : "neutral",
+        avatarStyle: {
+          width: 40, height: 40, flex: "0 0 auto", borderRadius: 999, display: "grid", placeItems: "center",
+          fontFamily: "'Alegreya SC', Georgia, serif", fontSize: ".9375rem", color: "#E2D6BA",
+          background: "var(--surface-timber)", border: "1px solid var(--border-timber)",
+        },
+        stateBoxStyle: {
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
+          padding: "10px 12px", borderRadius: 14,
+          background: p.character ? "var(--accent-secondary-quiet)" : "var(--surface-inset)",
+          border: `1px solid ${p.character ? "rgba(143,178,92,.34)" : "var(--border-hairline)"}`,
+        },
+        needsCharacter: !p.character,
+        stateIcon: p.character ? "shield" : "feather",
+        stateColor: p.character ? "var(--moss-300)" : "#9E947F",
+        stateLabel: p.character ? p.character : p.invited ? "Invite sent · no character yet" : "No character yet",
+        btnVariant: p.invited ? "secondary" : "outline",
+        btnLabel: p.invited ? "Remind" : "Create character",
+        btnDisabled: false,
+        onCreate: () => this.createCharacter(i),
+      })),
+      invite: () => this.invite(),
+      inviteStyle: {
+        display: "grid", justifyItems: "center", alignContent: "center", gap: 6,
+        minHeight: 150, padding: 20, cursor: "pointer",
+        borderRadius: "var(--radius-organic)", background: "transparent",
+        border: "1px dashed rgba(226,214,186,.24)", transition: "var(--transition-control)",
+      },
+      chapters,
+    };
+  }
+}
+
+</script>
+</body>
+</html>
