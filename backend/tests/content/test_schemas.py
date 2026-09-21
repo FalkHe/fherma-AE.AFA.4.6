@@ -164,16 +164,31 @@ def test_fixture_template_rejects_missing_checks_key_c6():
 # --- 7: FixtureCheck.dc bounds -------------------------------------------------
 
 
-@pytest.mark.parametrize("bad_dc", [0, 31])
+@pytest.mark.parametrize("bad_dc", [4, 31])
 def test_fixture_check_dc_out_of_bounds_rejected_c7(bad_dc):
     with pytest.raises(ValidationError):
         schemas.FixtureCheck(action="do it", dc=bad_dc, success="it happens")
 
 
-@pytest.mark.parametrize("good_dc", [1, 30])
+@pytest.mark.parametrize("good_dc", [5, 30])
 def test_fixture_check_dc_bounds_accepted_c7(good_dc):
     check = schemas.FixtureCheck(action="do it", dc=good_dc, success="it happens")
     assert check.dc == good_dc
+
+
+# --- AC5: the SRD's difficulty floor -- FixtureCheck.dc and Secret.dc ----------
+
+
+@pytest.mark.parametrize("bad_dc", [4, 31])
+def test_secret_dc_out_of_bounds_rejected_ac5(bad_dc):
+    with pytest.raises(ValidationError):
+        schemas.Secret(fact="A hidden latch", dc=bad_dc, discovered_by="a search")
+
+
+@pytest.mark.parametrize("good_dc", [5, 30])
+def test_secret_dc_bounds_accepted_ac5(good_dc):
+    secret = schemas.Secret(fact="A hidden latch", dc=good_dc, discovered_by="a search")
+    assert secret.dc == good_dc
 
 
 # --- 8: Carried is not recursive -----------------------------------------------
