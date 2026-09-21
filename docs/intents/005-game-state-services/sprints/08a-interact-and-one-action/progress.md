@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-21
 updated: 2026-09-21
-stage: draft
+stage: done
 ---
 # Progress: Sprint 08a
 
@@ -39,3 +39,12 @@ Status: `open | running | done | failed`
 <none yet>
 
 ## Verify
+
+Round 1: approve — AC1 and AC3 both OK, proven by mutation rather than by reading: the verifier broke the action
+check itself, the success filter, the turn scoping, the actor filter and the name filter in turn, and a test
+caught each; adding `drop` to the action set fails its dedicated test, so 08b cannot regress that ruling
+silently. It also injected a stray column write into `interact` and watched the no-change snapshot catch it,
+removed the refusal commit and watched five tests across three files fail, and confirmed WI2's one-line
+adjustment to a WI1 test changed only the actor id, leaving its assertions intact.
+
+`attack` sits in the action set as a string compared against recorded entries, so sprint 09 needs no edit here.

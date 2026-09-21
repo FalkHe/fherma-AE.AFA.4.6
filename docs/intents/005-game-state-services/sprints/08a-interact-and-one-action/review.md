@@ -18,10 +18,10 @@ gets one action per turn.
 ## How to check it
 
 - Cutting through the thorn screen with a good roll succeeds; so does carrying what gets past it.
-- An action the author never wrote, a check needing a roll when none was given, and a roll made for something
-  else are each refused, recorded for the DM only, with nothing changed.
+- An unwritten action, a check needing a roll when none was given, and a roll made for something else are each
+  refused, recorded for the DM only, with nothing changed.
 - A creature that has already acted this turn is refused; in a new turn it can act again.
-- A refused attempt costs nothing. Dropping, walking through an exit and rolling dice are free.
+- A refused attempt costs nothing. Dropping, exits and rolling dice are free.
 
 ## Heads-up
 
@@ -35,3 +35,10 @@ gets one action per turn.
 Brief: docs/intents/005-game-state-services/sprints/08a-interact-and-one-action/brief.md
 
 ## Verdict
+
+Round 1: approve — the things standing in a scene can now be dealt with in the ways their author wrote them: a
+good enough roll gets through, and so does carrying the right tool with no roll at all, while an action the
+author never wrote, a check missing the roll it needs, and a roll made for something else are each refused and
+noted for the DM, with nothing in the world changed either way. A creature gets one action a turn, read back
+from the transcript rather than counted anywhere, and a refused attempt costs it nothing — dropping stays free,
+as you ruled, and a test holds that in place.
