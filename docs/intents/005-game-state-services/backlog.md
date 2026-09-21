@@ -24,15 +24,21 @@ route reaches yet — as `@pytest.mark.database` acceptance tests under `make ba
 | 05b | Implement `app playthrough cost` and the SSE `updated` signal `GET …/stream` | 05a | #33 | done |
 | 06a | Implement `enter_adventure` (placement, `adventure_started`) and its route | 01, 04, 05a | #26 | done |
 | 06b | Implement `use_exit` (scene move / adventure end / campaign finish) and its recorded refusal | 06a | #34 | done |
-| 07 | Implement `dice.py`, formula derivation, `request_player_roll`/`resolve_roll_request`/`roll`/`passive_check`, `resolve_check`/`resolve_save`, single consumption, `awaiting`, `app playthrough roll` | 05a | #27 | running |
-| 08 | Implement `interact`, `take`/`drop`/`give`, the one-action-per-turn count, `use_item` seam | 06b, 07 | #28 | open |
-| 09 | Implement `attack`, `damage`, `roll_initiative` as events-only combat; prove no combat state exists | 06b, 07 | #29 | open |
+| 07a | Implement `dice.py`, formula derivation, `request_player_roll`/`resolve_roll_request`/`roll`/`passive_check`, `ask_player`, `app playthrough roll`; raise the authored difficulty floor to the SRD's own | 05a | #27 | done |
+| 07b | Implement `resolve_check`/`resolve_save`, single consumption and `awaiting` on the events read | 07a | #35 | running |
+| 08 | Implement `interact`, `take`/`drop`/`give`, the one-action-per-turn count, `use_item` seam | 06b, 07b | #28 | open |
+| 09 | Implement `attack`, `damage`, `roll_initiative` as events-only combat; prove no combat state exists | 06b, 07b | #29 | open |
 
 Outcomes — the one verifiable statement per sprint — live in each `sprints/NN-*/brief.md` (`## Outcome`).
 
 ## Notes
 
-- Parallelism: 01 ‖ 02 · 06a ‖ 07 (after 05a) · 08 ‖ 09.
+- Parallelism: 01 ‖ 02 · 06a ‖ 07a (after 05a) · 08 ‖ 09.
+- **07 was split into 07a and 07b**, the largest sprint in the intent: a dice module, derivation for six kinds,
+  four roll producers, a consumption rule, a change to an already-shipped response and a command. 07a derives and
+  records a roll; 07b spends it once. Two rulings from the product owner ride with it: the SRD's difficulty table
+  binds authored content as well as the DM (07a, AC5), and a monster's attack is chosen by the DM by name and
+  derived from its stat block.
 - **06 was split into 06a and 06b** at the mechanic boundary, on the precedent set for 05: entering an adventure
   and using an exit are two mechanics, and one sprint carried both plus a route, four error classes and two
   positioning statements. 06b needs 06a.

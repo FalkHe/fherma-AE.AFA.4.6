@@ -12,14 +12,17 @@ playthrough".
 Today the module ships its five tables and their migrations, plus the surface
 that starts a campaign run, gives it its character, renames it, reads it
 back, enters its next adventure, moves whoever is acting through an exit,
-appends to its transcript, reads that transcript back, reports what it has
-cost and puts the run away (§8): a service of twelve functions behind nine
-authenticated endpoints, plus one command run by hand rather than an
-endpoint (§11). The sprint that added entering an adventure deliberately
-stopped there, leaving scene movement, an adventure's completion and the
-game's own end for the next one; this document now describes that
-lifecycle too, exactly as far as it reaches (§9) — a tool layer letting the
-Dungeon Master call it remains later work.
+derives and records a roll, appends to its transcript, reads that
+transcript back, reports what it has cost and puts the run away (§8): a
+service of seventeen functions behind nine authenticated endpoints, plus
+two commands run by hand rather than an endpoint (§11, §13). The sprint
+that added entering an adventure deliberately stopped there, leaving scene
+movement, an adventure's completion and the game's own end for the next
+one; this document now describes that lifecycle too, exactly as far as it
+reaches (§9) — a tool layer letting the Dungeon Master call it remains
+later work. A roll is the same story one layer down: this document
+describes how one is worked out and set down (§13), and stops exactly
+where spending it — deciding pass or fail — is not yet built.
 
 ## 1. What the module owns, and what it does not
 
@@ -582,3 +585,61 @@ player who may not read this run is refused the same way they would be
 refused anywhere else in this module, as an ordinary error, rather than being
 handed a connection that opens and then goes silent for reasons they cannot
 see.
+
+## 13. A roll is derived, never handed a number
+
+**The server rolls; nobody hands it a number.** Every roll is worked out
+from exactly two things: what kind of roll it is, and who is rolling. An
+attack uses the weapon's own to-hit; damage uses that same weapon's damage;
+an ability check or a saving throw uses the modifier of whichever ability is
+named; initiative always uses Dexterity, no matter what else is asked for.
+One kind stands apart — a **custom** roll, whose expression is given
+outright rather than derived from anything — and a custom roll can never
+also carry a derived bonus: a roll is one or the other, never both. This is
+not a rule kept by care. None of the functions below takes a parameter
+named `formula`, `modifier`, `bonus`, `faces` or `total` — there is no
+argument through which a number could be passed in at all, worth saying
+plainly, because it is the reason the Dungeon Master cannot cheat a roll,
+on purpose or by accident.
+
+**A monster's attack belongs to the monster, not to an item it carries.** A
+creature keeps its own attacks on its own stat block, and a creature may
+have more than one; only a player's own weapon supplies an attack from an
+item instead. Either way, the Dungeon Master names *which* attack, by name,
+never by position — a stat block with more than one attack leaves no other
+way to say which was meant — and the server still derives every number
+that follows from it. The Dungeon Master chooses the intent; the server
+still owns the arithmetic.
+
+**Ability modifiers follow the SRD's own table**: a score of 10 or 11
+carries no modifier at all, and every two points above or below moves the
+modifier by one — the same rule the content module's own difficulty
+numbers already assume (`docs/modules/content.md`).
+
+**Four ways a roll happens.**
+
+- *Asking the player to roll* records the request: what kind of roll it is,
+  who it is for, and the formula the server derived for them — nothing
+  resembling a result yet. The player's own click, later, is what answers
+  it, and answering re-uses the very formula the request already stored
+  rather than working it out a second time, so nobody is quietly promised
+  one formula and given a roll made against another.
+- *Rolling outright* does both steps in the same breath — deriving and
+  rolling at once — and is how the Dungeon Master rolls on a creature's
+  behalf, or makes a roll the player is not meant to see at all.
+- *A passive check* is neither of those: it is settled without touching a
+  single die, and is recorded for the Dungeon Master alone.
+- *Asking a question* is its own kind of entry, and not a roll at all: the
+  Dungeon Master puts something to the player in plain words, and the
+  transcript records exactly that.
+
+**What a roll records**: the individual dice as they actually fell, the
+modifier that was added, and the total — nothing is ever re-rolled or
+re-derived afterwards. A transcript can always be replayed from what it
+already stored, never by working the numbers out again.
+
+**A roll is recorded at the visibility its own request carried.** A roll
+the Dungeon Master asked for in secret stays the Dungeon Master's; nothing
+later widens or narrows who may see it. Whether that roll passed or failed
+is deliberately not part of it — that judgement belongs to whichever
+mechanic goes on to spend the roll, and that mechanic does not exist yet.

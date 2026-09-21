@@ -68,13 +68,26 @@ Owns a player's playthrough of a campaign and who may act in it.
   written. Indexed by `(campaign_run_id, visibility, id)` and by
   `(campaign_run_id, turn_id)`; no unique constraint and no ORM
   relationship.
+- The dice engine (`dice.py`): `roll(expression)` parses `NdM+-K` and rolls
+  it behind an `_rng()` seam (swappable in tests for a scripted sequence of
+  faces), capped at 20 dice of at most 100 faces, raising
+  `InvalidDiceExpressionError` (`VALIDATION_ERROR`) naming the offending
+  expression on anything else. `derive_formula(kind, actor, context, *,
+  campaign_id, version)` maps a `RollKind` and an actor to the formula that
+  kind implies: an item's or a stat block's own attack (chosen by name
+  through `context["attack"]`, never by position), an ability's own
+  modifier (SRD floor division) for `ability_check` / `saving_throw`,
+  Dexterity for `initiative`, or, for `custom` alone, `context["expression"]`
+  verbatim. Neither function has a `formula`, `modifier`, `bonus`, `faces`
+  or `total` parameter — there is no argument through which a caller could
+  pass one in.
 
 ## Surface
 
 Nine endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring
-an authenticated caller (`POST` and `PATCH` are also CSRF-guarded). Cost has
-no endpoint at all — see the CLI command and the note below the service
-list.
+an authenticated caller (`POST` and `PATCH` are also CSRF-guarded). Cost and
+rolling both have no endpoint at all — see the CLI commands and the notes
+below the service list.
 
 - `POST /api/v1/playthrough/campaign` with `{"campaignId": …}` — starts a
   campaign run, answering `201` and the run.
@@ -179,6 +192,26 @@ Service functions (`service.py`), called as `service.f(...)`:
   successful outcomes also append a DM-visible `tool_call`,
   `result: "ok"`, and commit once. Full behaviour is
   `docs/modules/playthrough.md` §9.
+- `request_player_roll` — derives the formula from `kind` and the actor via
+  `dice.derive_formula`, then appends a player-visible `roll_requested`
+  event naming the kind, the actor and that formula. No dice are rolled and
+  no total exists yet — only the request is on record.
+- `resolve_roll_request` — answers a `roll_requested` event by id: re-uses
+  the formula that event already stored rather than deriving it again,
+  rolls it through `dice.roll`, and appends the resulting `roll` event —
+  dice, modifier and total — at the same visibility the request carried.
+- `roll` — derives, rolls and appends the `roll` event in one call, `dm`
+  visibility unless told otherwise; the path for a creature's own roll, or
+  any roll the player must not see. Writes its own `roll_requested` event
+  first, so the `roll` it appends still points back to a request, exactly
+  as `resolve_roll_request`'s does.
+- `passive_check` — no dice at all: adds the named ability's modifier to
+  `10` and weighs the result against `dc`, returning the pass/fail outcome
+  directly and appending one DM-visible `tool_call` event carrying that
+  outcome, with no `faces` anywhere in it.
+- `ask_player` — appends a player-visible `question` event carrying the
+  text asked and the options offered; the next `player_action` is expected
+  to answer it.
 - `_require_member` — internal; every function above that takes a run id
   calls it first to check membership before doing anything else.
 - `_require_writable` — internal; raises `RunArchivedError` when the run is
@@ -220,6 +253,19 @@ turnless group), or `f"{exc.code}: {exc}"` to stderr and exit `1` when the
 caller is not a member (`NOT_FOUND`). A test asserts no route exposes cost,
 so a future endpoint added elsewhere in the app cannot reintroduce it by
 accident.
+
+Rolling has **no HTTP route either, for the same reason `use_exit` has
+none**: the only thing meant to call `request_player_roll`,
+`resolve_roll_request`, `roll`, `passive_check` and `ask_player` is the
+Dungeon Master's own tool layer, a later phase's work. Until that layer
+exists, `app
+playthrough roll <kind> --actor <object-id> --user <user-id>` (Typer,
+`playthrough/cli.py`) exercises the same derivation and roll from the
+terminal — one flag per context key the chosen kind needs (`--ability`,
+`--item`, `--attack`, or `--expression` for `custom`) — and prints the
+kind, the actor, the formula, the dice, the modifier and the total, or
+fails exactly like `app playthrough cost` does on a bad expression: the
+offending text to stderr and exit `1`.
 
 The stream (`GET …/stream`, above) polls `service.latest_event_id` on an
 interval, sends the `updated` message when it has changed since the last

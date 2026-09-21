@@ -186,7 +186,7 @@ One entry of a `FixtureTemplate.checks` list.
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
 | `action` | prose string | yes | — | What a character *does*, in plain prose — not a skill enum |
-| `dc` | integer, 1–30 | yes | — | The authored target number |
+| `dc` | integer, 5–30 | yes | — | The authored target number |
 | `success` | prose string | yes | — | What is true afterwards — a fact, never narration to be recited |
 | `bypassed_by` | list of content ids | no | `[]` | The ids of the **item**-kind templates that make this check succeed with no roll. Holding any one of them is enough. `[]` means nothing bypasses it |
 
@@ -206,7 +206,7 @@ earn.
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
 | `fact` | prose string | yes | — | What is true but not apparent |
-| `dc` | integer, 1–30 | yes | — | The target number to discover it |
+| `dc` | integer, 5–30 | yes | — | The target number to discover it |
 | `discovered_by` | prose string | yes | — | Prose describing the ability/skill and the action that reveals it, e.g. `"a Wisdom (Perception) check on entering, or searching the crates"` — not a skill enum |
 
 `hidden` and `dc` are DM-only and must never be shown to the player.
@@ -346,8 +346,16 @@ else, so the two can never disagree.
 - **Every id must match `^[a-z0-9]+(-[a-z0-9]+)*$`.**
 - **Every prose string is stripped of surrounding whitespace and must then be
   non-empty.** `"   "` is rejected — it strips to the empty string.
-- **Numeric bounds**: every ability score is 1–30; every `dc` is 1–30; `max_hp`
+- **Numeric bounds**: every ability score is 1–30; every `dc` is 5–30; `max_hp`
   and `armour_class` are ≥1; `Placement.count` and `Carried.count` are ≥1.
+
+**Why a `dc` floor of 5, not 1.** The 5–30 range is the SRD 5.1 *Typical
+Difficulty Classes* table — very easy 5, easy 10, moderate 15, hard 20, very
+hard 25, nearly impossible 30 — and it is the same range the DM is bound to
+when it picks a number for an improvised check. An authored check below 5
+would name a difficulty the rules themselves do not recognise, so content
+loading refuses it rather than shipping a check the DM could never resolve
+consistently with its own improvised ones.
 - **List minimums**: `Scene.truth` needs at least one entry; `Adventure.scenes`,
   `Campaign.adventures` and `Campaign.object_templates` need at least one
   entry each; `FixtureTemplate.checks` needs at least one entry.
