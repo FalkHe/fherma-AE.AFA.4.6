@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-21
 updated: 2026-09-21
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/39
 ---
 # Review: Sprint 02 — recall by meaning, and a recap on return
 
