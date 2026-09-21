@@ -9,12 +9,12 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| 4 | open | |
-| 5 | open | |
-| qa | open | |
+| 1 | done | `dice.py`, the `_rng` seam, `derive_formula` for six kinds |
+| 2 | done | the five producers, sharing `use_exit`'s gate order |
+| 3 | done | authored difficulty floor raised to 5, guide and tests |
+| 4 | done | `app playthrough roll`, printing the derivation |
+| 5 | done | module doc §13 and README |
+| qa | done | 4 acceptance tests |
 
 Status: `open | running | done | failed`
 
@@ -36,6 +36,10 @@ Status: `open | running | done | failed`
 - Called, agent-level: `passive_check` records a `tool_call` at `dm` rather than a `roll`, since a `roll` needs
   faces and would be consumable · `_acted_this_turn` belongs to sprint 08 · a dice expression is capped at 20 dice
   of at most 100 faces.
+
+- One `# noqa: B008` was added, on the `roll` command's `kind` argument alone. Ruff flags that one call and no
+  other of the same shape, because `RollKind` is a `Literal` alias rather than a builtin and its exemption check
+  does not resolve aliases. Documented in place, narrowest possible scope.
 
 ## Backlog proposals
 
