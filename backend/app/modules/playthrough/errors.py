@@ -265,6 +265,42 @@ class AlreadyActedError(PlaythroughError):
         super().__init__(f"already acted this turn: {actor_id}")
 
 
+class ObjectNotReachableError(PlaythroughError):
+    """`item_id` cannot be moved by this attempt right now.
+
+    Covers every reachability refusal `take`, `drop` and `give` share: the
+    item lies in another scene, it is carried by a creature other than the
+    actor asking, the actor itself has no current scene to act from, or --
+    for `give` specifically -- the item is not currently carried by the
+    giver, or the receiver is not a creature standing in the giver's own
+    scene. `take` alone widens this beyond a bare scene match: an item
+    whose owner is a non-creature object (a fixture such as a container)
+    standing in the actor's scene is reachable too (AC5). Always raised
+    after the refusal is already recorded as a `tool_call` event and
+    committed."""
+
+    code = ErrorCode.OBJECT_NOT_REACHABLE
+
+    def __init__(self, item_id: str) -> None:
+        self.item_id = item_id
+        super().__init__(f"object not reachable: {item_id}")
+
+
+class ItemNotConsumableError(PlaythroughError):
+    """`use_item` refuses every current item template -- `ItemTemplate`
+    (`content/schemas.py`) carries no field saying an item is consumable
+    yet, so the refusal is unconditional today. A later field would only
+    need a branch inserted before this refusal fires; nothing else about
+    the mechanic would change. Always raised after the refusal is already
+    recorded as a `tool_call` event and committed."""
+
+    code = ErrorCode.ITEM_NOT_CONSUMABLE
+
+    def __init__(self, item_id: str) -> None:
+        self.item_id = item_id
+        super().__init__(f"item not consumable: {item_id}")
+
+
 class InvalidEventPayloadError(PlaythroughError):
     """`append_event` was asked to write a `type` or `visibility` it does
     not know, or a `payload` that fails the model `EVENT_PAYLOADS[type]`
