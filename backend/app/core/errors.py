@@ -35,6 +35,7 @@ class ErrorCode(StrEnum):
     ALREADY_ACTED = "ALREADY_ACTED"
     OBJECT_NOT_REACHABLE = "OBJECT_NOT_REACHABLE"
     ITEM_NOT_CONSUMABLE = "ITEM_NOT_CONSUMABLE"
+    HIT_NOT_USABLE = "HIT_NOT_USABLE"
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
@@ -75,6 +76,7 @@ _ERROR_INFO: dict[ErrorCode, tuple[int, str]] = {
     ErrorCode.ALREADY_ACTED: (409, "This creature has already acted this turn."),
     ErrorCode.OBJECT_NOT_REACHABLE: (409, "That object is not reachable from here."),
     ErrorCode.ITEM_NOT_CONSUMABLE: (409, "That item cannot be used."),
+    ErrorCode.HIT_NOT_USABLE: (409, "That hit cannot be used here."),
     ErrorCode.NOT_FOUND: (404, "Resource not found."),
     ErrorCode.METHOD_NOT_ALLOWED: (405, "Method not allowed."),
     ErrorCode.INTERNAL_ERROR: (500, "An unexpected error occurred."),

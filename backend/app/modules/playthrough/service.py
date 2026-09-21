@@ -31,6 +31,7 @@ from app.modules.playthrough.errors import (
     CharacterExistsError,
     ExitNotAvailableError,
     GameObjectNotFoundError,
+    HitNotUsableError,
     InvalidDcError,
     InvalidEventPayloadError,
     InvalidRunStatusError,
@@ -1660,6 +1661,395 @@ async def use_item(
         reason="no item is consumable yet",
     )
     raise ItemNotConsumableError(item_id)
+
+
+async def _refuse_attack(
+    db: AsyncSession,
+    *,
+    run_id: str,
+    actor_id: str,
+    target_id: str,
+    item_id: str | None,
+    roll_id: str,
+    turn_id: str | None,
+    reason: str,
+) -> None:
+    """Records an `attack` refusal where only the DM sees it (← D11) and
+    commits it alone -- `_refuse_interact`'s own pattern: `append_event`
+    only flushes, and the caller's rollback on the way to raising would
+    erase the record. `itemId` is named in `args` only when one was given
+    (a monster's attack from its own stat block never carries one);
+    `rollId` is always named, `roll_id` being a required argument of
+    `attack` itself, unlike `interact`'s optional one.
+    """
+    args: dict[str, Any] = {"actorId": actor_id, "targetId": target_id}
+    if item_id is not None:
+        args["itemId"] = item_id
+    args["rollId"] = roll_id
+    await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "attack",
+            "args": args,
+            "roll_ids": [roll_id],
+            "result": "refused",
+            "outcome": {"reason": reason},
+        },
+    )
+    await db.commit()
+
+
+async def attack(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    actor_id: str,
+    target_id: str,
+    item_id: str | None = None,
+    roll_id: str,
+    turn_id: str | None = None,
+) -> str:
+    """Measures an `attack` roll against `target_id`'s own armour class,
+    appending the outcome on a `tool_call` -- never a row (WI1, AC1):
+    nothing about a swing landing or missing changes any `objects` row,
+    only `damage` ever does that.
+
+    `item_id` is optional: a monster's attack is read from its own stat
+    block (`dice.derive_formula`'s own rule), never from an item it
+    carries, so `_attacks_for` was already given `context["item_id"] =
+    None` when the roll this call consumes was made.
+
+    Gate order, this module's own shared shape: `_resolve_actor_and_run`
+    -> `_already_acted` (`ALREADY_ACTED`, `attack` already one of
+    `_ACTION_NAMES`) -> `target_id` and, when given, `item_id` loaded with
+    no run filter first, exactly `take`'s own `_load_run_object` (← D12):
+    unknown or foreign either way raises `GameObjectNotFoundError` before
+    any refusal is recorded -> both actor and target sharing one scene
+    (`OBJECT_NOT_REACHABLE` otherwise) -> the item, when named, carried by
+    the actor (`OBJECT_NOT_REACHABLE` otherwise) -> the roll consumed at
+    `kind="attack"` (`ROLL_NOT_USABLE` on a wrong kind, another turn, or
+    one already spent). Each of those three refusals is recorded and
+    committed before the matching error is raised (← D11).
+
+    A roll's own `faces` are always exactly one die -- `derive_formula`
+    only ever hands an attack a single `1d20{+-K}` -- so a **natural 20**
+    is legible as `faces == [20]` alone, with no re-roll: it crits
+    regardless of what the total would otherwise say against the target's
+    armour class. Otherwise a `hit` when the total reaches the target's
+    `armour_class`, else a `miss`. `tool_call` `ok`: `args {actorId,
+    targetId, itemId?, rollId}`, `roll_ids [roll_id]`, `outcome {outcome,
+    total, natural, armourClass}`.
+    """
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+
+    if await _already_acted(db, run_id=run.id, actor_id=actor_id, turn_id=turn_id):
+        await _refuse_attack(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            target_id=target_id,
+            item_id=item_id,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="actor has already acted this turn",
+        )
+        raise AlreadyActedError(actor_id)
+
+    target = await _load_run_object(db, target_id, run_id=run.id)
+    item = None
+    if item_id is not None:
+        item = await _load_run_object(db, item_id, run_id=run.id)
+
+    same_scene = (
+        actor.scene_id is not None
+        and actor.adventure_run_id == target.adventure_run_id
+        and actor.scene_id == target.scene_id
+    )
+    if not same_scene:
+        await _refuse_attack(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            target_id=target_id,
+            item_id=item_id,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="target is not in the actor's current scene",
+        )
+        raise ObjectNotReachableError(target_id)
+
+    if item is not None and item.owner_object_id != actor.id:
+        await _refuse_attack(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            target_id=target_id,
+            item_id=item_id,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="item is not carried by the actor",
+        )
+        raise ObjectNotReachableError(item_id)
+
+    try:
+        consumed = await _consume_roll(
+            db, run_id=run.id, roll_id=roll_id, kind="attack", turn_id=turn_id
+        )
+    except RollNotUsableError:
+        await _refuse_attack(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            target_id=target_id,
+            item_id=item_id,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="roll already spent, from another turn, or of another kind",
+        )
+        raise
+
+    natural = consumed.payload["faces"][0]
+    total = consumed.payload["total"]
+    armour_class = target.armour_class
+    if natural == 20:
+        outcome_name = "crit"
+    elif total >= armour_class:
+        outcome_name = "hit"
+    else:
+        outcome_name = "miss"
+
+    args: dict[str, Any] = {"actorId": actor_id, "targetId": target_id}
+    if item_id is not None:
+        args["itemId"] = item_id
+    args["rollId"] = roll_id
+
+    await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "attack",
+            "args": args,
+            "roll_ids": [roll_id],
+            "result": "ok",
+            "outcome": {
+                "outcome": outcome_name,
+                "total": total,
+                "natural": natural,
+                "armourClass": armour_class,
+            },
+        },
+    )
+    await db.commit()
+    return outcome_name
+
+
+async def _hit_already_damaged(
+    db: AsyncSession, *, run_id: str, hit_id: str, turn_id: str | None
+) -> bool:
+    """True when some *successful* `damage` `tool_call` in this run-and-
+    turn already named `hit_id` in its `args["hitId"]` -- `_roll_already_
+    spent`'s own shape, one key over (WI1, I2)."""
+    stmt = select(Event.payload).where(Event.campaign_run_id == run_id, Event.type == "tool_call")
+    stmt = stmt.where(Event.turn_id.is_(None) if turn_id is None else Event.turn_id == turn_id)
+    result = await db.execute(stmt)
+    return any(
+        payload["result"] == "ok"
+        and payload["name"] == "damage"
+        and payload["args"].get("hitId") == hit_id
+        for payload in result.scalars().all()
+    )
+
+
+async def _consume_hit(
+    db: AsyncSession, *, run_id: str, hit_id: str, target_id: str, turn_id: str | None
+) -> Event:
+    """Decides whether `hit_id` -- an `attack` `tool_call`'s own event id --
+    may be spent by `damage` (WI1, I2). Unlike `_consume_roll`'s split
+    between "does not exist" (`RollNotFoundError`) and "exists but is not
+    usable" (`RollNotUsableError`), every one of a hit's failure modes
+    collapses into the one new `HitNotUsableError`: a `hit_id` naming
+    nothing, or naming something that is not a `tool_call` at all, is no
+    more usable than one that names a real `attack` from another run, a
+    `miss`, another turn, a mismatched target, or one already spent --
+    there is no resource here to have "not found" independently of being
+    unusable.
+
+    In order: the event exists and belongs to `run_id`; it is `name ==
+    "attack"`, `result == "ok"` and `outcome.outcome` is `hit` or `crit` --
+    a `miss` fails here; its `turn_id` equals `turn_id` (`None` counts as
+    equal to `None`, `_consume_roll`'s own rule); its own recorded
+    `args["targetId"]` equals `target_id` -- the argument is only ever
+    checked against the entry's recorded target, never trusted on its own
+    (WI1); and no earlier *successful* `damage` this turn already named it
+    (`_hit_already_damaged`). Returns the `tool_call` event when every
+    condition holds; never touches the transcript itself -- the caller
+    records the refusal and commits it before re-raising.
+    """
+    result = await db.execute(select(Event).where(Event.id == hit_id))
+    event = result.scalar_one_or_none()
+    if (
+        event is None
+        or event.type != "tool_call"
+        or event.campaign_run_id != run_id
+        or event.payload["name"] != "attack"
+        or event.payload["result"] != "ok"
+        or event.payload["outcome"]["outcome"] not in ("hit", "crit")
+        or event.turn_id != turn_id
+        or event.payload["args"].get("targetId") != target_id
+    ):
+        raise HitNotUsableError(hit_id)
+    if await _hit_already_damaged(db, run_id=run_id, hit_id=hit_id, turn_id=turn_id):
+        raise HitNotUsableError(hit_id)
+    return event
+
+
+async def _refuse_damage(
+    db: AsyncSession,
+    *,
+    run_id: str,
+    target_id: str,
+    roll_id: str,
+    hit_id: str,
+    turn_id: str | None,
+    reason: str,
+) -> None:
+    """Records a `damage` refusal where only the DM sees it (← D11) and
+    commits it alone -- `_refuse_attack`'s own pattern."""
+    await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "damage",
+            "args": {"targetId": target_id, "rollId": roll_id, "hitId": hit_id},
+            "roll_ids": [roll_id],
+            "result": "refused",
+            "outcome": {"reason": reason},
+        },
+    )
+    await db.commit()
+
+
+async def damage(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    target_id: str,
+    roll_id: str,
+    hit_id: str,
+    turn_id: str | None = None,
+) -> int:
+    """Applies the hit `hit_id` named -- an `attack` `tool_call`'s own
+    event id -- to `target_id`, clamped so hit points never fall below 0
+    (WI1, AC2). Returns the hit points actually applied.
+
+    No `actor_id`: unlike every other mechanic in this module, `damage` is
+    anchored on the *target* it wounds, not on whoever struck it (that
+    creature already spent its turn's action on `attack`, and `damage`
+    itself spends none -- it is outside `_ACTION_NAMES` entirely). `run`
+    is therefore resolved the same way `use_exit` resolves its own: load
+    `target_id` with no run filter first (`GameObjectNotFoundError` if
+    unknown, before any refusal can be recorded, ← D12), then gate the run
+    it belongs to (`_require_ready_or_active_run`).
+
+    `hit_id` is then consumed through `_consume_hit`, which alone decides
+    whether it is a landed `attack` of this run and this turn, recorded
+    against this same `target_id`, not already spent -- `HitNotUsableError`
+    / `HIT_NOT_USABLE` on any failure, recorded and committed before
+    re-raising (← D11). Only once the hit itself is usable is `roll_id`
+    consumed at `kind="damage"` (`RollNotUsableError` / `ROLL_NOT_USABLE`
+    on a wrong kind, another turn, or one already spent, recorded and
+    committed the same way).
+
+    The hit points applied are `min(total, current_hp)` -- never more than
+    the target had left. At 0: a creature with no member (`member_id is
+    None`) becomes `is_alive = False`; a character (`member_id` set) stays
+    alive and its `state` is reassigned **whole** from `CharacterState`
+    with `down=True` -- plain JSONB tracks no in-place key set, so the
+    column must be written entire, never mutated. `tool_call` `ok`: `args
+    {targetId, rollId, hitId}`, `roll_ids [roll_id]`, `outcome {rolled,
+    applied, currentHp, isAlive, down}` -- `down` is always present,
+    `False` for anything that is not a character.
+    """
+    target = await _get_game_object(db, target_id)
+    run = await _require_ready_or_active_run(db, run_id=target.campaign_run_id, user_id=user_id)
+
+    try:
+        await _consume_hit(db, run_id=run.id, hit_id=hit_id, target_id=target_id, turn_id=turn_id)
+    except HitNotUsableError:
+        await _refuse_damage(
+            db,
+            run_id=run.id,
+            target_id=target_id,
+            roll_id=roll_id,
+            hit_id=hit_id,
+            turn_id=turn_id,
+            reason="hit is not a landed attack of this run and turn, or was already damaged",
+        )
+        raise
+
+    try:
+        consumed = await _consume_roll(
+            db, run_id=run.id, roll_id=roll_id, kind="damage", turn_id=turn_id
+        )
+    except RollNotUsableError:
+        await _refuse_damage(
+            db,
+            run_id=run.id,
+            target_id=target_id,
+            roll_id=roll_id,
+            hit_id=hit_id,
+            turn_id=turn_id,
+            reason="roll already spent, from another turn, or of another kind",
+        )
+        raise
+
+    total = consumed.payload["total"]
+    applied = min(total, target.current_hp)
+    target.current_hp -= applied
+
+    if target.current_hp == 0:
+        if target.member_id is None:
+            target.is_alive = False
+        else:
+            new_state = CharacterState.model_validate(target.state).model_copy(
+                update={"down": True}
+            )
+            target.state = new_state.model_dump()
+
+    down = target.member_id is not None and bool(target.state.get("down", False))
+
+    await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "damage",
+            "args": {"targetId": target_id, "rollId": roll_id, "hitId": hit_id},
+            "roll_ids": [roll_id],
+            "result": "ok",
+            "outcome": {
+                "rolled": total,
+                "applied": applied,
+                "currentHp": target.current_hp,
+                "isAlive": target.is_alive,
+                "down": down,
+            },
+        },
+    )
+    await db.commit()
+    return applied
 
 
 async def append_event(

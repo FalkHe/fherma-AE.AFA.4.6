@@ -301,6 +301,26 @@ class ItemNotConsumableError(PlaythroughError):
         super().__init__(f"item not consumable: {item_id}")
 
 
+class HitNotUsableError(PlaythroughError):
+    """`hit_id` cannot be spent by `damage`: either no `attack` `tool_call`
+    of this run answers it at all, or the one that does fails one of its
+    usability conditions -- it did not succeed, it landed as a `miss`, it
+    belongs to another turn, its own recorded target does not match the
+    `target_id` argument, or it has already been damaged by an earlier
+    *successful* `damage` this turn. Deliberately one error for every one
+    of those, the way a `custom` roll fails `_consume_roll` for a single
+    reason regardless of which check it is -- the caller is told a hit was
+    not usable, never handed a menu of which specific condition failed.
+    Always raised after the refusal is already recorded as a `tool_call`
+    event and committed (← D11)."""
+
+    code = ErrorCode.HIT_NOT_USABLE
+
+    def __init__(self, hit_id: str) -> None:
+        self.hit_id = hit_id
+        super().__init__(f"hit not usable: {hit_id}")
+
+
 class InvalidEventPayloadError(PlaythroughError):
     """`append_event` was asked to write a `type` or `visibility` it does
     not know, or a `payload` that fails the model `EVENT_PAYLOADS[type]`

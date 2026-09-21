@@ -28,7 +28,7 @@ import os
 import random as random_module
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.errors import ErrorCode
@@ -41,6 +41,7 @@ from app.modules.playthrough.errors import (
     ObjectNotReachableError,
     RollNotUsableError,
 )
+from app.modules.playthrough.models import GameObject
 
 CAMPAIGN_ID = "greenhollow"
 KNIFE_TEMPLATE = "shepherds-knife"
@@ -153,17 +154,18 @@ async def _object_row(db: AsyncSession, object_id: str):
 
 
 async def _set_current_hp(db: AsyncSession, object_id: str, hp: int) -> None:
-    await db.execute(
-        text("UPDATE objects SET current_hp = :hp WHERE id = :id"), {"hp": hp, "id": object_id}
-    )
+    # Through the ORM, on the same identity-mapped instance a caller may
+    # already hold a reference to (e.g. the scenario's own `character`) --
+    # a raw `UPDATE` would leave that instance's cached attribute stale,
+    # since this session's `expire_on_commit` is `False`.
+    obj = (await db.execute(select(GameObject).where(GameObject.id == object_id))).scalar_one()
+    obj.current_hp = hp
     await db.commit()
 
 
 async def _set_armour_class(db: AsyncSession, object_id: str, armour_class: int) -> None:
-    await db.execute(
-        text("UPDATE objects SET armour_class = :ac WHERE id = :id"),
-        {"ac": armour_class, "id": object_id},
-    )
+    obj = (await db.execute(select(GameObject).where(GameObject.id == object_id))).scalar_one()
+    obj.armour_class = armour_class
     await db.commit()
 
 
@@ -579,7 +581,12 @@ async def _hit(db, *, user_id, run_id, actor_id, target_id, item_id, face, turn_
     `tool_call` event id -- `damage`'s `hit_id`."""
     context = {"item_id": KNIFE_TEMPLATE} if item_id is not None else {"attack": "Rusty Shortsword"}
     attack_roll = await _rolled(
-        db, user_id=user_id, actor_id=actor_id, kind="attack", context=context, face=face,
+        db,
+        user_id=user_id,
+        actor_id=actor_id,
+        kind="attack",
+        context=context,
+        face=face,
         turn_id=turn_id,
     )
     await service.attack(
