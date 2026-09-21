@@ -58,6 +58,7 @@ from app.modules.playthrough.models import (
 from app.modules.playthrough.schemas import (
     EVENT_PAYLOADS,
     CharacterState,
+    NarrationRead,
     RollKind,
     RollRequestedPayload,
     RunCost,
@@ -241,9 +242,12 @@ async def list_campaign_runs(db: AsyncSession, *, user_id: str) -> list[Campaign
 
 
 async def _get_run(db: AsyncSession, run_id: str) -> CampaignRun:
-    """The run row itself, once membership is already confirmed -- an
-    unknown id (only reachable if the run was deleted between the
-    membership check and here) raises `CampaignRunNotFoundError` too.
+    """The run row itself. Most callers reach this once membership is
+    already confirmed -- there an unknown id is only reachable if the run
+    was deleted between the membership check and here. The operator reads
+    (`recap`, `recall`, sprint 006/02) call this alone, with no membership
+    check at all, so it doubles as their entire existence gate. Either
+    way, a missing id raises `CampaignRunNotFoundError`.
     """
     result = await db.execute(select(CampaignRun).where(CampaignRun.id == run_id))
     run = result.scalar_one_or_none()
@@ -2378,3 +2382,90 @@ async def latest_event_id(db: AsyncSession, *, user_id: str, run_id: str) -> str
     current_id = result.scalar_one_or_none()
     await db.rollback()
     return current_id
+
+
+async def recap(db: AsyncSession, *, run_id: str, n: int = 5) -> list[NarrationRead]:
+    """The run's `n` most recent `narration` events, oldest first -- no
+    question asked (AC2, sprint 006/02 WI2).
+
+    An operator read, gated on the run's existence alone (`_get_run`
+    first, no `user_id`, no membership check) -- unlike every function
+    above. Picks the newest `n` in SQL (`ORDER BY id DESC LIMIT n`, ids
+    sort in write order the same way `latest_event_id` relies on) and
+    flips them to chronological order in Python, so the newest `n` is
+    always the set returned even when the run has more narration than
+    `n`. No `embedding IS NOT NULL` filter: recency does not care whether
+    a line was encoded, and this makes no embedding call at all. A run
+    with no narration returns `[]`. Neither commits nor rolls back.
+    """
+    await _get_run(db, run_id)
+
+    stmt = (
+        select(Event.id, Event.created_at, Event.payload)
+        .where(Event.campaign_run_id == run_id, Event.type == "narration")
+        .order_by(Event.id.desc())
+        .limit(n)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    return [
+        NarrationRead(id=event_id, created_at=created_at, text=payload.get("text", ""))
+        for event_id, created_at, payload in reversed(rows)
+    ]
+
+
+async def recall(
+    db: AsyncSession, *, run_id: str, query: str, k: int = 5
+) -> list[NarrationRead]:
+    """The `k` narration events from anywhere in the run whose meaning is
+    closest to `query`, closest first -- an answer to a question asked of
+    the whole campaign run, never scoped to whichever adventure is
+    current (AC1, sprint 006/02 WI1).
+
+    An operator read, gated on the run's existence alone (`_get_run`
+    first, no `user_id`, no membership check), exactly like `recap`.
+
+    Embeds `query` exactly once through the core `embed_texts()` seam,
+    off the event loop the same way `append_event`'s own narration
+    encoding is (`asyncio.to_thread`, `llm_service.embed_texts` as a
+    module attribute, never a name import -- AGENTS.md). Any exception
+    from the seam propagates unchanged: unlike a write, where a lost
+    embedding must never lose the narration itself (D4), an operator read
+    that silently answered "no memories" while the encoder is down would
+    be worse than surfacing the failure.
+
+    Orders `narration` events by cosine distance to the query vector
+    (`Event.embedding.cosine_distance`, the `<=>` operator the
+    `ix_events_embedding_narration` partial index serves) and returns the
+    closest `k`. The `where` predicates match that index's own
+    (`type = 'narration' AND embedding IS NOT NULL`) verbatim, so a row
+    that failed to be encoded is never a candidate. No relevance floor:
+    the closest `k` come back regardless of how distant they are.
+    `Event` itself is never selected -- only `id`, `created_at` and
+    `payload` cross out of SQL, so no 1536-float vector ever crosses the
+    wire. A run with no narration returns `[]`. Neither commits nor rolls
+    back.
+    """
+    await _get_run(db, run_id)
+
+    result = await asyncio.to_thread(llm_service.embed_texts, [query])
+    vector = result.vectors[0]
+
+    stmt = (
+        select(Event.id, Event.created_at, Event.payload)
+        .where(
+            Event.campaign_run_id == run_id,
+            Event.type == "narration",
+            Event.embedding.is_not(None),
+        )
+        .order_by(Event.embedding.cosine_distance(vector))
+        .limit(k)
+    )
+    result_rows = await db.execute(stmt)
+    rows = result_rows.all()
+
+    return [
+        NarrationRead(id=event_id, created_at=created_at, text=payload.get("text", ""))
+        for event_id, created_at, payload in rows
+    ]

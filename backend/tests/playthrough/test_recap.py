@@ -13,7 +13,7 @@ wrapped in a single `asyncio.run(...)` per test.
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -73,9 +73,7 @@ def test_ac2_returns_the_newest_n_in_chronological_order_with_no_embedding_call(
     monkeypatch.setattr(service.llm_service, "embed_texts", _boom_embed_texts)
     run = CampaignRun(id=RUN_ID, campaign_id="greenhollow", content_version="v1")
 
-    created = [
-        datetime(2024, 1, 1, hour, tzinfo=timezone.utc) for hour in range(1, 4)
-    ]
+    created = [datetime(2024, 1, 1, hour, tzinfo=UTC) for hour in range(1, 4)]
     # Queued newest-first, exactly as `ORDER BY id DESC LIMIT n` would hand
     # them back -- three rows though only two are asked for, so the
     # oldest of the three is never even in the picture.

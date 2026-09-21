@@ -430,6 +430,13 @@ Service functions (`service.py`), called as `service.f(...)`:
   Checks membership like every other read. Called only from the `app
   playthrough cost` CLI command below — no route calls it, and none is
   meant to.
+- `recap` — a run's `n` most recent `narration` events (default 5), oldest
+  first, no question asked. An operator read gated on the run's existence
+  alone, not membership: `_get_run` first, no `user_id`. Picks the newest
+  `n` by `id DESC LIMIT n`, then flips to chronological order in Python —
+  no `embedding IS NOT NULL` filter and no call to the embedding seam at
+  all. A run with no narration returns `[]`. Reads into `NarrationRead`
+  (`id, createdAt, text`) — deliberately not `EventRead`.
 
 Cost has **no HTTP route anywhere in this module, on purpose**: it is a
 developer's number, not a player's, meant for a developer drawer the
