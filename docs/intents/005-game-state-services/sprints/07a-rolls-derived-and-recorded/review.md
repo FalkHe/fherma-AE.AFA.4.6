@@ -9,11 +9,11 @@ url: –
 
 ## What changed
 
-The game can roll dice, and works out what to roll by itself. A roll comes from two things only — the kind of
-roll and who is rolling: an attack uses the weapon's to-hit, damage its damage, a check or save the ability's
-modifier, initiative Dexterity. The DM cannot hand it a number, and not by agreement: there is no way to pass
-one in. The player can be asked to roll and answer later, the DM can roll outright or in secret, and a passive
-check settles without dice. Every roll is recorded as it fell.
+The game rolls dice and works out what to roll by itself, from two things only — the kind of roll and who is
+rolling. An attack uses the weapon's to-hit, damage its damage, a check or save the ability's modifier,
+initiative Dexterity. The DM cannot hand it a number, and not by agreement: there is no way to pass one in. The
+player can be asked to roll and answer later, the DM can roll outright or in secret, and a passive check settles
+without dice. Every roll is recorded as it fell.
 
 ## How to check it
 
@@ -30,7 +30,7 @@ check settles without dice. Every roll is recorded as it fell.
 - Your ruling that the SRD wins reached outside this sprint's module: content could author a difficulty of 1
   while the rules refused under 5, so the authoring floor is now 5 too. Nothing shipped breaks — Greenhollow's
   checks are 8 to 14 — but it is a content change inside a dice sprint.
-- A monster's attack is named by the DM and derived from its stat block, as you decided.
+- A monster's attack is named by the DM, derived from its stat block, as you decided.
 
 Brief: docs/intents/005-game-state-services/sprints/07a-rolls-derived-and-recorded/brief.md
 
