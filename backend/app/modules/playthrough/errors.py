@@ -174,6 +174,49 @@ class ExitNotAvailableError(PlaythroughError):
         super().__init__(f"exit not available: actor={actor_id} exit={exit_id}")
 
 
+class RollNotFoundError(PlaythroughError):
+    """No `roll` event answers `roll_id` -- either no event at all, or one
+    of a different type. `_get_roll_event` is the only place this can
+    originate; there is no membership context yet, exactly the way
+    `GameObjectNotFoundError` has none for `use_exit` and
+    `RollRequestNotFoundError` has none for `resolve_roll_request`. A roll
+    that belongs to another game answers identically (← D12) -- `_consume_roll`
+    is the other place this can originate, once a run is already known."""
+
+    code = ErrorCode.NOT_FOUND
+
+    def __init__(self, roll_id: str) -> None:
+        self.roll_id = roll_id
+        super().__init__(f"roll not found: {roll_id}")
+
+
+class RollNotUsableError(PlaythroughError):
+    """`roll_id` cannot be spent by this call: it was already spent by an
+    earlier *successful* `tool_call` naming it, it was made in another
+    turn (both untagged counting as equal), or it is of a kind the
+    consuming mechanic does not accept -- a `custom` roll fails every
+    check, deliberately. Always raised after the refusal is already
+    recorded as a `tool_call` event and committed (← D11)."""
+
+    code = ErrorCode.ROLL_NOT_USABLE
+
+    def __init__(self, roll_id: str) -> None:
+        self.roll_id = roll_id
+        super().__init__(f"roll not usable: {roll_id}")
+
+
+class InvalidDcError(PlaythroughError):
+    """`dc` fell outside the SRD's own 5-30 difficulty range (← D6, D11).
+    Always raised after the refusal is already recorded as a `tool_call`
+    event and committed."""
+
+    code = ErrorCode.INVALID_DC
+
+    def __init__(self, dc: int) -> None:
+        self.dc = dc
+        super().__init__(f"invalid dc: {dc}")
+
+
 class InvalidEventPayloadError(PlaythroughError):
     """`append_event` was asked to write a `type` or `visibility` it does
     not know, or a `payload` that fails the model `EVENT_PAYLOADS[type]`
