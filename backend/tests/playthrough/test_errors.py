@@ -4,6 +4,7 @@ to guarantee."""
 
 from app.core.errors import ErrorCode
 from app.modules.playthrough.errors import (
+    ActionNotAvailableError,
     AdventureActiveError,
     AdventureExhaustedError,
     CampaignNotFoundError,
@@ -17,6 +18,7 @@ from app.modules.playthrough.errors import (
     PlaythroughError,
     RollNotFoundError,
     RollNotUsableError,
+    RollRequiredError,
     RunArchivedError,
 )
 
@@ -97,3 +99,15 @@ def test_invalid_dc_carries_invalid_dc():
     exc = InvalidDcError(3)
     assert isinstance(exc, PlaythroughError)
     assert exc.code == ErrorCode.INVALID_DC
+
+
+def test_action_not_available_carries_action_not_available():
+    exc = ActionNotAvailableError("object-1", "push it")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.ACTION_NOT_AVAILABLE
+
+
+def test_roll_required_carries_roll_required():
+    exc = RollRequiredError("object-1", "cut it")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.ROLL_REQUIRED
