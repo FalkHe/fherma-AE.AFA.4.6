@@ -244,6 +244,37 @@ Service functions (`service.py`), called as `service.f(...)`:
   and turn may carry `result: "ok"` with this id in `rollIds`. Any of those
   failing raises `RollNotUsableError`; nothing about the roll is written
   either way — only the caller above records a refusal.
+- `interact` — the one mechanic that acts on a fixture's own authored
+  checks (`FixtureTemplate.checks`, `docs/modules/content.md`): takes the
+  actor, the object, which of the object's checks is being attempted (by
+  the check's own `action` text, matched exactly) and an optional roll id.
+  Loads the actor and the object by id (`NOT_FOUND` otherwise), requires
+  the run `ready` or `active`, then runs the one-action check every
+  action-spending mechanic shares (§17 below) before ever matching the
+  attempt against the object's checks — a creature that has already acted
+  this turn is refused (`AlreadyActedError`, `ALREADY_ACTED`) before
+  its attempted action is even looked up. No check on the object matching
+  the named action at all is `ActionNotAvailableError` /
+  `ACTION_NOT_AVAILABLE`. Given a roll id, it spends it through the same
+  `_consume_roll` `resolve_check` and `resolve_save` already share for
+  `ability_check` — a roll of the wrong kind, already spent, from another
+  turn or of the `custom` kind answers `RollNotUsableError` /
+  `ROLL_NOT_USABLE` exactly as it does there — and passes when the roll's
+  stored `total` meets the check's own `dc`. Given no roll id, it passes
+  instead when a row with `owner_object_id` equal to the actor's id carries
+  a `template_id` the check's own `bypassed_by` names; carrying nothing
+  that bypasses it, with no roll either, is `RollRequiredError` /
+  `ROLL_REQUIRED`. Either pass appends one DM-visible
+  `tool_call {args: {actorId, objectId, action, rollId?},
+  rollIds: rollId ? [rollId] : [], result: "ok",
+  outcome: {action, dc, total?, bypassedBy?, success: true}}` and commits
+  once — `objects` is never written by this function; the check's authored
+  `success` text is the Dungeon Master's own prose to narrate, never a
+  state flip this function makes. A refusal is recorded first — its own
+  `tool_call`, `result: "refused"`, naming the actor, the object and the
+  action — and committed on its own before the error is raised, the same
+  pattern `_refuse_exit` and `resolve_check`'s own refusal already keep.
+  Full behaviour is `docs/modules/playthrough.md` §16.
 - `get_awaiting` — reads a run's open turn back from `events` alone and
   answers `"none"`, `"roll:<eventId>"` or `"answer:<eventId>"`: the id of
   the newest `roll_requested` with no `roll` event answering it yet, else
@@ -308,6 +339,26 @@ offending text to stderr and exit `1`. Spending a roll has no CLI command
 of its own yet — nothing outside the test suite calls `resolve_check` or
 `resolve_save` today.
 
+**Interacting has no HTTP route either, for the same reason**: `interact`
+is meant to be reached by the Dungeon Master's own tool layer, not called
+directly, and has no CLI command of its own either — nothing outside the
+test suite calls it today.
+
+**One action per creature per turn** is a rule `interact` already keeps and
+every mechanic that spends an action shares — taking an item, giving one,
+using an item and attacking, once those land, ask the same check first.
+Dropping, using an exit, rolling and resolving a roll are outside that set
+on purpose: dropping is free per the SRD, and the other three were never a
+creature acting on something to begin with. The check itself reads
+`events` for this run and this creature's turn — its `tool_call` rows
+already marked `result: "ok"` for one of the action-spending names above,
+naming this actor in `args.actorId` — and refuses with
+`AlreadyActedError` / `ALREADY_ACTED` the moment one is found; nothing
+about it is stored on the creature, the turn or anywhere else, so a fresh
+`turn_id` always starts the count at zero again and a refused attempt,
+recorded but never `"ok"`, is never counted against it. Full behaviour is
+`docs/modules/playthrough.md` §17.
+
 The stream (`GET …/stream`, above) polls `service.latest_event_id` on an
 interval, sends the `updated` message when it has changed since the last
 tick or a keepalive when it has not, and ends the generator on
@@ -328,17 +379,21 @@ touching a run, except `append_event`, which every one of its callers has
 already checked on the caller's behalf. A run belonging to someone else and
 a run that does not exist answer identically — not found — so no one can
 probe for the existence of another player's game. Errors: an unknown or
-foreign run, an unknown campaign, an actor id `use_exit` cannot find, and a
-roll id neither `resolve_check` nor `resolve_save` recognises are not
-found; a run already started, a second character, an archived run
-refusing a write, an invalid status transition, a second adventure entered
-while one is active, entering with none left to enter, `use_exit` asked
-for an exit it will not take, spending a roll already spent, from a later
-turn, or of the wrong kind, and resolving against a `dc` outside `5..30`
-are each a domain conflict (`ALREADY_STARTED`, `CHARACTER_EXISTS`,
-`RUN_ARCHIVED`, `INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`,
-`ADVENTURE_EXHAUSTED`, `EXIT_NOT_AVAILABLE`, `ROLL_NOT_USABLE`,
-`INVALID_DC`); a payload not matching its
+foreign run, an unknown campaign, an actor or object id `use_exit` or
+`interact` cannot find, and a roll id neither `resolve_check` nor
+`resolve_save` recognises are not found; a run already started, a second
+character, an archived run refusing a write, an invalid status transition,
+a second adventure entered while one is active, entering with none left to
+enter, `use_exit` asked for an exit it will not take, spending a roll
+already spent, from a later turn, or of the wrong kind, resolving against a
+`dc` outside `5..30`, `interact` asked for an action its object never
+authored, asked for a check needing a roll with none given and nothing
+carried that bypasses it, and a second action asked of a creature that has
+already spent this turn's are each a domain conflict (`ALREADY_STARTED`,
+`CHARACTER_EXISTS`, `RUN_ARCHIVED`, `INVALID_RUN_STATUS`,
+`ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`, `EXIT_NOT_AVAILABLE`,
+`ROLL_NOT_USABLE`, `INVALID_DC`, `ACTION_NOT_AVAILABLE`, `ROLL_REQUIRED`,
+`ALREADY_ACTED`); a payload not matching its
 type's shape is a validation error (`InvalidEventPayloadError`).
 
 **The transcript read sorts by `id` alone, and that is only safe because one
