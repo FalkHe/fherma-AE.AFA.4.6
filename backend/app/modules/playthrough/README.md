@@ -275,6 +275,58 @@ Service functions (`service.py`), called as `service.f(...)`:
   action — and committed on its own before the error is raised, the same
   pattern `_refuse_exit` and `resolve_check`'s own refusal already keep.
   Full behaviour is `docs/modules/playthrough.md` §16.
+- `take` — the one mechanic that puts an item in an actor's hands: sets
+  `owner_object_id` to the actor and clears its position
+  (`adventure_run_id`, `scene_id` both `NULL`, §6). Loads the actor and the
+  item by id (`GameObjectNotFoundError` otherwise), requires the run
+  `ready` or `active`, then runs the same one-action check `interact`
+  shares (§17) before reach is even considered. Reachable means the item
+  lies, unowned, in the actor's own scene, **or** its owner is a
+  non-creature object standing there too — a container, which is how
+  `stolen-fleece` comes out of `wool-sack` in Greenhollow (AC5); an item
+  another *creature* carries is not reachable this way, nor is one in
+  another scene, nor is any of this true of an actor with no scene at all.
+  Anything else is `ObjectNotReachableError` / `OBJECT_NOT_REACHABLE`. A
+  pass appends one DM-visible `tool_call {args: {actorId, itemId},
+  result: "ok"}` and commits once; a refusal is recorded the same way,
+  `result: "refused"`, on its own commit, before the error is raised —
+  the pattern `_refuse_exit` and `interact`'s own refusal already keep.
+  Full behaviour is `docs/modules/playthrough.md` §18.
+- `drop` — the reverse of `take`: clears `owner_object_id` and gives the
+  item the actor's own position instead. Free — it does not run the
+  one-action check at all, following the SRD's ruling that letting go of
+  what you carry costs nothing. Otherwise the same shape: actor and
+  item loaded by id, the run required `ready` or `active`, an item the
+  actor is not carrying refused as `ObjectNotReachableError` /
+  `OBJECT_NOT_REACHABLE`, a pass or a refusal each its own committed
+  `tool_call {args: {actorId, itemId}}`. Full behaviour is
+  `docs/modules/playthrough.md` §18.
+- `give` — moves an item from one creature's hands straight to another's:
+  re-owns it from `from_id` to `to_id`, touching no position column at all.
+  Loads both creatures and the item by id, requires the run `ready` or
+  `active`, runs the one-action check (§17), then reach: the item must
+  already be carried by the giver, and the receiver must be a creature
+  standing in the giver's own scene — anything else, including the two
+  creatures in different scenes, is `ObjectNotReachableError` /
+  `OBJECT_NOT_REACHABLE`. A pass appends one DM-visible
+  `tool_call {args: {actorId, toId, itemId}, result: "ok"}` and commits
+  once — `actorId` names the giver, so one key always names who acted; a
+  refusal keeps the same shape, `result: "refused"`, committed on its own
+  before the error is raised. Full behaviour is
+  `docs/modules/playthrough.md` §18.
+- `use_item` — the seam where using an item will one day work, and today
+  refuses every template unconditionally: `ItemTemplate`
+  (`content/schemas.py`) carries no field yet that could say an item is
+  consumable, so there is nothing for this mechanic to do but refuse.
+  Loads the actor and the item by id, requires the run `ready` or
+  `active`, runs the one-action check (§17) before the refusal itself, so
+  a creature that has already acted is turned away by `AlreadyActedError`
+  rather than by the seam underneath it, then always raises
+  `ItemNotConsumableError` / `ITEM_NOT_CONSUMABLE` — recorded first as its
+  own DM-visible `tool_call {args: {actorId, itemId, targetId?},
+  result: "refused"}`, committed on its own, exactly like every other
+  refusal in this module. Full behaviour is
+  `docs/modules/playthrough.md` §19.
 - `get_awaiting` — reads a run's open turn back from `events` alone and
   answers `"none"`, `"roll:<eventId>"` or `"answer:<eventId>"`: the id of
   the newest `roll_requested` with no `roll` event answering it yet, else
@@ -339,17 +391,18 @@ offending text to stderr and exit `1`. Spending a roll has no CLI command
 of its own yet — nothing outside the test suite calls `resolve_check` or
 `resolve_save` today.
 
-**Interacting has no HTTP route either, for the same reason**: `interact`
-is meant to be reached by the Dungeon Master's own tool layer, not called
-directly, and has no CLI command of its own either — nothing outside the
-test suite calls it today.
+**Interacting, taking, dropping, giving and using an item have no HTTP
+route either, for the same reason**: `interact`, `take`, `drop`, `give`
+and `use_item` are meant to be reached by the Dungeon Master's own tool
+layer, not called directly, and none has a CLI command of its own either —
+nothing outside the test suite calls any of them today.
 
-**One action per creature per turn** is a rule `interact` already keeps and
-every mechanic that spends an action shares — taking an item, giving one,
-using an item and attacking, once those land, ask the same check first.
-Dropping, using an exit, rolling and resolving a roll are outside that set
-on purpose: dropping is free per the SRD, and the other three were never a
-creature acting on something to begin with. The check itself reads
+**One action per creature per turn** is a rule `interact` already keeps
+and `take`, `give` and `use_item` now share too — attacking, once it
+lands, will ask the same check first. Dropping, using an exit, rolling and
+resolving a roll are outside that set on purpose: dropping is free per the
+SRD, and the other three were never a creature acting on something to
+begin with. The check itself reads
 `events` for this run and this creature's turn — its `tool_call` rows
 already marked `result: "ok"` for one of the action-spending names above,
 naming this actor in `args.actorId` — and refuses with
@@ -379,21 +432,24 @@ touching a run, except `append_event`, which every one of its callers has
 already checked on the caller's behalf. A run belonging to someone else and
 a run that does not exist answer identically — not found — so no one can
 probe for the existence of another player's game. Errors: an unknown or
-foreign run, an unknown campaign, an actor or object id `use_exit` or
-`interact` cannot find, and a roll id neither `resolve_check` nor
-`resolve_save` recognises are not found; a run already started, a second
-character, an archived run refusing a write, an invalid status transition,
-a second adventure entered while one is active, entering with none left to
-enter, `use_exit` asked for an exit it will not take, spending a roll
-already spent, from a later turn, or of the wrong kind, resolving against a
-`dc` outside `5..30`, `interact` asked for an action its object never
-authored, asked for a check needing a roll with none given and nothing
-carried that bypasses it, and a second action asked of a creature that has
-already spent this turn's are each a domain conflict (`ALREADY_STARTED`,
-`CHARACTER_EXISTS`, `RUN_ARCHIVED`, `INVALID_RUN_STATUS`,
-`ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`, `EXIT_NOT_AVAILABLE`,
-`ROLL_NOT_USABLE`, `INVALID_DC`, `ACTION_NOT_AVAILABLE`, `ROLL_REQUIRED`,
-`ALREADY_ACTED`); a payload not matching its
+foreign run, an unknown campaign, an actor or object id `use_exit`,
+`interact`, `take`, `drop`, `give` or `use_item` cannot find, and a roll id
+neither `resolve_check` nor `resolve_save` recognises are not found; a run
+already started, a second character, an archived run refusing a write, an
+invalid status transition, a second adventure entered while one is active,
+entering with none left to enter, `use_exit` asked for an exit it will not
+take, spending a roll already spent, from a later turn, or of the wrong
+kind, resolving against a `dc` outside `5..30`, `interact` asked for an
+action its object never authored, asked for a check needing a roll with
+none given and nothing carried that bypasses it, a second action asked of
+a creature that has already spent this turn's, `take`, `drop` or `give`
+asked to move an item that is not reachable from where the actor stands,
+and `use_item` asked to use anything at all are each a domain conflict
+(`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
+`INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`,
+`EXIT_NOT_AVAILABLE`, `ROLL_NOT_USABLE`, `INVALID_DC`,
+`ACTION_NOT_AVAILABLE`, `ROLL_REQUIRED`, `ALREADY_ACTED`,
+`OBJECT_NOT_REACHABLE`, `ITEM_NOT_CONSUMABLE`); a payload not matching its
 type's shape is a validation error (`InvalidEventPayloadError`).
 
 **The transcript read sorts by `id` alone, and that is only safe because one

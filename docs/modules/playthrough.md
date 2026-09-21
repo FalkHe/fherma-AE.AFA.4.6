@@ -30,7 +30,12 @@ with the world is next: this document describes how a fixture's own
 authored checks are applied and why doing so touches nothing but the
 transcript (§16), and how the game holds a creature to one action a turn
 without keeping a count of it anywhere (§17) — the same missing tool layer
-is what would let the Dungeon Master reach either.
+is what would let the Dungeon Master reach either. Items moving is the
+piece after that: this document describes the three ways one changes
+hands — picked up, put down, handed over, and what "within reach" means
+for each (§18) — and the placeholder standing where using an item will
+work once one can be written as consumable (§19); the same missing tool
+layer is, again, what would let the Dungeon Master reach either.
 
 ## 1. What the module owns, and what it does not
 
@@ -825,3 +830,82 @@ the turn, or on the run, and so nothing about it can ever fall out of step
 with what the transcript already shows. A turn that has not seen this
 creature act yet carries no such history, so a fresh turn always lets it
 act again.
+
+## 18. Moving an item: picking it up, putting it down, handing it over
+
+**Three mechanics move an item, and nothing else does.** Picking one up
+puts it in the actor's own hands and takes it off wherever it lay. Putting
+one down is the reverse: it leaves the item behind in the scene the actor
+is standing in. Handing one over moves it straight from one creature's
+hands to another's. Between the three of them, this is the whole of how an
+item's owner ever changes: there is no mechanic that sets an item's owner
+directly, and no number any caller passes ever decides where something
+ends up — each of the three reads only who is acting, on what, and
+sometimes who else is involved, exactly as using an exit reads only who is
+acting and which exit (§9). Like every mechanic before them meant for the
+Dungeon Master's own tool layer, none of the three has a route of its own
+yet; this section describes what each one does rather than how to reach
+it.
+
+**Everything must be within reach, and reach means the same scene** — with
+one widening. Picking an item up succeeds when the item lies, unclaimed,
+in the actor's own scene, or when whatever currently holds it is a
+**container** — a non-creature object — standing in that same scene: a
+sack left on the floor can be looted this way, which is how the stolen
+fleece comes out of the wool sack in Greenhollow. The widening reaches no
+further than that: an item held by another *creature* cannot be picked up
+by this mechanic at all — reach opens up for a container, never for
+somebody's pockets. Handing an item over needs both creatures, the one
+giving and the one receiving, standing in the same scene, and the item
+must already be the giver's own to hand over. Putting an item down needs
+only that the actor is carrying it. An actor standing in no scene at
+all — nowhere on the map, in no adventure — can do none of the three.
+
+**What a turn costs differs by which of the three it is.** Picking
+something up and handing it over each spend the acting creature's one
+action for the turn, the same action §17 already describes, refused a
+second time in one turn regardless of which action-spending mechanic asks
+for it. **Putting something down costs nothing at all** — the SRD makes a
+point of this, and this module keeps it exactly that free rather than
+folding it in among the things that spend a turn. A creature can therefore
+pick something up and put something else down in the same turn, since only
+one of those two draws on the turn's action, but it can never pick
+something up twice in that same turn.
+
+**Every attempt is recorded, a move and a refusal alike.** A move that
+succeeds is written down as its own entry naming the mechanic, the actor
+and the item — handing one over also names who received it — visible only
+to the Dungeon Master, alongside whatever state actually changed. A
+refusal is recorded the same way, marked refused rather than succeeded,
+on its own before the mistake is ever raised as an error — the same
+pattern every refusal already kept in this document (§9, §14, §16) — so a
+player reading their own transcript never sees a gap where a mistake
+happened, only the moves that actually took hold.
+
+## 19. Using an item: the seam, not yet the mechanic
+
+**A fourth mechanic exists for using an item, and today it refuses every
+attempt.** It names the actor, the item, and optionally who or what the
+item is used on, and it currently answers every single one of those
+attempts the same way: refused, because no item this game's adventures
+author can yet be written as something that gets used up or spent —
+nothing about an item today says whether it can be used at all. The
+mechanic is checked against the one action of §17 and §18 first, so a
+creature that has already acted this turn is turned away for that reason
+rather than for the item; but since only a successful act spends a turn,
+a refusal here costs the creature nothing.
+
+**This is a placeholder, on purpose.** It exists now so the shape of using
+an item — an actor, an item, an optional target, one action spent, one
+outcome recorded — is already settled before there is anything for it to
+actually do. When a consumable item is eventually added to this game, it
+arrives as a new kind of item and a branch placed in front of this
+mechanic's blanket refusal, checked before that refusal fires rather than
+instead of it; nothing else about the mechanic changes — not what it is
+asked for, not the turn it spends, not how its outcome is written down.
+
+**A refused use is recorded exactly like every other refusal in this
+document** (§9, §14, §16, §18): its own entry, naming the attempt, visible
+only to the Dungeon Master, written down before the mechanic raises its
+refusal as an error, so nothing a player reads ever shows a gap where an
+attempt to use something was quietly swallowed.

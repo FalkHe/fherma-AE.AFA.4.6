@@ -34,6 +34,8 @@ from app.modules.playthrough.errors import (
     InvalidDcError,
     InvalidEventPayloadError,
     InvalidRunStatusError,
+    ItemNotConsumableError,
+    ObjectNotReachableError,
     RollNotFoundError,
     RollNotUsableError,
     RollRequestNotFoundError,
@@ -1338,6 +1340,326 @@ async def interact(
     )
     await db.commit()
     return success
+
+
+async def _item_reachable(db: AsyncSession, *, actor: GameObject, item: GameObject) -> bool:
+    """Whether `item` lies somewhere `actor` could pick it up from right
+    now (WI1, AC2/AC5) -- consulted by `take` alone.
+
+    An actor with no current scene reaches nothing, checked first so it
+    can never be fooled by an also-unpositioned item (both `scene_id`
+    columns `None` would otherwise compare equal by accident). An unowned
+    item is reachable exactly when it shares the actor's own
+    `adventure_run_id` and `scene_id`. An owned item is reachable only
+    through this sprint's widening (AC5): its owner must itself be a
+    *non-creature* object -- a container such as `wool-sack` -- standing
+    in the actor's scene; an item another *creature* carries, anywhere,
+    stays unreachable. One `owner_object_id` hop only, matching the
+    schema's own carried/positioned split -- no nested containers.
+    """
+    if actor.scene_id is None:
+        return False
+
+    if item.owner_object_id is None:
+        return item.adventure_run_id == actor.adventure_run_id and item.scene_id == actor.scene_id
+
+    owner = await _get_game_object(db, item.owner_object_id)
+    if owner.kind == "creature":
+        return False
+    return owner.adventure_run_id == actor.adventure_run_id and owner.scene_id == actor.scene_id
+
+
+async def _load_run_object(db: AsyncSession, object_id: str, *, run_id: str) -> GameObject:
+    """`_get_game_object`, then the same foreign-run check `interact` runs
+    against `object_id` (← D12): a row belonging to another run answers
+    identically to no row at all, before any refusal can be recorded.
+    Shared by every WI1 mechanic that loads an item or a second actor by
+    id."""
+    obj = await _get_game_object(db, object_id)
+    if obj.campaign_run_id != run_id:
+        raise GameObjectNotFoundError(object_id)
+    return obj
+
+
+async def _refuse_move(
+    db: AsyncSession,
+    *,
+    run_id: str,
+    name: str,
+    args: dict[str, Any],
+    turn_id: str | None,
+    reason: str,
+) -> None:
+    """Records a `take`/`drop`/`give`/`use_item` refusal where only the DM
+    sees it (← D11) and commits it alone -- `_refuse_interact`'s and
+    `_refuse_exit`'s own pattern, generalised across the four mechanics
+    this file adds: `append_event` only flushes, and the caller's rollback
+    on the way to raising would erase the record. `args` is exactly what
+    the matching successful call would have recorded (WI1, I3)."""
+    await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": name,
+            "args": args,
+            "roll_ids": [],
+            "result": "refused",
+            "outcome": {"reason": reason},
+        },
+    )
+    await db.commit()
+
+
+async def take(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    actor_id: str,
+    item_id: str,
+    turn_id: str | None = None,
+) -> None:
+    """Picks `item_id` up: sets its `owner_object_id` to `actor_id` and
+    clears its position (WI1, AC2), from either the floor of the actor's
+    own scene or -- this sprint's widening -- a non-creature container
+    standing there too (AC5, `_item_reachable`).
+
+    Gate order shared with `interact`: `_resolve_actor_and_run` -> the
+    one-action check (`take` spends the turn's action, ← I2) ->
+    reachability -> the write -> a `tool_call` `ok` -> one commit. `item_id`
+    is loaded with no run filter first, exactly `object_id` in `interact`
+    (← D12): unknown and foreign both raise `GameObjectNotFoundError`
+    before any refusal is recorded. An unreachable item -- another scene,
+    carried by another creature, or the actor standing nowhere -- is
+    refused as `OBJECT_NOT_REACHABLE`, recorded and committed before
+    raising (← D11).
+    """
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+    args = {"actorId": actor_id, "itemId": item_id}
+
+    if await _already_acted(db, run_id=run.id, actor_id=actor_id, turn_id=turn_id):
+        await _refuse_move(
+            db,
+            run_id=run.id,
+            name="take",
+            args=args,
+            turn_id=turn_id,
+            reason="actor has already acted this turn",
+        )
+        raise AlreadyActedError(actor_id)
+
+    item = await _load_run_object(db, item_id, run_id=run.id)
+
+    if not await _item_reachable(db, actor=actor, item=item):
+        await _refuse_move(
+            db,
+            run_id=run.id,
+            name="take",
+            args=args,
+            turn_id=turn_id,
+            reason="item is not reachable from the actor's current scene",
+        )
+        raise ObjectNotReachableError(item_id)
+
+    item.owner_object_id = actor.id
+    item.adventure_run_id = None
+    item.scene_id = None
+
+    await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={"name": "take", "args": args, "roll_ids": [], "result": "ok", "outcome": {}},
+    )
+    await db.commit()
+
+
+async def drop(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    actor_id: str,
+    item_id: str,
+    turn_id: str | None = None,
+) -> None:
+    """Puts `item_id` down: clears its `owner_object_id` and positions it
+    into the actor's own scene and adventure run (WI1, AC2).
+
+    Gate order: `_resolve_actor_and_run`, then straight to the mechanic's
+    own check -- **no one-action check** (← I2, the product owner's
+    ruling that dropping is free, `decisions/mechanics.md`; 08a's action
+    set already excludes `drop`, unchanged here). `item_id` is loaded with
+    no run filter first, exactly `take`'s own `_load_run_object` (← D12).
+    Refused as `OBJECT_NOT_REACHABLE` when the item is not currently
+    carried by this actor, or the actor has no current scene to drop it
+    into -- recorded and committed before raising (← D11).
+    """
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+    args = {"actorId": actor_id, "itemId": item_id}
+
+    item = await _load_run_object(db, item_id, run_id=run.id)
+
+    if item.owner_object_id != actor.id or actor.scene_id is None:
+        await _refuse_move(
+            db,
+            run_id=run.id,
+            name="drop",
+            args=args,
+            turn_id=turn_id,
+            reason="item is not carried by the actor, or the actor has no current scene",
+        )
+        raise ObjectNotReachableError(item_id)
+
+    item.owner_object_id = None
+    item.adventure_run_id = actor.adventure_run_id
+    item.scene_id = actor.scene_id
+
+    await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={"name": "drop", "args": args, "roll_ids": [], "result": "ok", "outcome": {}},
+    )
+    await db.commit()
+
+
+async def give(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    from_id: str,
+    to_id: str,
+    item_id: str,
+    turn_id: str | None = None,
+) -> None:
+    """Re-owns `item_id` from `from_id` to `to_id` -- one carrier handing
+    something to another (WI1, AC2). Recorded `args` name the giver
+    `actorId`, so one key always names the actor (I3).
+
+    Gate order shared with `take`: `_resolve_actor_and_run` on the giver ->
+    the one-action check (`give` spends the turn's action, ← I2) -> the
+    mechanic's own checks -> the write -> a `tool_call` `ok` -> one commit.
+    Both `item_id` and `to_id` are loaded with no run filter first, exactly
+    `take`'s own `_load_run_object` (← D12): unknown or foreign either way
+    raises `GameObjectNotFoundError` before any refusal is recorded.
+
+    Refused as `OBJECT_NOT_REACHABLE` -- recorded and committed before
+    raising (← D11) -- unless the item is currently carried by the giver
+    *and* the receiver is a creature sharing the giver's own scene: give
+    never reaches across scenes, never hands over something the giver does
+    not itself carry, and never hands to anything but another creature.
+    """
+    giver, run = await _resolve_actor_and_run(db, actor_id=from_id, user_id=user_id)
+    args = {"actorId": from_id, "toId": to_id, "itemId": item_id}
+
+    if await _already_acted(db, run_id=run.id, actor_id=from_id, turn_id=turn_id):
+        await _refuse_move(
+            db,
+            run_id=run.id,
+            name="give",
+            args=args,
+            turn_id=turn_id,
+            reason="actor has already acted this turn",
+        )
+        raise AlreadyActedError(from_id)
+
+    item = await _load_run_object(db, item_id, run_id=run.id)
+    receiver = await _load_run_object(db, to_id, run_id=run.id)
+
+    reachable = (
+        item.owner_object_id == giver.id
+        and receiver.kind == "creature"
+        and giver.scene_id is not None
+        and receiver.adventure_run_id == giver.adventure_run_id
+        and receiver.scene_id == giver.scene_id
+    )
+    if not reachable:
+        await _refuse_move(
+            db,
+            run_id=run.id,
+            name="give",
+            args=args,
+            turn_id=turn_id,
+            reason=(
+                "item is not carried by the giver, or the receiver is not a creature "
+                "sharing the giver's scene"
+            ),
+        )
+        raise ObjectNotReachableError(item_id)
+
+    item.owner_object_id = receiver.id
+
+    await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={"name": "give", "args": args, "roll_ids": [], "result": "ok", "outcome": {}},
+    )
+    await db.commit()
+
+
+async def use_item(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    actor_id: str,
+    item_id: str,
+    target_id: str | None = None,
+    turn_id: str | None = None,
+) -> None:
+    """The seam a later sprint's consumable items call through -- today it
+    always raises (WI1, AC4): `ItemTemplate` (`content/schemas.py`) carries
+    no field saying an item is consumable, so every use is refused
+    unconditionally. A later field would only need a branch inserted
+    *before* the refusal below, nothing else about the gate order or the
+    write-that-never-happens here would change -- purely additive.
+
+    Gate order shared with `take`/`give`: `_resolve_actor_and_run` -> the
+    one-action check (`use_item` spends the turn's action, ← I2) -> `item_id`
+    loaded with no run filter first, exactly `take`'s own `_load_run_object`
+    (← D12) -> the unconditional refusal, recorded and committed before
+    raising `ItemNotConsumableError` (← D11). `targetId` is named in `args`
+    only when one was given, matching `interact`'s own `rollId` convention.
+    """
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+    args: dict[str, Any] = {"actorId": actor_id, "itemId": item_id}
+    if target_id is not None:
+        args["targetId"] = target_id
+
+    if await _already_acted(db, run_id=run.id, actor_id=actor_id, turn_id=turn_id):
+        await _refuse_move(
+            db,
+            run_id=run.id,
+            name="use_item",
+            args=args,
+            turn_id=turn_id,
+            reason="actor has already acted this turn",
+        )
+        raise AlreadyActedError(actor_id)
+
+    await _load_run_object(db, item_id, run_id=run.id)
+
+    # No `ItemTemplate` field expresses "consumable" yet -- every use
+    # refuses here unconditionally. A later field would add a branch
+    # immediately above this call, before the refusal fires; nothing else
+    # in this function would need to change.
+    await _refuse_move(
+        db,
+        run_id=run.id,
+        name="use_item",
+        args=args,
+        turn_id=turn_id,
+        reason="no item is consumable yet",
+    )
+    raise ItemNotConsumableError(item_id)
 
 
 async def append_event(
