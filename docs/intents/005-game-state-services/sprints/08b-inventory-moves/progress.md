@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-21
 updated: 2026-09-21
-stage: draft
+stage: done
 ---
 # Progress: Sprint 08b
 
@@ -33,3 +33,11 @@ Status: `open | running | done | failed`
 <none yet>
 
 ## Verify
+
+Round 1: approve — AC2, AC4 and AC5 all OK. The verifier mutated ten behaviours in turn — the container-versus-
+creature guard, the actor-with-no-scene guard, the scene match, both sides of giving, drop's carried check,
+take's action check, the position clearing and the refusal commit — and every one was caught by a test.
+
+It also caught a wrong sentence in the module doc: §19 claimed `use_item` spends the creature's turn before
+refusing. It does not, since only a successful act counts against the turn. Corrected here rather than left for
+later, because a false statement in the module doc is exactly what a later reader would build on.

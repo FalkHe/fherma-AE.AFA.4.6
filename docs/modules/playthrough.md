@@ -890,9 +890,10 @@ item is used on, and it currently answers every single one of those
 attempts the same way: refused, because no item this game's adventures
 author can yet be written as something that gets used up or spent —
 nothing about an item today says whether it can be used at all. The
-mechanic still spends the acting creature's turn before it refuses, the
-same one action §17 and §18 both already describe, so a creature that has
-already acted this turn is turned away for that reason first.
+mechanic is checked against the one action of §17 and §18 first, so a
+creature that has already acted this turn is turned away for that reason
+rather than for the item; but since only a successful act spends a turn,
+a refusal here costs the creature nothing.
 
 **This is a placeholder, on purpose.** It exists now so the shape of using
 an item — an actor, an item, an optional target, one action spent, one

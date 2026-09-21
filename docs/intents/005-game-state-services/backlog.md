@@ -27,8 +27,8 @@ route reaches yet — as `@pytest.mark.database` acceptance tests under `make ba
 | 07a | Implement `dice.py`, formula derivation, `request_player_roll`/`resolve_roll_request`/`roll`/`passive_check`, `ask_player`, `app playthrough roll`; raise the authored difficulty floor to the SRD's own | 05a | #27 | done |
 | 07b | Implement `resolve_check`/`resolve_save`, single consumption and `awaiting` on the events read | 07a | #35 | done |
 | 08a | Implement `interact` against a fixture's authored checks, and the one-action-per-turn rule | 06b, 07b | #28 | done |
-| 08b | Implement `take`/`drop`/`give` including looting a container, and the `use_item` seam | 08a | #36 | running |
-| 09 | Implement `attack`, `damage`, `roll_initiative` as events-only combat; prove no combat state exists | 06b, 07b | #29 | open |
+| 08b | Implement `take`/`drop`/`give` including looting a container, and the `use_item` seam | 08a | #36 | done |
+| 09 | Implement `attack`, `damage`, `roll_initiative` as events-only combat; prove no combat state exists | 06b, 07b | #29 | running |
 
 Outcomes — the one verifiable statement per sprint — live in each `sprints/NN-*/brief.md` (`## Outcome`).
 

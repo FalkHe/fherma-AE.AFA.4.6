@@ -33,3 +33,9 @@ placeholder and refuses everything, nothing in the adventures being consumable y
 Brief: docs/intents/005-game-state-services/sprints/08b-inventory-moves/brief.md
 
 ## Verdict
+
+Round 1: approve — items can be picked up, put down and handed over between things standing in the same scene:
+the wool sack can be looted, so the stolen fleeces are reachable at last, while an item in another creature's
+hands stays out of reach. Both of your rulings hold as written — picking something up spends the turn's action
+and putting something down is free, so a creature can do one of each in the same turn — and using an item is
+refused for everything, with every refusal written into the DM's record.
