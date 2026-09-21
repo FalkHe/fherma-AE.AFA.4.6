@@ -32,3 +32,5 @@ table, no route: content lives in git, not in the database.
   (`content_service.CONTENT_ROOT`), never a name import — tests repoint
   `CONTENT_ROOT` with `monkeypatch.setattr`.
 - No caching: a campaign is re-read and re-validated on every call.
+- `FixtureCheck.dc` and `Secret.dc` floor is 5, not 1 — the SRD's own
+  difficulty table starts at 5, and the DM is bound to the same 5–30 range.
