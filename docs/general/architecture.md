@@ -71,7 +71,7 @@ runs before it and rejects prompt injection and out-of-band state changes
 | `get_monster(name)` | Stat block from JSON |
 | `update_object(id, patch)` | Validated state mutation |
 | `start_combat()` / `end_round()` | Initiative and turn tracking — **Stage 02**; nothing tracks turns in Stage 01 |
-| `add_journal_entry()` / `search_journal()` | Long-term memory |
+| `recall(query)` | Long-term memory: searches the run's past narration by meaning |
 | `ask_player(prompt, options)` | Human-in-the-loop interrupt |
 
 **Web client** — narration pane, state panel (HP, AC, inventory; turn order is
