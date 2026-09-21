@@ -38,12 +38,13 @@ from app.modules.playthrough.errors import (
     RollNotUsableError,
     RollRequiredError,
 )
-from app.modules.playthrough.models import CampaignRun, CampaignRunMember, GameObject
 
 CAMPAIGN_ID = "greenhollow"
 VERSION = "v1"
 
-LIFT_ACTION = "Lift the lashed brush aside a branch at a time, without letting it scrape on the stone"
+LIFT_ACTION = (
+    "Lift the lashed brush aside a branch at a time, without letting it scrape on the stone"
+)
 LIFT_DC = 13
 CUT_ACTION = "Cut through the lashings that hold the screen together"
 CUT_DC = 10
@@ -122,7 +123,7 @@ async def _reach_lair_maw(db: AsyncSession, *, username: str):
     return user_id, run, character, fixture_id
 
 
-async def _tool_calls(db, run_id: str, *, result: str) -> list[dict]:
+async def _tool_calls(db, run_id: str, *, result: str, name: str = "interact") -> list[dict]:
     rows = (
         await db.execute(
             text(
@@ -132,7 +133,11 @@ async def _tool_calls(db, run_id: str, *, result: str) -> list[dict]:
             {"run_id": run_id},
         )
     ).all()
-    return [row.payload for row in rows if row.payload["result"] == result]
+    return [
+        row.payload
+        for row in rows
+        if row.payload["result"] == result and row.payload["name"] == name
+    ]
 
 
 async def _object_row(db, object_id: str):
