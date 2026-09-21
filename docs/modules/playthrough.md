@@ -9,33 +9,22 @@ adventures are not here — those are static files owned by the `content` module
 activity, not an entity: **no table is called `playthrough`**, and no row is "a
 playthrough".
 
-Today the module ships its five tables and their migrations, plus the surface
-that starts a campaign run, gives it its character, renames it, reads it
-back, enters its next adventure, moves whoever is acting through an exit,
-derives and records a roll, spends one against a difficulty, tells a reader
-of the transcript what the game is waiting for, appends to its transcript,
-reads that transcript back, reports what it has cost and puts the run away
-(§8): a service of twenty functions behind nine authenticated endpoints,
-plus two commands run by hand rather than an endpoint (§11, §13). The
-sprint that added entering an adventure deliberately stopped there, leaving
-scene movement, an adventure's completion and the game's own end for the
-next one; this document now describes that lifecycle too, exactly as far
-as it reaches (§9) — a tool layer letting the Dungeon Master call it
-remains later work. A roll is the same story one layer down: this document
-describes how one is worked out and set down (§13), how it is spent once
-and only once (§14), and what a reader of the transcript is told the game
-is waiting for as a result (§15) — the tool layer that would let the
-Dungeon Master reach any of this remains the same later work. Interacting
-with the world is next: this document describes how a fixture's own
-authored checks are applied and why doing so touches nothing but the
-transcript (§16), and how the game holds a creature to one action a turn
-without keeping a count of it anywhere (§17) — the same missing tool layer
-is what would let the Dungeon Master reach either. Items moving is the
-piece after that: this document describes the three ways one changes
-hands — picked up, put down, handed over, and what "within reach" means
-for each (§18) — and the placeholder standing where using an item will
-work once one can be written as consumable (§19); the same missing tool
-layer is, again, what would let the Dungeon Master reach either.
+Today the module ships its five tables and their migrations, plus a service
+of twenty-nine functions behind nine authenticated endpoints and two
+commands run by hand rather than an endpoint. Together they carry a whole
+game: starting a campaign run and giving it its character, renaming it and
+reading it back, entering its next adventure and moving whoever is acting
+through an exit (§8, §9); deriving and recording a roll and spending one
+against a difficulty, and telling a reader of the transcript what the game
+is waiting for as a result (§13–§15); a fixture's own authored checks and
+the one-action rule every acting mechanic keeps, whatever it is a mechanic
+for (§16, §17); an item changing hands three ways, and the placeholder
+standing where using one will work once one can be written as consumable
+(§18, §19); and a fight — striking a blow, wounding whoever it landed on,
+and rolling to see who acts first — built from those same ordinary
+mechanics rather than a state of its own (§20–§22). A tool layer letting
+the Dungeon Master reach any of this belongs to a separate, later phase;
+nothing in this document describes one, because none exists yet.
 
 ## 1. What the module owns, and what it does not
 
@@ -58,9 +47,12 @@ It does **not** own:
 - **Users.** `campaign_run_members.user_id` references `users.id`
   (`ON DELETE CASCADE`); the `auth` module owns that table.
 - **SRD rules text.** That is the `srd` module's, reached through RAG.
-- **Combat, turn order and initiative.** Deferred to the DM-turn phase; this
-  phase builds no combat state. `events.turn_id` is the one forward-looking
-  column, and it is a bare column with no referent (§7).
+- **An encounter, and whose turn it is.** Striking a blow, wounding whoever
+  it landed on and rolling to see who acts first are ordinary mechanics this
+  module owns like any other (§20–§22) — but nothing here opens or closes a
+  fight, and no row anywhere says whose turn it is or in what order. Turn
+  structure itself is deferred to the DM-turn phase; `events.turn_id` is the
+  one forward-looking column, and it is a bare column with no referent (§7).
 
 ## 2. How the five tables relate
 
@@ -426,17 +418,29 @@ making a client ask twice for two things that describe the same open turn;
 §15 covers what it derives and how.
 
 Errors this module raises: an unknown-or-foreign run, a campaign the content
-does not know, an actor `use_exit` cannot find, and a roll id neither
-consumer below recognises are **not found**; a run already started, a
+does not know, an actor or object id `use_exit`, `interact`, `take`, `drop`,
+`give`, `use_item`, `attack` or `damage` cannot find, and a roll id no
+consumer below recognises are **not found** — while a hit id no consumer
+recognises is **not usable** rather than not found, since it names an
+entry in the transcript rather than a thing in the world; a run already started, a
 second character on a run, a write against an archived run, an invalid
 status transition, entering an adventure while one is already under way,
 entering when none is left to enter, asking `use_exit` for an exit it will
 not take, spending a roll that is already spent, from a later turn or of
-the wrong kind, and resolving against a difficulty outside 5–30 are each a
-**conflict** (`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
+the wrong kind, resolving against a difficulty outside 5–30, `interact`
+asked for an action its object never authored or for a check needing a
+roll with none given and nothing carried that bypasses it, a second action
+asked of a creature that has already spent this turn's, `take`, `drop`,
+`give` or `attack` asked to reach an item or a target that is not reachable
+from where the actor stands, `use_item` asked to use anything at all, and
+`damage` asked to spend a hit that missed, belongs to another turn, names a
+different target, or has already been paid out are each a **conflict**
+(`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
 `INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`,
-`EXIT_NOT_AVAILABLE`, `ROLL_NOT_USABLE`, `INVALID_DC`); a payload that does
-not match its type's shape is a **validation error**
+`EXIT_NOT_AVAILABLE`, `ROLL_NOT_USABLE`, `INVALID_DC`,
+`ACTION_NOT_AVAILABLE`, `ROLL_REQUIRED`, `ALREADY_ACTED`,
+`OBJECT_NOT_REACHABLE`, `ITEM_NOT_CONSUMABLE`, `HIT_NOT_USABLE`); a payload
+that does not match its type's shape is a **validation error**
 (`InvalidEventPayloadError`).
 
 ## 9. Using an exit: moving a scene, ending an adventure, finishing the game
@@ -793,12 +797,11 @@ mistake happened, only ever the passes that actually took hold.
 
 ## 17. One action per creature per turn
 
-**A creature gets one action in a turn.** Interacting with a fixture (§16)
-spends it, and so does taking an item, giving one, using an item, and
-attacking — five actions in all. This sprint builds interacting and the
-rule itself; the other four are separate mechanics for the sprints after
-this one to add, named here already so that landing them costs this rule
-no rewrite.
+**A creature gets one action in a turn.** Interacting with a fixture (§16),
+taking an item, giving one, using an item (§18, §19) and attacking (§21)
+each spend it — five actions in all, checked by the same rule before any of
+them looks at what it was actually asked to do, so landing the last of them
+cost this rule no rewrite.
 
 **Dropping something does not spend the turn.** Neither does moving through
 an exit (§9), rolling dice (§13), nor resolving a check or a saving throw
@@ -909,3 +912,153 @@ document** (§9, §14, §16, §18): its own entry, naming the attempt, visible
 only to the Dungeon Master, written down before the mechanic raises its
 refusal as an error, so nothing a player reads ever shows a gap where an
 attempt to use something was quietly swallowed.
+
+## 20. A fight is nothing but its acts
+
+**There is no fight to open or close.** Striking a blow (§21), wounding
+whoever it landed on (§22) and rolling to see who acts first, below, are
+three ordinary mechanics, and nothing in this module remembers that any of
+them happened beyond the ordinary transcript entries each one already
+writes on its own: no table names an encounter, no column says two
+creatures are fighting, no row holds a turn order, and no flag anywhere is
+set when a fight starts and unset when it ends. **Rolling to see who acts
+first does exactly what its name says and nothing more**: given the two
+sides, whichever creature on a side is a member's own character is asked to
+roll rather than rolled for outright, through the very request §13 already
+describes, so a player's own click still decides their side's roll; a side
+with nobody's own character on it is rolled by the server there and then,
+at the visibility a player may see, the same way any other creature's roll
+already is (§13). Either way the two resulting `roll` events, one
+`initiative` roll per side, are the whole of what asking who goes first
+leaves behind — no row anywhere is touched, and no `tool_call` is appended
+either: nobody's turn is spent by finding out who goes first, so there is
+nothing here for a refusal or a pass to be recorded against.
+
+**Striking at someone and wounding them work in any scene, not only one the
+Dungeon Master has decided is a battle.** An ambush sprung on someone still
+exploring is simply an attack made during exploration, no different in this
+module's eyes from one made after both sides have rolled to see who goes
+first — attacking and wounding are ordinary acting mechanics, gated and
+recorded exactly like every other one in this document, not a mode the game
+has to be switched into first.
+
+**This is deliberate, not an omission still to be filled in.** What
+happened in a fight is already legible from the transcript alone — who
+swung, at what, with what roll, whether it landed, how much it hurt, who is
+still standing — because every mechanic in §21 and §22 writes exactly that
+down as it happens, the same way every mechanic in this document already
+does (§9, §14, §16, §18, §19). A second record of the same events, kept in
+a column or a table of its own, could only ever agree with the transcript
+when it is right and disagree with it the moment either one drifts, and
+there is no way for the two to disagree that improves on simply reading the
+one record that is always current. A test in this module's suite plays a
+whole fight to its end and then asserts three exact sets against what the
+schema actually holds afterwards — every table in the database, every
+column on `objects` and on `events`, and every key ever written into an
+object's `state` — so that an encounter table, a turn-order column or an
+`in_combat` flag slipped in by some later change is caught by the
+comparison itself rather than waved through by a check that only looks for
+the obvious names.
+
+## 21. Attacking
+
+**An attack is the sixth action-spending mechanic** (§17): it names who is
+swinging, at whom, with what — an item id, when a player's own weapon is
+doing the swinging, and nothing at all when a monster's own stat block
+supplies the attack instead (§13) — and the roll already made for it. Like
+every mechanic before it meant for the Dungeon Master's own tool
+layer (§9, §13, §16, §18), it has no route of its own; this section
+describes what it does rather than how to reach it.
+
+`attack` runs the same gate every acting mechanic already keeps —
+membership, the run `ready` or `active`, the one-action check (§17) —
+before anything about the attempt itself is looked at. Past that it loads
+the target and, when one is named, the item, refusing before anything is
+touched (`OBJECT_NOT_REACHABLE`, the same code §18's mechanics already
+raise for the same shape of mistake) if the target stands in another scene
+or the actor is not the one carrying the named item. It then spends the
+named roll exactly as an ability check or a saving throw does (§14): the
+roll must be an `attack` roll, made this turn, not already spent, or the
+attempt is refused `ROLL_NOT_USABLE` before anything else happens.
+
+**The die decides, and the target's armour decides nothing against a
+natural 20.** An attack is always rolled on a single d20, so the one die it
+recorded is there to read: if that die came up 20, the attack is a
+**critical hit** regardless of the total it made or the armour the target
+wears. Short of that, the roll's total is weighed against the target's own
+`armour_class`: reaching it is a **hit**, falling short is a **miss**.
+**Nothing about the target changes either way** — an attack only ever
+settles whether the blow landed, and that verdict, hit, miss or crit, is
+written on the attack's own `tool_call` entry, never on the roll it spent,
+exactly as every other resolved roll in this module keeps pass or fail off
+the roll itself (§14).
+
+**A monster swings with what it is, not with what it holds.** A player's
+weapon supplies an attack from an item the same way a monster's own stat
+block supplies one instead (§13) — naming no item at all is how `attack`
+is asked for a monster's own attack, since there is nothing for it to check
+is carried. Which attack is meant is still named outright, never guessed at
+from position, the same rule §13 already keeps for a stat block with more
+than one attack to choose from.
+
+**Every attempt is recorded, a hit, a miss, a crit and a refusal alike** —
+the same pattern every mechanic in this document already keeps (§9, §14,
+§16, §18, §19): a pass appends one `tool_call` naming the actor, the
+target, the item when one was named, the roll spent, and the outcome it
+settled; a refusal appends the same shape marked refused, visible only to
+the Dungeon Master, committed on its own before the refusal is raised as an
+error. A player reading their own transcript never sees the attempt itself,
+only whatever narration the Dungeon Master goes on to write around it — an
+attack, landed or not, leaves nothing else for the player's own read of the
+game to show.
+
+## 22. Wounding, and what is left when there is nothing
+
+**Damage never names its own target — it reads one off the blow that
+landed.** `damage` takes a roll and a **hit id**: the id of an `attack`
+entry already on the transcript, and it is that entry, not anything the
+caller separately names, that says who is hurt. A `hit_id` naming anything
+else — an entry from another mechanic, an attack that missed, one from a
+turn already closed, one already paid out by an earlier call to `damage`,
+or an attack whose own recorded target disagrees with whichever target the
+caller named — is refused outright, before a die is even rolled, under one
+new code, `HIT_NOT_USABLE`, kept deliberately apart from the codes a roll's
+own consumption already raises (§14): a hit that cannot be spent is a
+different mistake from a roll that cannot be, even though both guard
+exactly the same thing — nothing spent twice.
+
+Found and usable, `damage` spends its own roll — a `damage` roll, subject
+to the very same once-only rule every other roll answers to (§14) — and
+applies it: hit points fall by the roll's total, and never below zero; a
+wound worse than what remains simply empties the creature rather than
+going negative. **What happens at zero depends on who was hit.** A monster
+with nothing left is simply **no longer alive** — the same `is_alive`
+column §6 already reserves for exactly this becomes false. A player's
+character is not treated the same way: **it stays alive, and is marked
+down** instead, a new key added to what its `state` already remembers
+(§6) alongside its abilities, race, class, background and appearance — the
+whole column reassigned at once, the same way creating the character wrote
+it in the first place (§8), because nothing about this JSONB column is
+ever edited in place. **That is deliberate, and it stops exactly there**:
+the SRD's own rule has a character at zero hit points *dying* — unconscious,
+rolling death saving throws against slipping away entirely — and none of
+that exists yet. What becomes of a downed character is left for the phase
+that narrates to decide; this module only ever marks it and stops.
+
+Every attempt is recorded the same way every other mechanic in this
+document already keeps it: a wound applied appends one `tool_call` naming
+the target, the roll spent, the hit it was bound to, how much was rolled,
+how much was actually applied once the clamp took hold, the hit points
+left, and whether the target is still alive or now down; a refusal appends
+the same shape marked refused, on its own, before the error is raised.
+`damage` makes no one-action check of its own — the attack it is bound to
+has already answered that when it was made (§17, §21) — so a wound is
+never turned away for a reason that belongs to the blow that caused it,
+not to the paperwork settling it.
+
+**One attack per turn, like every other acting mechanic** (§17): a
+creature that has already spent this turn's action is refused before an
+attack is even weighed against anything, and a refused attempt — at
+attacking, or at anything else this document guards the same way — costs
+it nothing: the turn is only ever spent by an attempt that lands somewhere,
+never by one that is turned away.

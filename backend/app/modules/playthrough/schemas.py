@@ -80,13 +80,21 @@ class CharacterState(BaseModel):
     sheet and never mutated in place -- a plain `BaseModel`, not a
     `CamelModel`: this is storage, not wire shape. Carried items keep the
     column's `{}` default; only the character has no `template_id` to
-    carry this data instead."""
+    carry this data instead.
+
+    `down` (sprint 09, WI1, AC2) starts `False` at character creation and
+    is set `True` when `damage` brings the character to 0 hp -- a
+    character with a member stays `is_alive=True` at zero, this field
+    alone records that it is down. The column is always reassigned whole
+    from this model (`model_copy(update=...)`), never mutated in place:
+    plain JSONB tracks no in-place key set."""
 
     abilities: Abilities
     race: str
     character_class: str
     background: str
     appearance: str
+    down: bool = False
 
 
 class TurnCost(BaseModel):

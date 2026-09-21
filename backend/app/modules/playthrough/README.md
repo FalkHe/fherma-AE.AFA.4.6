@@ -209,6 +209,16 @@ Service functions (`service.py`), called as `service.f(...)`:
   any roll the player must not see. Writes its own `roll_requested` event
   first, so the `roll` it appends still points back to a request, exactly
   as `resolve_roll_request`'s does.
+- `roll_initiative` — takes two sides, each a list of object ids, and
+  nothing else. Per side, the first row that carries a `member_id` goes
+  through `request_player_roll(kind="initiative")` — a player's own click
+  still decides that side's roll — otherwise the side is rolled outright
+  through `roll(..., visibility="player")`, `roll`'s own path above for a
+  creature's roll. Writes no row beyond whichever `roll_requested` / `roll`
+  events those two calls already write on their own, and no `tool_call` —
+  finding out who goes first spends nobody's turn, so there is nothing here
+  for a pass or a refusal to be recorded against. Full behaviour is
+  `docs/modules/playthrough.md` §20.
 - `passive_check` — no dice at all: adds the named ability's modifier to
   `10` and weighs the result against `dc`, returning the pass/fail outcome
   directly and appending one DM-visible `tool_call` event carrying that
@@ -327,6 +337,50 @@ Service functions (`service.py`), called as `service.f(...)`:
   result: "refused"}`, committed on its own, exactly like every other
   refusal in this module. Full behaviour is
   `docs/modules/playthrough.md` §19.
+- `attack` — the sixth action-spending mechanic: names the actor, the
+  target, an optional item (absent when a monster's own stat block
+  supplies the attack instead, §13) and the roll made for it. Loads the
+  actor and runs the same one-action check every action-spending mechanic
+  shares (§17), then loads the target and, when named, the item, refusing
+  `ObjectNotReachableError` / `OBJECT_NOT_REACHABLE` — the same code `take`,
+  `drop` and `give` already raise (§18) — when the target is in another
+  scene or the item is not the actor's own to swing. Spends the named roll
+  through `_consume_roll(kind="attack")` exactly as `resolve_check` and
+  `resolve_save` do (§14), refusing `RollNotUsableError` / `ROLL_NOT_USABLE`
+  for a roll of the wrong kind, already spent, or from another turn. An
+  attack is always one d20: the roll's own recorded die decides a
+  **critical hit** on a natural 20 whatever the target's armour; short of
+  that, the roll's total reaching `armour_class` is a **hit**, falling
+  short a **miss** — settled and written on the attack's own `tool_call`,
+  never on the roll (← D11). Writes no row anywhere else. A pass appends
+  one DM-visible `tool_call {args: {actorId, targetId, itemId?, rollId},
+  rollIds: [rollId], result: "ok", outcome: {outcome, total, natural,
+  armourClass}}` and commits once; a refusal keeps the same shape,
+  `result: "refused"`, committed on its own before the error is raised,
+  the pattern every refusal in this module already keeps. Full behaviour
+  is `docs/modules/playthrough.md` §21.
+- `damage` — binds a wound to the blow that landed it: takes a `damage`
+  roll and a **hit id**, the event id of an `attack` `tool_call`, and reads
+  its target from that entry rather than from any argument, refusing
+  `HitNotUsableError` / `HIT_NOT_USABLE` — a code of its own, apart from
+  `ROLL_NOT_USABLE` (§14), because a hit failing is a different mistake
+  from a roll failing — unless that entry is on this run, is an `attack`
+  that succeeded `hit` or `crit`, belongs to this turn, names this same
+  target, and has not already been paid out by an earlier `damage` call.
+  Then spends the `damage` roll through the shared `_consume_roll` like
+  every other roll (§14) and applies `min(total, current_hp)`, clamped at
+  `0`, never below. At `0`, a row with no `member_id` becomes
+  `is_alive = False`; a character's row keeps `is_alive = True` and instead
+  gets its whole `state` reassigned with `down: True` added — a new
+  `CharacterState` field, alongside `abilities`, `race`, `character_class`,
+  `background` and `appearance` — since this JSONB column is never edited
+  in place. Makes no one-action check of its own: the `attack` it is bound
+  to already spent that. A pass appends one DM-visible
+  `tool_call {args: {targetId, rollId, hitId}, rollIds: [rollId],
+  result: "ok", outcome: {rolled, applied, currentHp, isAlive, down}}` and
+  commits once; a refusal keeps the same shape, `result: "refused"`,
+  committed on its own before the error is raised. Full behaviour is
+  `docs/modules/playthrough.md` §22.
 - `get_awaiting` — reads a run's open turn back from `events` alone and
   answers `"none"`, `"roll:<eventId>"` or `"answer:<eventId>"`: the id of
   the newest `roll_requested` with no `roll` event answering it yet, else
@@ -378,9 +432,9 @@ accident.
 Rolling, and spending a roll once it exists, both have **no HTTP route
 either, for the same reason `use_exit` has none**: the only thing meant to
 call `request_player_roll`, `resolve_roll_request`, `roll`,
-`passive_check`, `ask_player`, `resolve_check` or `resolve_save` is the
-Dungeon Master's own tool layer, a later phase's work. Until that layer
-exists, `app
+`roll_initiative`, `passive_check`, `ask_player`, `resolve_check` or
+`resolve_save` is the Dungeon Master's own tool layer, a later phase's
+work. Until that layer exists, `app
 playthrough roll <kind> --actor <object-id> --user <user-id>` (Typer,
 `commands.py`) exercises the same derivation and roll from the
 terminal — one flag per context key the chosen kind needs (`--ability`,
@@ -391,18 +445,21 @@ offending text to stderr and exit `1`. Spending a roll has no CLI command
 of its own yet — nothing outside the test suite calls `resolve_check` or
 `resolve_save` today.
 
-**Interacting, taking, dropping, giving and using an item have no HTTP
-route either, for the same reason**: `interact`, `take`, `drop`, `give`
-and `use_item` are meant to be reached by the Dungeon Master's own tool
-layer, not called directly, and none has a CLI command of its own either —
-nothing outside the test suite calls any of them today.
+**Interacting, taking, dropping, giving, using an item, attacking and
+dealing damage all have no HTTP route either, for the same reason**:
+`interact`, `take`, `drop`, `give`, `use_item`, `attack` and `damage` are
+meant to be reached by the Dungeon Master's own tool layer, not called
+directly, and none has a CLI command of its own either — nothing outside
+the test suite calls any of them today. Neither does `roll_initiative`,
+for the same reason as every other roll above.
 
-**One action per creature per turn** is a rule `interact` already keeps
-and `take`, `give` and `use_item` now share too — attacking, once it
-lands, will ask the same check first. Dropping, using an exit, rolling and
-resolving a roll are outside that set on purpose: dropping is free per the
-SRD, and the other three were never a creature acting on something to
-begin with. The check itself reads
+**One action per creature per turn** is a rule `interact` keeps and
+`take`, `give`, `use_item` and `attack` all share — five actions in all,
+the full set §17 names. `damage` makes no one-action check of its own: the
+`attack` it is bound to has already spent the turn. Dropping, using an
+exit, rolling, resolving a roll and rolling for initiative are outside
+that set on purpose: dropping is free per the SRD, and the other four were
+never a creature acting on something to begin with. The check itself reads
 `events` for this run and this creature's turn — its `tool_call` rows
 already marked `result: "ok"` for one of the action-spending names above,
 naming this actor in `args.actorId` — and refuses with
@@ -433,24 +490,28 @@ already checked on the caller's behalf. A run belonging to someone else and
 a run that does not exist answer identically — not found — so no one can
 probe for the existence of another player's game. Errors: an unknown or
 foreign run, an unknown campaign, an actor or object id `use_exit`,
-`interact`, `take`, `drop`, `give` or `use_item` cannot find, and a roll id
-neither `resolve_check` nor `resolve_save` recognises are not found; a run
-already started, a second character, an archived run refusing a write, an
-invalid status transition, a second adventure entered while one is active,
-entering with none left to enter, `use_exit` asked for an exit it will not
-take, spending a roll already spent, from a later turn, or of the wrong
-kind, resolving against a `dc` outside `5..30`, `interact` asked for an
-action its object never authored, asked for a check needing a roll with
-none given and nothing carried that bypasses it, a second action asked of
-a creature that has already spent this turn's, `take`, `drop` or `give`
-asked to move an item that is not reachable from where the actor stands,
-and `use_item` asked to use anything at all are each a domain conflict
-(`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
+`interact`, `take`, `drop`, `give`, `use_item`, `attack` or `damage`
+cannot find, and a roll id no consumer recognises are not found; a hit id
+no consumer recognises is *not usable*, not *not found*; a
+run already started, a second character, an archived run refusing a
+write, an invalid status transition, a second adventure entered while one
+is active, entering with none left to enter, `use_exit` asked for an exit
+it will not take, spending a roll already spent, from a later turn, or of
+the wrong kind, resolving against a `dc` outside `5..30`, `interact` asked
+for an action its object never authored, asked for a check needing a roll
+with none given and nothing carried that bypasses it, a second action
+asked of a creature that has already spent this turn's, `take`, `drop`,
+`give` or `attack` asked to reach an item or a target that is not
+reachable from where the actor stands, `use_item` asked to use anything
+at all, and `damage` asked to spend a hit that missed, belongs to another
+turn, names a different target, or has already been paid out are each a
+domain conflict (`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
 `INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`,
 `EXIT_NOT_AVAILABLE`, `ROLL_NOT_USABLE`, `INVALID_DC`,
 `ACTION_NOT_AVAILABLE`, `ROLL_REQUIRED`, `ALREADY_ACTED`,
-`OBJECT_NOT_REACHABLE`, `ITEM_NOT_CONSUMABLE`); a payload not matching its
-type's shape is a validation error (`InvalidEventPayloadError`).
+`OBJECT_NOT_REACHABLE`, `ITEM_NOT_CONSUMABLE`, `HIT_NOT_USABLE`); a
+payload not matching its type's shape is a validation error
+(`InvalidEventPayloadError`).
 
 **The transcript read sorts by `id` alone, and that is only safe because one
 process mints every id.** `id` is a ULID, chronological by construction, but
