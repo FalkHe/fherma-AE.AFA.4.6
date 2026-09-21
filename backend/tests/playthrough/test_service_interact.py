@@ -469,11 +469,28 @@ def test_interact_refuses_a_roll_already_spent_by_an_earlier_ok_interact(playthr
         )
         assert first is True
 
+        # A second attempt by the character itself, in this same
+        # (untagged) turn, is refused by the one-action rule (WI2, AC3)
+        # before the roll is even looked at -- so the roll-already-spent
+        # refusal this test is about is exercised through a different
+        # actor in the same run reusing the very same roll id instead;
+        # `_consume_roll` gates on the run and the turn, never on who is
+        # attempting to spend it.
+        goblin_id = (
+            await playthrough_db.execute(
+                text(
+                    "SELECT id FROM objects WHERE campaign_run_id = :run_id "
+                    "AND template_id = 'goblin' LIMIT 1"
+                ),
+                {"run_id": run.id},
+            )
+        ).scalar_one()
+
         with pytest.raises(RollNotUsableError) as excinfo:
             await service.interact(
                 playthrough_db,
                 user_id=user_id,
-                actor_id=character.id,
+                actor_id=goblin_id,
                 object_id=fixture_id,
                 action=CUT_ACTION,
                 roll_id=roll_event.id,

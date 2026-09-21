@@ -24,6 +24,7 @@ from app.modules.playthrough.errors import (
     ActionNotAvailableError,
     AdventureActiveError,
     AdventureExhaustedError,
+    AlreadyActedError,
     CampaignNotFoundError,
     CampaignRunExistsError,
     CampaignRunNotFoundError,
@@ -790,6 +791,36 @@ async def _roll_already_spent(
     )
 
 
+_ACTION_NAMES = frozenset({"interact", "take", "give", "use_item", "attack"})
+
+
+async def _already_acted(
+    db: AsyncSession, *, run_id: str, actor_id: str, turn_id: str | None
+) -> bool:
+    """True when `actor_id` already has a *successful* action-spending
+    `tool_call` in this run's turn (`turn_id` `IS NOT DISTINCT FROM` the
+    call's) -- `_roll_already_spent`'s own shape, applied to actions
+    rather than rolls (WI2, AC3).
+
+    `_ACTION_NAMES` is `interact`, `take`, `give`, `use_item` and `attack`
+    -- `drop` is deliberately absent: the product owner ruled dropping an
+    item free (SRD; `decisions/mechanics.md`), superseding the brief's own
+    list. `use_exit`, every roll and every check are outside the set
+    entirely -- none of them was ever a creature acting on something. A
+    merely `refused` attempt is never counted, so a mistaken attempt never
+    spends the turn it was refused in.
+    """
+    stmt = select(Event.payload).where(Event.campaign_run_id == run_id, Event.type == "tool_call")
+    stmt = stmt.where(Event.turn_id.is_(None) if turn_id is None else Event.turn_id == turn_id)
+    result = await db.execute(stmt)
+    return any(
+        payload["result"] == "ok"
+        and payload["name"] in _ACTION_NAMES
+        and payload["args"].get("actorId") == actor_id
+        for payload in result.scalars().all()
+    )
+
+
 async def _consume_roll(
     db: AsyncSession, *, run_id: str, roll_id: str, kind: RollKind, turn_id: str | None
 ) -> Event:
@@ -1151,13 +1182,12 @@ async def interact(
     Gate order, shared by every acting mechanic in this module:
     `_resolve_actor_and_run` first, exactly `use_exit`'s own gate (an
     unknown or foreign actor, an archived run, a run outside `ready`/
-    `active` each raise before anything else runs) --
-
-        # WI2 (sprint 08a, wave 2): the one-action-per-turn check belongs
-        # here, before this mechanic's own checks below.
-
-    -- then this mechanic's own checks, then the write, then a `tool_call`
-    `ok`, then one commit.
+    `active` each raise before anything else runs) -- then `_already_acted`
+    (WI2, AC3): a successful `interact`/`take`/`give`/`use_item`/`attack`
+    already recorded for this actor in this turn refuses outright, before
+    the attempted action is even looked up, as `AlreadyActedError` /
+    `ALREADY_ACTED` -- then this mechanic's own checks, then the write,
+    then a `tool_call` `ok`, then one commit.
 
     `object_id` is loaded with no run filter first, the same way
     `use_exit` loads its actor -- an object on a foreign run answers
@@ -1189,9 +1219,18 @@ async def interact(
     """
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
 
-    # WI2 (sprint 08a, wave 2): the one-action-per-turn check belongs
-    # here, before this mechanic's own checks below -- the gate order
-    # every acting mechanic in this module shares.
+    if await _already_acted(db, run_id=run.id, actor_id=actor_id, turn_id=turn_id):
+        await _refuse_interact(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            object_id=object_id,
+            action=action,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="actor has already acted this turn",
+        )
+        raise AlreadyActedError(actor_id)
 
     obj = await _get_game_object(db, object_id)
     if obj.campaign_run_id != run.id:
