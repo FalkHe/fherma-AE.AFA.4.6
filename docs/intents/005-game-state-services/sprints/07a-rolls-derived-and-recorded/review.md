@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-21
 updated: 2026-09-21
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/32
 ---
 # Review: Sprint 07a — a roll is derived by the server and recorded as it fell
 
