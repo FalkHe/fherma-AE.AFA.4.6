@@ -11,13 +11,15 @@ playthrough".
 
 Today the module ships its five tables and their migrations, plus the surface
 that starts a campaign run, gives it its character, renames it, reads it
-back, enters its next adventure, appends to its transcript, reads that
-transcript back, reports what it has cost and puts the run away (§8): a
-service of eleven functions behind nine authenticated endpoints, plus one
-command run by hand rather than an endpoint (§10). Moving between scenes,
-completing an adventure and a game finishing remain future work; this
-document describes the tables and the surface that exist, not the lifecycle
-still to come.
+back, enters its next adventure, moves whoever is acting through an exit,
+appends to its transcript, reads that transcript back, reports what it has
+cost and puts the run away (§8): a service of twelve functions behind nine
+authenticated endpoints, plus one command run by hand rather than an
+endpoint (§11). The sprint that added entering an adventure deliberately
+stopped there, leaving scene movement, an adventure's completion and the
+game's own end for the next one; this document now describes that
+lifecycle too, exactly as far as it reaches (§9) — a tool layer letting the
+Dungeon Master call it remains later work.
 
 ## 1. What the module owns, and what it does not
 
@@ -238,10 +240,11 @@ Append-only: written once, never edited, never deleted.
 - **Cost is stored per event, not per run.** A run's spend is a sum over its
   events, which cannot drift from the events that caused it — there is no
   separate ledger row and nothing to keep in step. How that sum is read, and
-  why nothing outside this module can ask for it directly, is §10.
+  why nothing outside this module can ask for it directly, is §11.
 - **One function writes this table, and one endpoint reads the player's half
   of it** — `append_event` and the transcript read, §8. How ids end up
-  ordering that read, and the one condition that makes doing so safe, is §9.
+  ordering that read, and the one condition that makes doing so safe, is
+  §10.
 
 ## 8. Surface
 
@@ -258,7 +261,7 @@ CSRF-guarded:
 | `POST /api/v1/playthrough/campaign/{runId}/adventure` | Enters the next adventure the campaign lists that this game has no record of — `201` and the adventure run |
 | `POST /api/v1/playthrough/campaign/{runId}/archive` | Puts the run away, or deletes it if it was never started — `204`, no body |
 | `GET /api/v1/playthrough/campaign/{runId}/events` | The run's player-visible transcript, oldest first — `200` and the entries |
-| `GET /api/v1/playthrough/campaign/{runId}/stream` | Tells the caller when the transcript above has grown — no cost route exists anywhere; §11 |
+| `GET /api/v1/playthrough/campaign/{runId}/stream` | Tells the caller when the transcript above has grown — no cost route exists anywhere; §12 |
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else — the row, not its state. A character reads as `id, name,
@@ -274,17 +277,18 @@ the run, not for the player reading it.
 The service (`service.py`) exposes `start_campaign_run`, `list_campaign_runs`,
 `get_campaign_run`, `create_character`, `rename_campaign_run`,
 `archive_campaign_run`, `activate_campaign_run`, `enter_adventure`,
-`append_event`, `list_events` and `run_cost`, called as `service.f(...)`.
-Every one of them takes the acting user, and every one that takes a run id
-calls the internal `_require_member` first — **except `append_event`**,
-which is never called directly from a route and trusts the mechanic calling
-it to have checked membership already (see below). A run belonging to
-someone else and a run that does not exist answer identically — **not
-found** — so no one can probe for the existence of another player's game.
-`_require_writable`, also internal, raises `RunArchivedError` on an
-`archived` run; `rename_campaign_run`, `create_character` and
-`enter_adventure` call it right after `_require_member`. `run_cost` is the
-one function on this list with no route calling it at all — §10.
+`use_exit`, `append_event`, `list_events` and `run_cost`, called as
+`service.f(...)`. Every one of them takes the acting user, and every one
+that takes a run id calls the internal `_require_member` first — **except
+`append_event`**, which is never called directly from a route and trusts
+the mechanic calling it to have checked membership already (see below). A
+run belonging to someone else and a run that does not exist answer
+identically — **not found** — so no one can probe for the existence of
+another player's game. `_require_writable`, also internal, raises
+`RunArchivedError` on an `archived` run; `rename_campaign_run`,
+`create_character`, `enter_adventure` and `use_exit` call it right after
+`_require_member`. `run_cost` is the one function on this list with no
+route calling it at all — §11.
 
 **Starting a run** does three things at once, because none of them makes
 sense without the others: it pins the campaign's current content version onto
@@ -360,6 +364,12 @@ entry while one is already `active` is refused** — `AdventureActiveError`,
 raised when the insert collides with `uq_adventure_runs_active` (§5) rather
 than by a check made ahead of the insert.
 
+**Using an exit** is `use_exit`, and like activating a run it has no route
+of its own — nobody outside this module calls it yet. It is the one
+mechanic that moves an actor anywhere at all, whether that is a step to the
+next scene or the end of the adventure they are in; §9 describes it in
+full.
+
 **Appending an event** is `append_event`, and it is the **only** function
 anywhere in the tree that writes to `events` (§7) — nothing else in the
 module, and nothing outside it, inserts a row there. It takes the run, the
@@ -391,18 +401,84 @@ DM-only entries `append_event` also wrote are never in this answer, though
 they remain in `events` exactly as `archive_campaign_run` leaves the whole
 table: present, and readable by anyone with a reason to read it directly,
 just not through this endpoint. The ordering, and the one thing about it
-this document exists to flag, is §9.
+this document exists to flag, is §10.
 
-Errors this module raises: an unknown-or-foreign run and a campaign the
-content does not know are **not found**; a run already started, a second
-character on a run, a write against an archived run, an invalid status
-transition, entering an adventure while one is already under way and
-entering when none is left to enter are each a **conflict**
+Errors this module raises: an unknown-or-foreign run, a campaign the content
+does not know, and an actor `use_exit` cannot find are **not found**; a run
+already started, a second character on a run, a write against an archived
+run, an invalid status transition, entering an adventure while one is
+already under way, entering when none is left to enter, and asking
+`use_exit` for an exit it will not take are each a **conflict**
 (`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`, `INVALID_RUN_STATUS`,
-`ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`); a payload that does not match its
-type's shape is a **validation error** (`InvalidEventPayloadError`).
+`ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`, `EXIT_NOT_AVAILABLE`); a payload
+that does not match its type's shape is a **validation error**
+(`InvalidEventPayloadError`).
 
-## 9. The transcript's order is the order of ids — and why that is only safe today
+## 9. Using an exit: moving a scene, ending an adventure, finishing the game
+
+**One mechanic moves anyone anywhere in this module: `use_exit`.** It takes
+who is acting and which exit they take, and nothing else — no destination is
+ever an argument, so nobody can be sent somewhere the content the campaign
+actually declares does not lead. Scene change and the end of an adventure
+are the same act by this account: both are just which kind of exit was
+taken. It has no route of its own (§8) — the only thing meant to call it is
+the Dungeon Master's own tool layer, a later phase's work, so this section
+describes it by what it does rather than by how to reach it.
+
+`use_exit` first loads the actor by id alone; an id the module does not
+know at all answers **not found**, the same way an unknown run does
+elsewhere in this document. Finding it, it checks membership on the
+actor's own campaign run exactly as every other write in this module
+does — a foreign actor answers identically to a missing one — then that the
+run is writable and `ready` or `active`. It then reads the actor's current
+scene from the content pinned to that run at the moment it started (§3),
+through the content module, and looks for the requested exit among that
+scene's own exits. **The exit's condition — the prose describing when it
+may be used — is never read here.** It is written for the Dungeon Master to
+weigh before ever reaching for this mechanic, not for the mechanic to
+enforce; `use_exit` only ever checks that the exit exists on the actor's
+scene, nothing about whether the story says it should be taken.
+
+An exit found and of the ordinary kind **moves the actor**: its position
+(§6) is rewritten to the scene the exit leads to, and nothing else about it
+changes — which adventure the actor is in is untouched, since an exit only
+ever changes where within it someone stands. A `scene_entered` event,
+visible to the player, records the adventure run and the scene now entered.
+
+An exit found and marked as **ending the adventure** does something
+different: instead of moving anyone, it completes the adventure run the
+actor is in — `status` becomes `completed`, `completed_at` is set to
+now — and an `adventure_completed` event, visible to the player, records
+which adventure run that was. When the adventure just completed is the
+last one the pinned campaign's own list names, the campaign run itself
+becomes `finished` in the same stroke. **Nobody is moved or cleared away
+when an adventure ends.** Every object stays exactly where its own row
+already placed it — deliberately, so that everything the transcript already
+describes can still be read against a world that has not been swept away
+underneath it.
+
+Either outcome — a move or an ending — also appends one further event once
+the state change itself has succeeded: a `tool_call` recording that the
+mechanic ran and succeeded, visible only to the Dungeon Master, alongside
+the `scene_entered` or `adventure_completed` entry the player does see.
+
+**A refusal the player never sees, but the record keeps.** Asking for an
+exit that is not among the actor's own scene's exits — or asking on behalf
+of an actor with no scene to look one up on at all — is refused before
+anything about the run, the actor or any other object changes: nothing
+about the world is touched. The refusal is still written down, as its own
+`tool_call` event, visible only to the Dungeon Master, naming the mechanic,
+the actor it was asked for and the exit that was asked for, marked refused
+rather than succeeded — written and kept even though the call itself then
+fails, because a record of what was attempted is exactly what a refusal is
+for. Only once that record is safely down does `use_exit` raise, so the
+attempt is never lost to whatever happens next. The player's own reading of
+the transcript (§8) shows nothing for a refusal, since it is
+Dungeon-Master-only like the success record above it, so a player watching
+their own game never sees a gap where a mistake happened — only ever the
+moves and endings that actually took hold.
+
+## 10. The transcript's order is the order of ids — and why that is only safe today
 
 The read in §8 does exactly one thing to put the transcript in order: it
 sorts `events` by `id`. Nothing else — no `created_at`, no sequence column,
@@ -436,7 +512,7 @@ second process to this API must revisit this ordering before anything
 else** — it is the one thing in this module that a second process would
 silently break.
 
-## 10. What a run has cost, and why there is no address for it
+## 11. What a run has cost, and why there is no address for it
 
 Every `events` row can carry what the model call behind it cost (`cost_usd`,
 §7), and **a run's cost is nothing more than the sum of that column over its
@@ -470,7 +546,7 @@ module's suite asserts that no route serves cost, so that absence stays true
 as the module grows rather than quietly disappearing the day someone adds a
 convenient endpoint.
 
-## 11. The live signal
+## 12. The live signal
 
 A player's client can hold open `GET
 /api/v1/playthrough/campaign/{runId}/stream` and be told, without asking

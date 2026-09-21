@@ -26,6 +26,8 @@ from app.modules.playthrough.errors import (
     CampaignRunExistsError,
     CampaignRunNotFoundError,
     CharacterExistsError,
+    ExitNotAvailableError,
+    GameObjectNotFoundError,
     InvalidEventPayloadError,
     InvalidRunStatusError,
     RunArchivedError,
@@ -492,6 +494,153 @@ async def enter_adventure(db: AsyncSession, *, user_id: str, run_id: str) -> Adv
     await db.commit()
     await db.refresh(adventure_run)
     return adventure_run
+
+
+async def _get_game_object(db: AsyncSession, object_id: str) -> GameObject:
+    """The one object `actor_id` names, with no run context yet -- `use_exit`
+    loads the actor before it knows which run's membership to check, so
+    this cannot filter on `campaign_run_id` the way every other lookup in
+    this module does.
+    """
+    result = await db.execute(select(GameObject).where(GameObject.id == object_id))
+    obj = result.scalar_one_or_none()
+    if obj is None:
+        raise GameObjectNotFoundError(object_id)
+    return obj
+
+
+async def _refuse_exit(
+    db: AsyncSession, *, run_id: str, actor_id: str, exit_id: str, reason: str
+) -> None:
+    """Records the refusal where only the DM sees it (AC2, ← D11) and
+    commits it alone -- the exit check runs before any other state change,
+    so nothing else is pending, and this commit writes exactly that one
+    row. `append_event` only flushes; without this commit, a rollback
+    anywhere between here and the caller would erase the record along with
+    the raised exception. The caller raises `ExitNotAvailableError` right
+    after this returns.
+    """
+    await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        payload={
+            "name": "use_exit",
+            "args": {"actorId": actor_id, "exitId": exit_id},
+            "roll_ids": [],
+            "result": "refused",
+            "outcome": {"reason": reason},
+        },
+    )
+    await db.commit()
+
+
+async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: str) -> None:
+    """Moves `actor_id` through `exit_id`, or -- on an `adventure_end`
+    exit -- completes its adventure and, when that adventure is the pinned
+    campaign's last, finishes the whole game (WI1, AC2/AC3). No `turn_id`
+    parameter: phase 8 adds one once a turn exists.
+
+    Loads the object by `actor_id` alone (`GameObjectNotFoundError` if none
+    answers), then `_require_member(run_id=obj.campaign_run_id, ...)` so a
+    foreign actor answers identically to an unknown one, `_require_writable`,
+    and the run's status must be `ready` or `active`
+    (`InvalidRunStatusError` otherwise) -- the same gate order every other
+    write in this module uses.
+
+    The actor's current scene is read through
+    `content.service.load_scene` for the run's **pinned** `content_version`,
+    and `exit_id` is matched among that scene's own exits. `Exit.condition`
+    is never read here -- it is prose the agent weighs before ever calling
+    this tool, not something the mechanic enforces (← D8). An actor with no
+    scene at all (`scene_id` is `None`) never reaches `load_scene`; it
+    falls straight through to the same refusal as an unmatched `exit_id` --
+    one error class for both (← D11).
+
+    The check runs before any state change. On failure, `_refuse_exit`
+    records and commits the refusal, then this function raises
+    `ExitNotAvailableError`.
+
+    `kind='scene'` rewrites the actor's `scene_id` to `exit.to`
+    (`adventure_run_id` untouched -- an exit only ever changes where within
+    an adventure someone stands) and appends `scene_entered` at `player`.
+    `kind='adventure_end'` completes the actor's adventure run -- `status`
+    and `completed_at` set together on the one loaded row, so they reach
+    the database in the same UPDATE and never violate the CHECK that ties
+    them -- and appends `adventure_completed` at `player`; when that
+    adventure is the last id the pinned campaign declares (read from the
+    pinned content, never the `adventure_runs` table), the campaign run
+    itself becomes `finished`. No position is touched either way: nobody is
+    moved or cleared away when an adventure ends. Either outcome then also
+    appends a successful `tool_call` at `dm` (← D11; unlike `enter_adventure`,
+    which is a route rather than a tool) before the one commit that closes
+    the call.
+    """
+    obj = await _get_game_object(db, actor_id)
+    await _require_member(db, run_id=obj.campaign_run_id, user_id=user_id)
+    run = await _get_run(db, obj.campaign_run_id)
+    _require_writable(run)
+
+    if run.status not in ("ready", "active"):
+        raise InvalidRunStatusError(run.id)
+
+    exit_ = None
+    if obj.scene_id is not None:
+        scene = content_service.load_scene(run.campaign_id, run.content_version, obj.scene_id)
+        exit_ = next((candidate for candidate in scene.exits if candidate.id == exit_id), None)
+
+    if exit_ is None:
+        reason = (
+            "actor has no current scene"
+            if obj.scene_id is None
+            else f"exit '{exit_id}' is not on the actor's current scene"
+        )
+        await _refuse_exit(db, run_id=run.id, actor_id=actor_id, exit_id=exit_id, reason=reason)
+        raise ExitNotAvailableError(actor_id, exit_id)
+
+    if exit_.kind == "scene":
+        obj.scene_id = exit_.to
+        await append_event(
+            db,
+            run_id=run.id,
+            type="scene_entered",
+            visibility="player",
+            payload={"adventure_run_id": obj.adventure_run_id, "scene_id": obj.scene_id},
+        )
+    else:
+        adventure_run_result = await db.execute(
+            select(AdventureRun).where(AdventureRun.id == obj.adventure_run_id)
+        )
+        adventure_run = adventure_run_result.scalar_one()
+        adventure_run.status = "completed"
+        adventure_run.completed_at = func.now()
+        await append_event(
+            db,
+            run_id=run.id,
+            type="adventure_completed",
+            visibility="player",
+            payload={"adventure_run_id": adventure_run.id},
+        )
+
+        loaded = content_service.load_campaign(run.campaign_id, run.content_version)
+        if adventure_run.adventure_id == loaded.campaign.adventures[-1]:
+            run.status = "finished"
+
+    await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        payload={
+            "name": "use_exit",
+            "args": {"actorId": actor_id, "exitId": exit_id},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {},
+        },
+    )
+    await db.commit()
 
 
 async def append_event(

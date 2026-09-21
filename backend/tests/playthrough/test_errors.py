@@ -10,6 +10,8 @@ from app.modules.playthrough.errors import (
     CampaignRunExistsError,
     CampaignRunNotFoundError,
     CharacterExistsError,
+    ExitNotAvailableError,
+    GameObjectNotFoundError,
     InvalidRunStatusError,
     PlaythroughError,
     RunArchivedError,
@@ -62,3 +64,15 @@ def test_adventure_exhausted_carries_adventure_exhausted():
     exc = AdventureExhaustedError("run-1")
     assert isinstance(exc, PlaythroughError)
     assert exc.code == ErrorCode.ADVENTURE_EXHAUSTED
+
+
+def test_game_object_not_found_carries_not_found():
+    exc = GameObjectNotFoundError("object-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.NOT_FOUND
+
+
+def test_exit_not_available_carries_exit_not_available():
+    exc = ExitNotAvailableError("actor-1", "exit-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.EXIT_NOT_AVAILABLE
