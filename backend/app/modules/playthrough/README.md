@@ -111,7 +111,9 @@ below the service list.
   (an entry id, exclusive) and `limit` (`Query`, default 200, max 500) —
   the run's `player`-visible transcript, ordered by `id`, oldest first;
   `dm`-visible entries are never in the answer though they stay in the
-  table.
+  table. The response also carries `awaiting` — `service.get_awaiting`'s
+  answer for the same run — alongside the entries, so a client reading the
+  transcript is told in the same call what the game is waiting for.
 - `GET /api/v1/playthrough/campaign/{runId}/stream` — `text/event-stream`
   (`cache-control: no-cache`, `x-accel-buffering: no`); membership is
   checked before the `StreamingResponse` is built, so a refusal is an
@@ -125,7 +127,9 @@ nothing else. A character reads as `id, name, currentHp, maxHp,
 armourClass` and nothing else — `CharacterRead`. An adventure run reads as
 `id, adventureId, status, startedAt` and nothing else — `AdventureRunRead`.
 An event reads as `id, type, turnId, payload, createdAt` and nothing else —
-`EventRead`; no `visibility`, no cost, no run id.
+`EventRead`; no `visibility`, no cost, no run id. The events route itself
+answers `{events, awaiting}` (`EventsRead`), not a bare array — `awaiting`
+is one of `"none"`, `"roll:<id>"` or `"answer:<id>"`.
 
 Service functions (`service.py`), called as `service.f(...)`:
 
@@ -212,6 +216,40 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `ask_player` — appends a player-visible `question` event carrying the
   text asked and the options offered; the next `player_action` is expected
   to answer it.
+- `resolve_check` / `resolve_save` — turn a roll id into pass or fail
+  against a `dc`, each resolving the roll's own run and checking membership
+  before anything else, the same way `use_exit` resolves a run from an
+  actor id. A `dc` outside `5..30` is refused (`InvalidDcError`,
+  `INVALID_DC`) before the roll is even looked at. Otherwise each asks the
+  shared `_consume_roll` for the one kind it is allowed to spend —
+  `resolve_check` for `ability_check`, `resolve_save` for
+  `saving_throw` — an unknown roll id answering `NOT_FOUND`, anything else
+  `_consume_roll` refuses answering `RollNotUsableError` /
+  `ROLL_NOT_USABLE`; a `custom` roll is refused by both, unconditionally,
+  since its kind never matches either. Found and unspent, they weigh the
+  roll's stored `total` against `dc`, append one DM-visible
+  `tool_call {name, args: {rollId, dc}, rollIds: [rollId], result: "ok",
+  outcome: {total, dc, success}}`, commit once, and return
+  `outcome.success` — pass or fail lives here, never on the `roll` event
+  itself. Every refusal is recorded first — its own `tool_call`,
+  `result: "refused"`, naming the roll and the reason — and committed on
+  its own before the error is raised, exactly as `_refuse_exit` does, so a
+  mistaken attempt never erases the record of itself and never spends the
+  roll it was refused for.
+- `_consume_roll` — internal; the one place that decides whether a roll may
+  be spent, reading `events` alone rather than a consumption column: the
+  named roll id must be a `roll` event on this run, its payload `kind` must
+  match what the caller asks for, its `turn_id` must equal the caller's
+  (both `NULL` counts as a match), and no `tool_call` already on this run
+  and turn may carry `result: "ok"` with this id in `rollIds`. Any of those
+  failing raises `RollNotUsableError`; nothing about the roll is written
+  either way — only the caller above records a refusal.
+- `get_awaiting` — reads a run's open turn back from `events` alone and
+  answers `"none"`, `"roll:<eventId>"` or `"answer:<eventId>"`: the id of
+  the newest `roll_requested` with no `roll` event answering it yet, else
+  the newest `question` with no `player_action` after it, else `"none"`.
+  No column records this; the same three-way answer is derived again on
+  every call. Called by the events route (below), never on its own.
 - `_require_member` — internal; every function above that takes a run id
   calls it first to check membership before doing anything else.
 - `_require_writable` — internal; raises `RunArchivedError` when the run is
@@ -247,25 +285,28 @@ Cost has **no HTTP route anywhere in this module, on purpose**: it is a
 developer's number, not a player's, meant for a developer drawer the
 frontend does not have yet (← D14). Until that drawer exists, the only way
 to read it is `app playthrough cost <run-id> --user <user-id>` (Typer,
-`playthrough/cli.py`), which prints the run's total and then one
+`commands.py`), which prints the run's total and then one
 `turn <turn-id>: <amount>` line per turn (`turn -: <amount>` for the
 turnless group), or `f"{exc.code}: {exc}"` to stderr and exit `1` when the
 caller is not a member (`NOT_FOUND`). A test asserts no route exposes cost,
 so a future endpoint added elsewhere in the app cannot reintroduce it by
 accident.
 
-Rolling has **no HTTP route either, for the same reason `use_exit` has
-none**: the only thing meant to call `request_player_roll`,
-`resolve_roll_request`, `roll`, `passive_check` and `ask_player` is the
+Rolling, and spending a roll once it exists, both have **no HTTP route
+either, for the same reason `use_exit` has none**: the only thing meant to
+call `request_player_roll`, `resolve_roll_request`, `roll`,
+`passive_check`, `ask_player`, `resolve_check` or `resolve_save` is the
 Dungeon Master's own tool layer, a later phase's work. Until that layer
 exists, `app
 playthrough roll <kind> --actor <object-id> --user <user-id>` (Typer,
-`playthrough/cli.py`) exercises the same derivation and roll from the
+`commands.py`) exercises the same derivation and roll from the
 terminal — one flag per context key the chosen kind needs (`--ability`,
 `--item`, `--attack`, or `--expression` for `custom`) — and prints the
 kind, the actor, the formula, the dice, the modifier and the total, or
 fails exactly like `app playthrough cost` does on a bad expression: the
-offending text to stderr and exit `1`.
+offending text to stderr and exit `1`. Spending a roll has no CLI command
+of its own yet — nothing outside the test suite calls `resolve_check` or
+`resolve_save` today.
 
 The stream (`GET …/stream`, above) polls `service.latest_event_id` on an
 interval, sends the `updated` message when it has changed since the last
@@ -287,13 +328,17 @@ touching a run, except `append_event`, which every one of its callers has
 already checked on the caller's behalf. A run belonging to someone else and
 a run that does not exist answer identically — not found — so no one can
 probe for the existence of another player's game. Errors: an unknown or
-foreign run, an unknown campaign, and an actor id `use_exit` cannot find are
-not found; a run already started, a second character, an archived run
+foreign run, an unknown campaign, an actor id `use_exit` cannot find, and a
+roll id neither `resolve_check` nor `resolve_save` recognises are not
+found; a run already started, a second character, an archived run
 refusing a write, an invalid status transition, a second adventure entered
-while one is active, entering with none left to enter, and `use_exit` asked
-for an exit it will not take are each a domain conflict (`ALREADY_STARTED`,
-`CHARACTER_EXISTS`, `RUN_ARCHIVED`, `INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`,
-`ADVENTURE_EXHAUSTED`, `EXIT_NOT_AVAILABLE`); a payload not matching its
+while one is active, entering with none left to enter, `use_exit` asked
+for an exit it will not take, spending a roll already spent, from a later
+turn, or of the wrong kind, and resolving against a `dc` outside `5..30`
+are each a domain conflict (`ALREADY_STARTED`, `CHARACTER_EXISTS`,
+`RUN_ARCHIVED`, `INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`,
+`ADVENTURE_EXHAUSTED`, `EXIT_NOT_AVAILABLE`, `ROLL_NOT_USABLE`,
+`INVALID_DC`); a payload not matching its
 type's shape is a validation error (`InvalidEventPayloadError`).
 
 **The transcript read sorts by `id` alone, and that is only safe because one
