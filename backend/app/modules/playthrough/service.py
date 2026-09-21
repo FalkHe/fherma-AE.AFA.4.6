@@ -697,6 +697,69 @@ async def roll(
     return event
 
 
+async def _roll_for_side(
+    db: AsyncSession, *, user_id: str, side_ids: list[str], turn_id: str | None
+) -> Event:
+    """One roll for a whole side (WI2, AC4): scans `side_ids` for the
+    first one that carries a `member_id` -- a player's own character --
+    and asks it to roll through `request_player_roll`, a player's own
+    click still deciding that side's roll. A side with no member on it is
+    rolled outright instead, through `roll` at `player` visibility --
+    `roll`'s own path for a creature's roll, never `dm`'s default, since
+    an initiative roll is not DM-only bookkeeping -- on the side's own
+    first id, there being no other id to prefer once none of them is a
+    member's own character.
+    """
+    for candidate_id in side_ids:
+        candidate = await _get_game_object(db, candidate_id)
+        if candidate.member_id is not None:
+            return await request_player_roll(
+                db,
+                user_id=user_id,
+                actor_id=candidate_id,
+                kind="initiative",
+                context={},
+                turn_id=turn_id,
+            )
+    return await roll(
+        db,
+        user_id=user_id,
+        actor_id=side_ids[0],
+        kind="initiative",
+        context={},
+        visibility="player",
+        turn_id=turn_id,
+    )
+
+
+async def roll_initiative(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    side_a_ids: list[str],
+    side_b_ids: list[str],
+    turn_id: str | None = None,
+) -> tuple[Event, Event]:
+    """Rolls to see who acts first (WI2, AC4) -- two sides, each a list of
+    object ids and nothing else. Thin composition over `request_player_
+    roll` and `roll`, both already existing producers: per side,
+    `_roll_for_side` asks whichever id is a member's own character,
+    otherwise rolls the side outright. Dexterity is derived by the server
+    the same way every other formula is (← D6, `dice.derive_formula`) --
+    this function never takes a number of its own.
+
+    Writes no row beyond whichever `roll_requested` / `roll` events those
+    two calls already write on their own, and no `tool_call` -- finding
+    out who goes first spends nobody's turn, so there is nothing here for
+    a pass or a refusal to be recorded against. Nothing about a fight is
+    stored anywhere else either (← D7, 003-D8): no encounter, no turn
+    order, no `in_combat` flag, on this call or any other in this module.
+    """
+    event_a = await _roll_for_side(db, user_id=user_id, side_ids=side_a_ids, turn_id=turn_id)
+    event_b = await _roll_for_side(db, user_id=user_id, side_ids=side_b_ids, turn_id=turn_id)
+    return event_a, event_b
+
+
 async def passive_check(
     db: AsyncSession,
     *,

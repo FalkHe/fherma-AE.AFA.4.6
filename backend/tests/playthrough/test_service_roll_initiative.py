@@ -164,8 +164,7 @@ async def _tool_call_count(db: AsyncSession, run_id: str) -> int:
     return (
         await db.execute(
             text(
-                "SELECT COUNT(*) FROM events WHERE campaign_run_id = :run_id "
-                "AND type = 'tool_call'"
+                "SELECT COUNT(*) FROM events WHERE campaign_run_id = :run_id AND type = 'tool_call'"
             ),
             {"run_id": run_id},
         )
@@ -312,23 +311,30 @@ def test_a_side_with_no_member_uses_its_first_id_as_the_side_s_roll(playthrough_
 
 
 @pytest.mark.database
-def test_writes_exactly_two_roll_events_and_no_object_row_and_no_tool_call(playthrough_db):
+def test_writes_only_roll_events_no_object_row_and_no_tool_call(playthrough_db):
     # <- AC4
     async def _scenario():
         user_id, run, character = await _reach_lair_maw(playthrough_db, username="ri-inert")
         goblin_ids = await _goblin_ids(playthrough_db, run_id=run.id)
 
         before = await _objects_snapshot(playthrough_db, run.id)
-        before_event_count = (
-            await playthrough_db.execute(
-                text("SELECT COUNT(*) FROM events WHERE campaign_run_id = :run_id"),
-                {"run_id": run.id},
-            )
-        ).scalar_one()
+        before_event_ids = {
+            row.id
+            for row in (
+                await playthrough_db.execute(
+                    text("SELECT id FROM events WHERE campaign_run_id = :run_id"),
+                    {"run_id": run.id},
+                )
+            ).all()
+        }
+        # `_reach_lair_maw`'s own two `use_exit` calls already wrote their
+        # own `tool_call`s -- the walk there, not initiative, so the
+        # assertion below is a before/after diff, not an absolute zero.
+        before_tool_calls = await _tool_call_count(playthrough_db, run.id)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(playthrough_dice, "_rng", lambda: _ScriptedRandom([12]))
-            event_a, _event_b = await service.roll_initiative(
+            event_a, event_b = await service.roll_initiative(
                 playthrough_db,
                 user_id=user_id,
                 side_a_ids=[character.id],
@@ -341,17 +347,26 @@ def test_writes_exactly_two_roll_events_and_no_object_row_and_no_tool_call(playt
 
         # -- No `tool_call` was ever written -- finding out who goes first
         # spends nobody's turn.
-        assert await _tool_call_count(playthrough_db, run.id) == 0
+        assert await _tool_call_count(playthrough_db, run.id) == before_tool_calls
 
-        # -- Exactly two new events, the `roll_requested` and its `roll`
-        # events -- side_a's own request is still open at this point.
-        after_event_count = (
+        # -- Every event this call left behind is a `roll_requested` or a
+        # `roll` -- side_a (a member) is only ever *asked* (one new
+        # `roll_requested`, still open); side_b (nobody's own character)
+        # is rolled outright, which -- through `roll`'s own already-
+        # existing contract, unchanged here -- writes its own
+        # `roll_requested` answered immediately by a `roll`. Two sides,
+        # two returned events (`event_a`, `event_b`), no third kind of
+        # row anywhere.
+        new_rows = (
             await playthrough_db.execute(
-                text("SELECT COUNT(*) FROM events WHERE campaign_run_id = :run_id"),
+                text("SELECT id, type FROM events WHERE campaign_run_id = :run_id ORDER BY id"),
                 {"run_id": run.id},
             )
-        ).scalar_one()
-        assert after_event_count - before_event_count == 2
+        ).all()
+        new_rows = [row for row in new_rows if row.id not in before_event_ids]
+        assert {row.type for row in new_rows} == {"roll_requested", "roll"}
+        assert len(new_rows) == 3
+        assert {event_a.id, event_b.id} <= {row.id for row in new_rows}
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(playthrough_dice, "_rng", lambda: _ScriptedRandom([9]))
