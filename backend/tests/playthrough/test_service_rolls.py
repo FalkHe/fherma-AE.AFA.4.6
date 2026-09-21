@@ -197,8 +197,16 @@ def test_ask_player_raises_campaign_run_not_found_for_a_foreign_run():
 
 @pytest.mark.database
 def test_resolve_roll_request_reuses_the_requests_own_stored_values(playthrough_db):
-    # <- AC2: the answer carries the request's own formula, kind, actor id
-    # and visibility, never a fresh derivation.
+    # <- AC2, the sprint's central promise: the answer is made against the
+    # formula the player was already shown, not one worked out again at
+    # resolution time. A scenario where nothing changes between the
+    # request and the answer cannot tell the two implementations apart --
+    # a fresh derivation would then coincidentally agree with the stored
+    # one. So this test changes the one thing a fresh derivation would
+    # read -- the actor's own ability score -- *after* the request is
+    # recorded and *before* it is answered: re-deriving would now disagree
+    # with what was promised, so the answer must still carry the request's
+    # own stored formula and modifier, not the actor's now-current score.
     async def _scenario():
         user_id = generate_id()
         await _insert_user(playthrough_db, user_id, username="resolve-reuse")
@@ -215,6 +223,33 @@ def test_resolve_roll_request_reuses_the_requests_own_stored_values(playthrough_
         request_row = await _event_row(playthrough_db, requested.id)
         assert request_row.visibility == "player"
 
+        seed = content_service.load_campaign(CAMPAIGN_ID, VERSION).campaign.seed_character
+        original_score = seed.abilities.dexterity
+        original_modifier = (original_score - 10) // 2
+        # A different score, kept inside the SRD's own 1..30 bound either way.
+        mutated_score = original_score + 8 if original_score <= 22 else original_score - 8
+        mutated_modifier = (mutated_score - 10) // 2
+        assert mutated_modifier != original_modifier  # the mutation must actually bite
+
+        # Change the actor's own dexterity *after* the request was
+        # recorded -- a fresh derivation would now read a different score
+        # than the one already baked into the request's stored formula.
+        await playthrough_db.execute(
+            text(
+                "UPDATE objects SET state = jsonb_set("
+                "state, '{abilities,dexterity}', to_jsonb(:score)) WHERE id = :id"
+            ),
+            {"score": mutated_score, "id": character.id},
+        )
+        await playthrough_db.commit()
+        # The session's identity map still holds `character` from
+        # `create_character`, unaffected by a raw UPDATE it never issued
+        # itself; without this refresh a later `SELECT ... WHERE id = ...`
+        # for the same row would just hand back that same, now-stale
+        # object rather than the mutated one, and the guard below would
+        # not bite.
+        await playthrough_db.refresh(character)
+
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(dice, "_rng", lambda: _ScriptedRandom(iter([9])))
             answered = await service.resolve_roll_request(
@@ -224,14 +259,15 @@ def test_resolve_roll_request_reuses_the_requests_own_stored_values(playthrough_
         answer_row = await _event_row(playthrough_db, answered.id)
         assert answer_row.type == "roll"
         assert answer_row.visibility == request_row.visibility == "player"
+        # -- The promise itself: the request's own stored formula and
+        # modifier survive, never one re-derived from the mutated actor.
         assert answer_row.payload["formula"] == request_row.payload["formula"]
         assert answer_row.payload["kind"] == "ability_check"
         assert answer_row.payload["actorId"] == character.id
         assert answer_row.payload["faces"] == [9]
-        seed = content_service.load_campaign(CAMPAIGN_ID, VERSION).campaign.seed_character
-        dexterity_modifier = (seed.abilities.dexterity - 10) // 2
-        assert answer_row.payload["modifier"] == dexterity_modifier
-        assert answer_row.payload["total"] == 9 + dexterity_modifier
+        assert answer_row.payload["modifier"] == original_modifier
+        assert answer_row.payload["modifier"] != mutated_modifier
+        assert answer_row.payload["total"] == 9 + original_modifier
 
     asyncio.run(_scenario())
 
