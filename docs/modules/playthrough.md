@@ -25,7 +25,12 @@ remains later work. A roll is the same story one layer down: this document
 describes how one is worked out and set down (§13), how it is spent once
 and only once (§14), and what a reader of the transcript is told the game
 is waiting for as a result (§15) — the tool layer that would let the
-Dungeon Master reach any of this remains the same later work.
+Dungeon Master reach any of this remains the same later work. Interacting
+with the world is next: this document describes how a fixture's own
+authored checks are applied and why doing so touches nothing but the
+transcript (§16), and how the game holds a creature to one action a turn
+without keeping a count of it anywhere (§17) — the same missing tool layer
+is what would let the Dungeon Master reach either.
 
 ## 1. What the module owns, and what it does not
 
@@ -725,3 +730,98 @@ own: the same endpoint that answers a run's events (§8) now answers what
 the game is waiting for in the same breath, so a client showing a player
 their game is told, without a second question, whether it should now put a
 roll or a question in front of them, or neither.
+
+## 16. Interacting with a fixture
+
+A fixture standing in a scene — a thorn screen barring a path, a door with a
+lock that still holds — carries the ways it can be dealt with, written by
+the adventure's own author: each one an authored check naming an action in
+plain prose, the difficulty the author fixed for it, what becomes true once
+it succeeds, and sometimes a list of items that get past it without any
+roll at all (`FixtureTemplate.checks`, `docs/modules/content.md`).
+**Interacting** is the one mechanic that acts on that list. It names the
+actor attempting something, the fixture it is attempted against, and —
+by the check's own wording, matched exactly rather than guessed at from a
+synonym — *which* of the fixture's authored checks is being attempted, and
+optionally a roll answering it. Like using an exit and every roll mechanic
+before it (§9, §13), it has no route of its own yet: the only thing meant
+to reach it is the Dungeon Master's own tool layer, later work.
+
+An attempt passes one of two ways. Fed a roll, it passes when that roll —
+spent through the very rule that already keeps a roll from being spent
+twice (§14), so a roll interacting has spent is exactly as gone as one an
+ability check or a saving throw spent — carries a total that meets or beats
+the check's own difficulty; a roll of the wrong kind, already spent, from a
+later turn, or a bare custom roll is refused here exactly as §14 already
+refuses each of them. Fed no roll at all, it passes instead when the actor
+is carrying something the check's own list of bypassing items names — a
+key for the lock, a blade for the rope — consulted only because no roll was
+offered, never as a shortcut around one that was; which item answered it is
+written down alongside the pass. Anything else is refused before anything
+is touched: an action the fixture's author never wrote for it, a check that
+needs a roll when none was given and nothing the actor carries bypasses it
+either, or a roll that was made for something else entirely.
+
+**Interacting changes nothing in the world.** It reads the fixture's
+authored checks and the actor's own carried things, and writes only what
+was attempted and what came of it to the transcript — never a row anywhere
+else. What a check's own success promises — a screen that no longer bars
+the way, a door that gives — is prose the adventure's author wrote for the
+Dungeon Master to narrate, not a change this mechanic makes on its own; a
+fixture interacted with successfully looks, to every other row this module
+keeps, exactly as it did before. That is a deliberate limit of what this
+stage of the module does, worth saying plainly because it reads like an
+oversight otherwise — the write that lets a passed check actually move
+something in the world is later work, layered on top of what this mechanic
+has already decided.
+
+**Every attempt is recorded, a pass and a refusal alike.** A pass appends
+one `tool_call` event naming the actor, the fixture, the action attempted,
+the difficulty it was weighed against, the roll's own total when a roll
+answered it or which carried item bypassed it when none did, and that it
+succeeded. A refusal appends the same shape of entry marked refused
+instead, visible only to the Dungeon Master — exactly as a refused exit is
+(§9) and a roll's own refused spend is (§14) — committed on its own before
+the refusal is raised as an error, so the attempt is never lost to whatever
+happens next. A player reading their own transcript sees no gap where the
+mistake happened, only ever the passes that actually took hold.
+
+## 17. One action per creature per turn
+
+**A creature gets one action in a turn.** Interacting with a fixture (§16)
+spends it, and so does taking an item, giving one, using an item, and
+attacking — five actions in all. This sprint builds interacting and the
+rule itself; the other four are separate mechanics for the sprints after
+this one to add, named here already so that landing them costs this rule
+no rewrite.
+
+**Dropping something does not spend the turn.** Neither does moving through
+an exit (§9), rolling dice (§13), nor resolving a check or a saving throw
+against a difficulty (§14) — none of those was ever a creature doing
+something to someone or something else, which is what the rule above
+actually guards. Dropping stands apart from the four actions above it only
+because the SRD makes a point of it: dropping what you are carrying is
+free, and this module keeps it exactly that free rather than folding it in
+among the things that cost a turn — a creature can let go of everything it
+holds and still act besides.
+
+**A refused attempt does not spend the turn either.** Whatever a mechanic
+refuses an attempt for — an action its target never authored, a roll it
+needed and was not given, a roll it was given but could not use, or the
+one-action rule itself — costs the creature nothing beyond the refusal
+recorded against it (§16); a mistake is not the thing this rule spends a
+turn on. A creature that tries and fails may simply try again, the same
+turn, for as long as what it tries keeps failing rather than succeeding.
+
+**A second action by the same creature within an open turn is refused
+outright**, whichever of the five it is and whichever mechanic it was
+asked of, before whatever was attempted is even looked at. **The count
+behind that refusal is read from the transcript, not from anything
+stored**: the creature's own actions that already succeeded within the
+turn still open, asked again every time exactly the way §15 already
+answers what a game is waiting for by reading the transcript rather than
+consulting a value kept anywhere — there is no counter on the creature, on
+the turn, or on the run, and so nothing about it can ever fall out of step
+with what the transcript already shows. A turn that has not seen this
+creature act yet carries no such history, so a fresh turn always lets it
+act again.

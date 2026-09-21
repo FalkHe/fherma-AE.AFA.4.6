@@ -217,6 +217,54 @@ class InvalidDcError(PlaythroughError):
         super().__init__(f"invalid dc: {dc}")
 
 
+class ActionNotAvailableError(PlaythroughError):
+    """`interact` was asked for an `action` the object at `object_id` does
+    not answer to -- either the object is not a fixture at all, or it is
+    one whose authored `checks` name no `action` matching by exact string
+    equality. The two are indistinguishable on purpose: there is no
+    authored check to weigh either way (← D11 pattern). Always raised
+    after the refusal is already recorded as a `tool_call` event and
+    committed."""
+
+    code = ErrorCode.ACTION_NOT_AVAILABLE
+
+    def __init__(self, object_id: str, action: str) -> None:
+        self.object_id = object_id
+        self.action = action
+        super().__init__(f"action not available: object={object_id} action={action!r}")
+
+
+class RollRequiredError(PlaythroughError):
+    """The `FixtureCheck` named by `action` needs a roll to pass, none was
+    given, and nothing `owner_object_id`-carried by the actor names a
+    template in its `bypassed_by`. Always raised after the refusal is
+    already recorded as a `tool_call` event and committed."""
+
+    code = ErrorCode.ROLL_REQUIRED
+
+    def __init__(self, object_id: str, action: str) -> None:
+        self.object_id = object_id
+        self.action = action
+        super().__init__(f"roll required: object={object_id} action={action!r}")
+
+
+class AlreadyActedError(PlaythroughError):
+    """`actor_id` already has a successful `tool_call` for one of the
+    action-spending mechanics (`interact`, `take`, `give`, `use_item`,
+    `attack`) in the turn this attempt landed in -- one action per
+    creature per turn (WI2, AC3). `drop`, `use_exit`, and every roll or
+    check are outside that set on purpose: dropping is free per the SRD,
+    and none of the rest was ever a creature acting on something. Always
+    raised after the refusal is already recorded as a `tool_call` event
+    and committed."""
+
+    code = ErrorCode.ALREADY_ACTED
+
+    def __init__(self, actor_id: str) -> None:
+        self.actor_id = actor_id
+        super().__init__(f"already acted this turn: {actor_id}")
+
+
 class InvalidEventPayloadError(PlaythroughError):
     """`append_event` was asked to write a `type` or `visibility` it does
     not know, or a `payload` that fails the model `EVENT_PAYLOADS[type]`
