@@ -46,3 +46,14 @@ Status: `open | running | done | failed`
 <none yet>
 
 ## Verify
+
+Round 1: changes-requested — AC1, AC2, AC4a and AC5 all OK, and the verifier proved the load-bearing ones by
+mutation: picking a monster's attack by position instead of by name fails, and truncating the ability modifier
+instead of flooring it fails. The gap is `test_resolve_roll_request_reuses_the_requests_own_stored_values`:
+replacing the stored-formula re-use with a fresh derivation leaves all 872 unit and 67 database tests green,
+because nothing changes between request and answer in its scenario. To bite it must make a fresh derivation
+produce a *different* formula — change the actor's ability score after the request — and assert the answer
+follows the stored one.
+
+Also noted: `README.md:263` cites `playthrough/cli.py` for the command, which lives in `commands.py`; the same
+wrong filename is already on `main` at line 250.
