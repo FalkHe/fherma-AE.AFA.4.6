@@ -19,19 +19,17 @@ usable from the command line; neither is wired into the Dungeon Master yet.
 
 - Ask a run about something narrated in an earlier adventure: that line comes back, and the closest line comes
   first.
-- A line whose meaning could not be recorded is never returned by a question, but still appears in a recap —
-  recency does not care whether a line was encoded.
+- A line whose meaning could not be recorded is never returned by a question, but still appears in a recap.
 - Ask for a recap and you get the newest lines in reading order, and nothing is encoded to answer it.
 - Both refuse a run that does not exist; a run with no narration yet answers with nothing.
 
 ## Heads-up
 
-- This work sits on top of the previous sprint's, which you have not merged yet, so its review carries both until
-  that one lands.
+- This sits on top of the previous sprint, not merged yet, so its review carries both until that one lands.
 - Five lines is the default for both, changeable per call; the right number is for the phase where a Dungeon
   Master actually uses them.
-- When the encoder is unavailable, asking a question fails rather than answering "nothing remembered" — an
-  operator should not be told the run is empty when the machinery is down. Writing narration stays unaffected.
+- When the encoder is unavailable, asking a question fails rather than answering "nothing remembered": nobody
+  should be told a run is empty when the machinery is down. Writing narration stays unaffected.
 
 Brief: docs/intents/006-journal-memory/sprints/02-recall-by-meaning-and-recap/brief.md
 
