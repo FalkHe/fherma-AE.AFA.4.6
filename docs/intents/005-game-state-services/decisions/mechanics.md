@@ -2,7 +2,7 @@
 author: Falk Hermann <307901131+falkhetc@users.noreply.github.com>
 owner: human
 created: 2026-09-17
-updated: 2026-09-17
+updated: 2026-09-21
 stage: approved
 ---
 # Attachment: the mechanics surface
@@ -80,8 +80,9 @@ that creature's `attack` / `interact` / `use_item` `tool_call` events with the c
 
 ## Memory and rules (phases 4 and 6, listed for the complete picture)
 
-`lookup_rule(query)` · `recall(query)` · `record_fact(text)` · `inspect_object(id)` · `get_sheet(actor_id)` — reads,
-plus the one journal write.
+`lookup_rule(query)` · `recall(query)` · `inspect_object(id)` · `get_sheet(actor_id)` — reads, all of them:
+nothing in this section writes. `recall(query)` is the DM's long-term memory — it searches the run's past
+narration by meaning. There is no fact-writing tool (← 006-D1, D2).
 
 ## Shapes carried in `events.payload`
 
