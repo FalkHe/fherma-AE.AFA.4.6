@@ -9,10 +9,10 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| qa | open | |
+| 1 | done | `interact`: roll path, bypass path, three refusals |
+| 2 | done | `_already_acted`, wired into the gate order, `ALREADY_ACTED` |
+| 3 | done | module doc §16/§17 and README |
+| qa | done | 2 acceptance tests |
 
 Status: `open | running | done | failed`
 
@@ -29,6 +29,10 @@ Status: `open | running | done | failed`
 - `attack` is in the action set from this sprint, so the parallel sprint 09 needs no edit to it.
 - With no turn allocator yet, every mechanic lands in one untagged turn. Each test scenario therefore mints its
   own `turn_id`, or a creature's second action anywhere in a run would be refused.
+
+- WI2 adjusted one of WI1's own tests: it reused a roll by the same actor in the same turn, which the newly wired
+  action guard now intercepts first, so the roll-already-spent path it was written for was no longer what it
+  exercised. It reuses the roll through a second actor instead, testing the same thing.
 
 ## Backlog proposals
 
