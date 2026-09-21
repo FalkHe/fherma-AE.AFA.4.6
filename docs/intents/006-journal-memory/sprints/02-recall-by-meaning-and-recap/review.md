@@ -34,3 +34,10 @@ usable from the command line; neither is wired into the Dungeon Master yet.
 Brief: docs/intents/006-journal-memory/sprints/02-recall-by-meaning-and-recap/brief.md
 
 ## Verdict
+
+Round 1: approve — a run can now be asked a question and answer with the narration closest to it in meaning from
+anywhere in the run, including adventures it left long ago, and can be asked for its newest narration in reading
+order when a game is picked up again; both from the command line, not yet from the Dungeon Master itself. Checked
+against a real database: the closest line comes back first, a line whose meaning was never recorded is never
+returned, a recap gives the newest entries oldest first without encoding anything, and a run that does not exist
+is refused with a message.

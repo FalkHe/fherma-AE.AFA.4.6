@@ -16,7 +16,7 @@ CLI plus a `database`-marked test for the similarity ordering, as phases 4 and 5
 | # | Sprint (task) | Depends on | Issue | Status |
 |---|---|---|---|---|
 | 01 | Everything the DM narrates is stored so it can later be found by meaning, and a failure to do so never interrupts play | 005-02, 005-05 | #30 | done |
-| 02 | The DM can search everything it has narrated in a campaign run by meaning, and can be handed the most recent narration when a run is picked up again | 01 | #31 | running |
+| 02 | The DM can search everything it has narrated in a campaign run by meaning, and can be handed the most recent narration when a run is picked up again | 01 | #31 | done |
 | 03 | The project documentation stops describing a separate journal and describes the memory the product actually has | – | #32 | open |
 
 Outcomes — the one verifiable statement per sprint — live in each `sprints/NN-*/brief.md` (`## Outcome`).
