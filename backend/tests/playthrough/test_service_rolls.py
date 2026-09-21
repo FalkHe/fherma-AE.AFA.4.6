@@ -159,9 +159,7 @@ def test_passive_check_raises_run_archived_for_an_archived_run():
 
     with pytest.raises(RunArchivedError):
         asyncio.run(
-            service.passive_check(
-                db, user_id="user-1", actor_id="actor-1", ability="wisdom", dc=10
-            )
+            service.passive_check(db, user_id="user-1", actor_id="actor-1", ability="wisdom", dc=10)
         )
     assert db.committed == 0
 
@@ -230,10 +228,8 @@ def test_resolve_roll_request_reuses_the_requests_own_stored_values(playthrough_
         assert answer_row.payload["kind"] == "ability_check"
         assert answer_row.payload["actorId"] == character.id
         assert answer_row.payload["faces"] == [9]
-        dexterity_modifier = (
-            content_service.load_campaign(CAMPAIGN_ID, VERSION).campaign.seed_character.abilities.dexterity
-            - 10
-        ) // 2
+        seed = content_service.load_campaign(CAMPAIGN_ID, VERSION).campaign.seed_character
+        dexterity_modifier = (seed.abilities.dexterity - 10) // 2
         assert answer_row.payload["modifier"] == dexterity_modifier
         assert answer_row.payload["total"] == 9 + dexterity_modifier
 
