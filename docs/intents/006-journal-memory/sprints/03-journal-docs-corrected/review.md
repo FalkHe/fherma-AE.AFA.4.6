@@ -34,3 +34,9 @@ alternative that was rejected — still available later if it turns out to be ne
 Brief: docs/intents/006-journal-memory/sprints/03-journal-docs-corrected/brief.md
 
 ## Verdict
+
+Round 1: approve — the documentation now describes the memory the product actually has: the DM's long-term memory
+is its own past narration, searched by meaning across a whole campaign run, and one memory tool is named where two
+used to be. The journal survives as the alternative that was weighed and dropped, and as something a later stage
+could still add. The known gap now names the real risk of remembering this way, and nothing beyond the documents
+the brief named was changed.

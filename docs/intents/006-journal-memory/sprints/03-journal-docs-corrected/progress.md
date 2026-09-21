@@ -24,3 +24,4 @@ Status: `open | running | done | failed`
 - The playthrough module document still lists the transcript's columns as they stood before sprint 01 widened them, and does not mention the new operator command; being sprint 01's own scope, it is closed on that branch rather than here.
 
 ## Verify
+Round 1: approve, no failed criteria.
