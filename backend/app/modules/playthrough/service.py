@@ -21,8 +21,10 @@ from app.modules.content.errors import ContentNotFoundError
 from app.modules.content.schemas import LoadedCampaign, ObjectTemplate, SeedCharacter
 from app.modules.playthrough import dice
 from app.modules.playthrough.errors import (
+    ActionNotAvailableError,
     AdventureActiveError,
     AdventureExhaustedError,
+    AlreadyActedError,
     CampaignNotFoundError,
     CampaignRunExistsError,
     CampaignRunNotFoundError,
@@ -35,6 +37,7 @@ from app.modules.playthrough.errors import (
     RollNotFoundError,
     RollNotUsableError,
     RollRequestNotFoundError,
+    RollRequiredError,
     RunArchivedError,
 )
 from app.modules.playthrough.models import (
@@ -788,6 +791,36 @@ async def _roll_already_spent(
     )
 
 
+_ACTION_NAMES = frozenset({"interact", "take", "give", "use_item", "attack"})
+
+
+async def _already_acted(
+    db: AsyncSession, *, run_id: str, actor_id: str, turn_id: str | None
+) -> bool:
+    """True when `actor_id` already has a *successful* action-spending
+    `tool_call` in this run's turn (`turn_id` `IS NOT DISTINCT FROM` the
+    call's) -- `_roll_already_spent`'s own shape, applied to actions
+    rather than rolls (WI2, AC3).
+
+    `_ACTION_NAMES` is `interact`, `take`, `give`, `use_item` and `attack`
+    -- `drop` is deliberately absent: the product owner ruled dropping an
+    item free (SRD; `decisions/mechanics.md`), superseding the brief's own
+    list. `use_exit`, every roll and every check are outside the set
+    entirely -- none of them was ever a creature acting on something. A
+    merely `refused` attempt is never counted, so a mistaken attempt never
+    spends the turn it was refused in.
+    """
+    stmt = select(Event.payload).where(Event.campaign_run_id == run_id, Event.type == "tool_call")
+    stmt = stmt.where(Event.turn_id.is_(None) if turn_id is None else Event.turn_id == turn_id)
+    result = await db.execute(stmt)
+    return any(
+        payload["result"] == "ok"
+        and payload["name"] in _ACTION_NAMES
+        and payload["args"].get("actorId") == actor_id
+        for payload in result.scalars().all()
+    )
+
+
 async def _consume_roll(
     db: AsyncSession, *, run_id: str, roll_id: str, kind: RollKind, turn_id: str | None
 ) -> Event:
@@ -1089,6 +1122,222 @@ async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: st
         },
     )
     await db.commit()
+
+
+async def _refuse_interact(
+    db: AsyncSession,
+    *,
+    run_id: str,
+    actor_id: str,
+    object_id: str,
+    action: str,
+    roll_id: str | None,
+    turn_id: str | None,
+    reason: str,
+) -> None:
+    """Records an `interact` refusal where only the DM sees it (← D11) and
+    commits it alone -- `_refuse_exit`'s and `_refuse_roll`'s own pattern:
+    `append_event` only flushes, and the caller's rollback on the way to
+    raising would erase the record. `rollId` is named in `args` only when
+    one was given (WI1, I2), matching what a successful call itself
+    records.
+    """
+    args: dict[str, Any] = {"actorId": actor_id, "objectId": object_id, "action": action}
+    if roll_id is not None:
+        args["rollId"] = roll_id
+    await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "interact",
+            "args": args,
+            "roll_ids": [roll_id] if roll_id is not None else [],
+            "result": "refused",
+            "outcome": {"reason": reason},
+        },
+    )
+    await db.commit()
+
+
+async def interact(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    actor_id: str,
+    object_id: str,
+    action: str,
+    roll_id: str | None = None,
+    turn_id: str | None = None,
+) -> bool:
+    """Applies the fixture at `object_id`'s own authored `FixtureCheck` for
+    `action` -- passing on an `ability_check` roll `>= dc`, or, with no
+    roll, on an item the actor already carries that the check's own
+    `bypassed_by` names (WI1, AC1). Returns whether the check passed;
+    `success` is prose the DM narrates, and no `objects` row ever changes
+    here, win or lose.
+
+    Gate order, shared by every acting mechanic in this module:
+    `_resolve_actor_and_run` first, exactly `use_exit`'s own gate (an
+    unknown or foreign actor, an archived run, a run outside `ready`/
+    `active` each raise before anything else runs) -- then `_already_acted`
+    (WI2, AC3): a successful `interact`/`take`/`give`/`use_item`/`attack`
+    already recorded for this actor in this turn refuses outright, before
+    the attempted action is even looked up, as `AlreadyActedError` /
+    `ALREADY_ACTED` -- then this mechanic's own checks, then the write,
+    then a `tool_call` `ok`, then one commit.
+
+    `object_id` is loaded with no run filter first, the same way
+    `use_exit` loads its actor -- an object on a foreign run answers
+    identically to an unknown one (← D12), `GameObjectNotFoundError`
+    either way, before any refusal can be recorded. A `kind` other than
+    `fixture` -- or a `fixture` with no `template_id`, which cannot
+    happen for seeded content but is guarded against here regardless --
+    is refused as `ACTION_NOT_AVAILABLE`, indistinguishable from an
+    unmatched `action`: neither has an authored check to weigh. `action`
+    matches a `FixtureCheck.action` by exact string equality only (phase
+    8's tool layer offers the authored strings verbatim); no match is the
+    same refusal.
+
+    With `roll_id` given, it is consumed through `_consume_roll` at
+    `kind="ability_check"` -- 07b's one implementation, never a second one
+    -- so an unknown roll surfaces as `NOT_FOUND` before any refusal is
+    recorded (exactly `resolve_check`/`resolve_save`'s own precedent, ←
+    D12), while a wrong-kind or already-spent roll is refused and
+    committed (`RollNotUsableError`, mapped to `ROLL_NOT_USABLE`) before
+    being re-raised. Its `total` decides `success` against the check's
+    `dc`; a failed check is still `ok`, not a refusal (the world simply
+    does not open) -- only the three named refusals ever raise.
+
+    With no `roll_id`, the check's own `bypassed_by` is consulted -- never
+    otherwise -- for a `GameObject` this actor owns
+    (`owner_object_id = actor.id`) whose `template_id` is named there; a
+    match passes with no roll, its id reported as `outcome.bypassedBy`.
+    No match refuses `ROLL_REQUIRED`.
+    """
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+
+    if await _already_acted(db, run_id=run.id, actor_id=actor_id, turn_id=turn_id):
+        await _refuse_interact(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            object_id=object_id,
+            action=action,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="actor has already acted this turn",
+        )
+        raise AlreadyActedError(actor_id)
+
+    obj = await _get_game_object(db, object_id)
+    if obj.campaign_run_id != run.id:
+        raise GameObjectNotFoundError(object_id)
+
+    if obj.kind != "fixture" or obj.template_id is None:
+        await _refuse_interact(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            object_id=object_id,
+            action=action,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="object is not a fixture",
+        )
+        raise ActionNotAvailableError(object_id, action)
+
+    template = content_service.load_object_template(
+        run.campaign_id, run.content_version, obj.template_id
+    )
+    check = next((candidate for candidate in template.checks if candidate.action == action), None)
+    if check is None:
+        await _refuse_interact(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            object_id=object_id,
+            action=action,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason=f"no check answers action {action!r}",
+        )
+        raise ActionNotAvailableError(object_id, action)
+
+    total: int | None = None
+    bypassed_by: str | None = None
+
+    if roll_id is not None:
+        try:
+            consumed = await _consume_roll(
+                db, run_id=run.id, roll_id=roll_id, kind="ability_check", turn_id=turn_id
+            )
+        except RollNotUsableError:
+            await _refuse_interact(
+                db,
+                run_id=run.id,
+                actor_id=actor_id,
+                object_id=object_id,
+                action=action,
+                roll_id=roll_id,
+                turn_id=turn_id,
+                reason="roll already spent, from another turn, or of another kind",
+            )
+            raise
+        total = consumed.payload["total"]
+        success = total >= check.dc
+    else:
+        if check.bypassed_by:
+            bypass_result = await db.execute(
+                select(GameObject.id).where(
+                    GameObject.owner_object_id == actor.id,
+                    GameObject.template_id.in_(check.bypassed_by),
+                )
+            )
+            bypassed_by = bypass_result.scalars().first()
+        if bypassed_by is None:
+            await _refuse_interact(
+                db,
+                run_id=run.id,
+                actor_id=actor_id,
+                object_id=object_id,
+                action=action,
+                roll_id=roll_id,
+                turn_id=turn_id,
+                reason="the check needs a roll and nothing carried bypasses it",
+            )
+            raise RollRequiredError(object_id, action)
+        success = True
+
+    outcome: dict[str, Any] = {"action": action, "dc": check.dc}
+    if total is not None:
+        outcome["total"] = total
+    if bypassed_by is not None:
+        outcome["bypassedBy"] = bypassed_by
+    outcome["success"] = success
+
+    args: dict[str, Any] = {"actorId": actor_id, "objectId": object_id, "action": action}
+    if roll_id is not None:
+        args["rollId"] = roll_id
+
+    await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "interact",
+            "args": args,
+            "roll_ids": [roll_id] if roll_id is not None else [],
+            "result": "ok",
+            "outcome": outcome,
+        },
+    )
+    await db.commit()
+    return success
 
 
 async def append_event(

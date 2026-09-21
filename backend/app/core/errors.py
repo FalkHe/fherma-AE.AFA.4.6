@@ -30,6 +30,9 @@ class ErrorCode(StrEnum):
     EXIT_NOT_AVAILABLE = "EXIT_NOT_AVAILABLE"
     ROLL_NOT_USABLE = "ROLL_NOT_USABLE"
     INVALID_DC = "INVALID_DC"
+    ACTION_NOT_AVAILABLE = "ACTION_NOT_AVAILABLE"
+    ROLL_REQUIRED = "ROLL_REQUIRED"
+    ALREADY_ACTED = "ALREADY_ACTED"
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
@@ -65,6 +68,9 @@ _ERROR_INFO: dict[ErrorCode, tuple[int, str]] = {
     ErrorCode.EXIT_NOT_AVAILABLE: (409, "That exit is not available from here."),
     ErrorCode.ROLL_NOT_USABLE: (409, "That roll cannot be spent here."),
     ErrorCode.INVALID_DC: (409, "That difficulty is outside the allowed range."),
+    ErrorCode.ACTION_NOT_AVAILABLE: (409, "That action is not available here."),
+    ErrorCode.ROLL_REQUIRED: (409, "That check needs a roll."),
+    ErrorCode.ALREADY_ACTED: (409, "This creature has already acted this turn."),
     ErrorCode.NOT_FOUND: (404, "Resource not found."),
     ErrorCode.METHOD_NOT_ALLOWED: (405, "Method not allowed."),
     ErrorCode.INTERNAL_ERROR: (500, "An unexpected error occurred."),

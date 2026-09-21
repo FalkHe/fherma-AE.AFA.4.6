@@ -1,0 +1,50 @@
+---
+author: sprint
+owner: agent
+created: 2026-09-21
+updated: 2026-09-21
+stage: done
+---
+# Progress: Sprint 08a
+
+| WI | Status | Note |
+|---|---|---|
+| 1 | done | `interact`: roll path, bypass path, three refusals |
+| 2 | done | `_already_acted`, wired into the gate order, `ALREADY_ACTED` |
+| 3 | done | module doc §16/§17 and README |
+| qa | done | 2 acceptance tests |
+
+Status: `open | running | done | failed`
+
+## Issues
+
+- **Sprint 08 was split into 08a and 08b**, following the precedent of 05, 06 and 07. 08a is `interact` and the
+  one-action-per-turn rule; 08b the inventory moves and the `use_item` seam. 08b is issue #36, new.
+- **Two rulings from the product owner**, asked because research marked them product-visible:
+  1. **Dropping an item is free.** The brief's own assumption counted `drop` as an action, while
+     `decisions/mechanics.md` and the SRD both make it free; their standing rule is that the SRD wins. The brief
+     line is superseded, and the action set lands here in 08a: `interact`, `take`, `give`, `use_item`, `attack`.
+  2. A container standing in the scene can be looted, so Greenhollow's stolen fleeces can come out of the wool
+     sack. That reaches 08b, where taking lives, and is written into its brief as AC5.
+- `attack` is in the action set from this sprint, so the parallel sprint 09 needs no edit to it.
+- With no turn allocator yet, every mechanic lands in one untagged turn. Each test scenario therefore mints its
+  own `turn_id`, or a creature's second action anywhere in a run would be refused.
+
+- WI2 adjusted one of WI1's own tests: it reused a roll by the same actor in the same turn, which the newly wired
+  action guard now intercepts first, so the roll-already-spent path it was written for was no longer what it
+  exercised. It reuses the roll through a second actor instead, testing the same thing.
+
+## Backlog proposals
+
+<none yet>
+
+## Verify
+
+Round 1: approve — AC1 and AC3 both OK, proven by mutation rather than by reading: the verifier broke the action
+check itself, the success filter, the turn scoping, the actor filter and the name filter in turn, and a test
+caught each; adding `drop` to the action set fails its dedicated test, so 08b cannot regress that ruling
+silently. It also injected a stray column write into `interact` and watched the no-change snapshot catch it,
+removed the refusal commit and watched five tests across three files fail, and confirmed WI2's one-line
+adjustment to a WI1 test changed only the actor id, leaving its assertions intact.
+
+`attack` sits in the action set as a string compared against recorded entries, so sprint 09 needs no edit here.
