@@ -165,6 +165,7 @@ def test_create_character_writes_state_whole_from_the_sheet():
         "character_class": GREENHOLLOW_SEED.character_class,
         "background": GREENHOLLOW_SEED.background,
         "appearance": GREENHOLLOW_SEED.appearance,
+        "down": False,  # sprint 09, WI1: a character starts not down.
     }
 
 
