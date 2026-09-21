@@ -156,11 +156,34 @@ Service functions (`service.py`), called as `service.f(...)`:
   that changes at the first narration, not here. A second entry while one is
   `active` collides with `uq_adventure_runs_active` and is re-raised as
   `AdventureActiveError`.
+- `use_exit` — the one mechanic that moves an actor anywhere, taking only
+  who is acting and which exit they take; no destination is ever an
+  argument. Loads the actor by id alone (`GameObjectNotFoundError` if
+  unknown), then requires the run `ready` or `active` like every other
+  write. Resolves the actor's current scene through
+  `content.service.load_scene` at the run's pinned `content_version` and
+  matches `exit_id` among that scene's exits — `Exit.condition` is never
+  read; it is prose for the caller to weigh before reaching for this
+  function, not a check this function makes. Not on that scene, or the
+  actor has no scene at all, refuses before any write: it appends a
+  DM-visible `tool_call` event naming the mechanic, the actor and the exit,
+  `result: "refused"`, commits that one row on its own — `append_event`
+  only flushes — and then raises `ExitNotAvailableError`. Found and
+  `kind="scene"`: rewrites the actor's `scene_id` to `exit.to`, appends a
+  player-visible `scene_entered {adventureRunId, sceneId}`. Found and
+  `kind="adventure_end"`: sets the actor's `adventure_runs` row
+  `completed`/`completed_at`, appends a player-visible
+  `adventure_completed {adventureRunId}`, and — when the pinned campaign's
+  own adventure list names no further adventure after this one — moves the
+  campaign run to `finished`; no object's position changes either way. Both
+  successful outcomes also append a DM-visible `tool_call`,
+  `result: "ok"`, and commit once. Full behaviour is
+  `docs/modules/playthrough.md` §9.
 - `_require_member` — internal; every function above that takes a run id
   calls it first to check membership before doing anything else.
 - `_require_writable` — internal; raises `RunArchivedError` when the run is
-  `archived`. Called by `rename_campaign_run`, `create_character` and
-  `enter_adventure` before they touch anything.
+  `archived`. Called by `rename_campaign_run`, `create_character`,
+  `enter_adventure` and `use_exit` before they touch anything.
 - `append_event` — the **only** function in the tree that writes to
   `events`. Takes the run, `type`, `visibility`, a payload (dict or the
   type's own payload model), and optionally `turn_id`, `actor_member_id`
@@ -218,13 +241,14 @@ touching a run, except `append_event`, which every one of its callers has
 already checked on the caller's behalf. A run belonging to someone else and
 a run that does not exist answer identically — not found — so no one can
 probe for the existence of another player's game. Errors: an unknown or
-foreign run and an unknown campaign are not found; a run already started, a
-second character, an archived run refusing a write, an invalid status
-transition, a second adventure entered while one is active, and entering
-with none left to enter are each a domain conflict (`ALREADY_STARTED`,
+foreign run, an unknown campaign, and an actor id `use_exit` cannot find are
+not found; a run already started, a second character, an archived run
+refusing a write, an invalid status transition, a second adventure entered
+while one is active, entering with none left to enter, and `use_exit` asked
+for an exit it will not take are each a domain conflict (`ALREADY_STARTED`,
 `CHARACTER_EXISTS`, `RUN_ARCHIVED`, `INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`,
-`ADVENTURE_EXHAUSTED`); a payload not matching its type's shape is a
-validation error (`InvalidEventPayloadError`).
+`ADVENTURE_EXHAUSTED`, `EXIT_NOT_AVAILABLE`); a payload not matching its
+type's shape is a validation error (`InvalidEventPayloadError`).
 
 **The transcript read sorts by `id` alone, and that is only safe because one
 process mints every id.** `id` is a ULID, chronological by construction, but
@@ -234,4 +258,4 @@ other in the same millisecond. This backend runs as a single process today,
 so the read's `ORDER BY id` is always correct; the fix if that ever changes
 is a database-issued sequence, not built now because it is not yet needed.
 The full reasoning, for whoever adds a second process, lives in
-`docs/modules/playthrough.md` §9.
+`docs/modules/playthrough.md` §10.

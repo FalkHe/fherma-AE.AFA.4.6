@@ -135,6 +135,32 @@ class AdventureExhaustedError(PlaythroughError):
         super().__init__(f"campaign run has no adventure left to enter: {run_id}")
 
 
+class GameObjectNotFoundError(PlaythroughError):
+    """No object answers `actor_id`, on its own, with no membership context
+    yet -- `use_exit` (sprint 06b) loads the actor before it knows which
+    run to check membership against."""
+
+    code = ErrorCode.NOT_FOUND
+
+    def __init__(self, object_id: str) -> None:
+        self.object_id = object_id
+        super().__init__(f"object not found: {object_id}")
+
+
+class ExitNotAvailableError(PlaythroughError):
+    """The exit `use_exit` was asked to use is not on the actor's current
+    scene -- including an actor with no scene at all, the same refusal
+    (← D11): one error class, not two. Always raised after the refusal is
+    already recorded as a `tool_call` event and committed."""
+
+    code = ErrorCode.EXIT_NOT_AVAILABLE
+
+    def __init__(self, actor_id: str, exit_id: str) -> None:
+        self.actor_id = actor_id
+        self.exit_id = exit_id
+        super().__init__(f"exit not available: actor={actor_id} exit={exit_id}")
+
+
 class InvalidEventPayloadError(PlaythroughError):
     """`append_event` was asked to write a `type` or `visibility` it does
     not know, or a `payload` that fails the model `EVENT_PAYLOADS[type]`

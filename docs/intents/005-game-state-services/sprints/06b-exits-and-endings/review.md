@@ -1,0 +1,48 @@
+---
+author: sprint
+owner: agent
+created: 2026-09-19
+updated: 2026-09-19
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/31
+---
+# Review: Sprint 06b — an exit moves the party, ends the adventure, or finishes the game
+
+## What changed
+
+Moving through a story and reaching its end are now the same act: taking an exit. It takes who is acting and
+which exit — never a destination — so nobody can be moved somewhere the story does not connect to. An ordinary
+exit moves them and the transcript says where they went. An exit that ends the adventure completes it instead,
+and since Greenhollow's is the campaign's only one, the game itself finishes. Nobody is swept off the board:
+everyone stays where they stood, so the ending can still be described.
+
+## How to check it
+
+- Taking an exit moves the character and the transcript shows the new scene.
+- Asking for an exit that is not in the room is refused and nothing moves; the player's transcript shows
+  nothing at all, while the DM's record says what was asked for and that it was refused.
+- Leaving the goblin hollow completes the adventure, says so, and finishes the game — every figure still
+  standing where it was.
+
+## Heads-up
+
+- This mechanic has no address of its own: the DM calls it through its tool layer, a later phase, so it is
+  proven against the stored world rather than over the wire.
+- An exit's condition — the prose saying when it may be used — is deliberately not enforced here. It is
+  written for the DM to weigh before reaching for the mechanic.
+- A game can now be started, given a character, entered, played through its scenes and ended. What is still
+  missing before it is playable is the turn itself, and dice.
+
+Brief: docs/intents/005-game-state-services/sprints/06b-exits-and-endings/brief.md
+
+## Verdict
+
+Round 1: changes requested — the DM's note of a refused attempt is only ever read back from inside the failed
+attempt itself, so if that note were lost the tests would still pass. It needs pinning from the outside, so a
+later change cannot silently drop the very record a refusal exists to leave behind.
+
+Round 2: approve — the record of a refused attempt is now proven from outside the attempt that made it: the line
+that makes the record stick was removed on purpose and the check failed on exactly that point, then restored and
+everything passed again. A game can be started, given a character, entered, walked through its scenes and brought
+to an end — the party moves by taking exits, an exit that is not in the room is refused with nothing moved and
+only the DM told, and finishing the goblin hollow completes the adventure and ends the game with every figure
+left standing where it was.
