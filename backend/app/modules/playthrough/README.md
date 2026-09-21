@@ -65,9 +65,14 @@ Owns a player's playthrough of a campaign and who may act in it.
   JSONB column with no default; optional `prompt_tokens`,
   `completion_tokens` and `cost_usd` (an exact `NUMERIC(12,6)`, never a
   float); `created_at` only -- an event is never edited after it is
-  written. Indexed by `(campaign_run_id, visibility, id)` and by
-  `(campaign_run_id, turn_id)`; no unique constraint and no ORM
+  written; an optional `embedding` (`VECTOR(1536)`) and `embedding_model`,
+  populated only for `narration` rows. Indexed by `(campaign_run_id,
+  visibility, id)`, by `(campaign_run_id, turn_id)` and by a partial HNSW
+  cosine index (`ix_events_embedding_narration`) restricted to `type =
+  'narration' AND embedding IS NOT NULL`; no unique constraint and no ORM
   relationship.
+- The `events` embedding columns and index migration
+  (`alembic/versions/0008_event_embeddings.py`).
 - The dice engine (`dice.py`): `roll(expression)` parses `NdM+-K` and rolls
   it behind an `_rng()` seam (swappable in tests for a scripted sequence of
   faces), capped at 20 dice of at most 100 faces, raising
