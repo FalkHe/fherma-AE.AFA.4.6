@@ -491,7 +491,8 @@ a run that does not exist answer identically — not found — so no one can
 probe for the existence of another player's game. Errors: an unknown or
 foreign run, an unknown campaign, an actor or object id `use_exit`,
 `interact`, `take`, `drop`, `give`, `use_item`, `attack` or `damage`
-cannot find, and a roll or hit id no consumer recognises are not found; a
+cannot find, and a roll id no consumer recognises are not found; a hit id
+no consumer recognises is *not usable*, not *not found*; a
 run already started, a second character, an archived run refusing a
 write, an invalid status transition, a second adventure entered while one
 is active, entering with none left to enter, `use_exit` asked for an exit

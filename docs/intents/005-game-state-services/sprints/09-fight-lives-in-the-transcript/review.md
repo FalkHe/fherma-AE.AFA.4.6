@@ -35,3 +35,9 @@ landed it, so nothing is hurt without a hit behind it.
 Brief: docs/intents/005-game-state-services/sprints/09-fight-lives-in-the-transcript/brief.md
 
 ## Verdict
+
+Round 1: approve — a character and a monster can now fight: a blow is weighed against what the target wears, a
+wound is bound to the blow that landed it, a monster at nothing left dies while a character stays alive and is
+marked down, and after a whole fight nothing anywhere in the game records that a fight happened. Worth deciding
+alongside the open question above: a critical hit currently costs its target no more than an ordinary hit, and a
+blow can only be paid out once, so making a crit hurt more would mean changing how wounding works.

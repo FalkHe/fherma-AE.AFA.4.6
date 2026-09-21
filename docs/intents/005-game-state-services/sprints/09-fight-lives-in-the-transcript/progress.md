@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-21
 updated: 2026-09-21
-stage: draft
+stage: done
 ---
 # Progress: Sprint 09
 
@@ -36,7 +36,19 @@ Status: `open | running | done | failed`
 
 ## Backlog proposals
 
+- A critical hit costs its target no more than an ordinary hit, and a blow can be paid out only once, so the
+  narrating layer cannot compensate. Making a crit hurt more means changing how wounding works.
 - For phase 8: decide what a downed character does next — death saving throws as the SRD has them, stabilising,
   and whether a run whose only character stays down ends, and how.
 
 ## Verify
+
+Round 1: approve — AC1-AC4 all OK, every one proven by mutation. The verifier added an `encounters` table, an
+`objects.in_combat` column and a stored `turn_order` state key one at a time and watched each be caught; broke
+each of damage's four binding guards; dropped the database's own hit-point constraint to prove the clamp is
+tested rather than merely constrained; changed the crit to read the total instead of the die; made `attack`
+write an object row; and replaced the whole-state reassignment with an in-place mutation, which silently lost
+the write and failed three tests.
+
+It also found the error summary in both documents claiming an unrecognised hit id answers *not found*, where the
+code answers *not usable*. Corrected here — §22 already had it right, only the summary disagreed.

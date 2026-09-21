@@ -419,8 +419,10 @@ making a client ask twice for two things that describe the same open turn;
 
 Errors this module raises: an unknown-or-foreign run, a campaign the content
 does not know, an actor or object id `use_exit`, `interact`, `take`, `drop`,
-`give`, `use_item`, `attack` or `damage` cannot find, and a roll or hit id
-no consumer below recognises are **not found**; a run already started, a
+`give`, `use_item`, `attack` or `damage` cannot find, and a roll id no
+consumer below recognises are **not found** — while a hit id no consumer
+recognises is **not usable** rather than not found, since it names an
+entry in the transcript rather than a thing in the world; a run already started, a
 second character on a run, a write against an archived run, an invalid
 status transition, entering an adventure while one is already under way,
 entering when none is left to enter, asking `use_exit` for an exit it will
