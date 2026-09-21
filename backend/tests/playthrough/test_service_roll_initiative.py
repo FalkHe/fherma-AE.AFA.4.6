@@ -89,6 +89,8 @@ EXPECTED_EVENTS_COLUMNS = {
     "completion_tokens",
     "cost_usd",
     "created_at",
+    "embedding",
+    "embedding_model",
 }
 
 

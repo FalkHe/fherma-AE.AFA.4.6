@@ -10,13 +10,16 @@ having a position, one thing per key per campaign run and no limit on how
 many things a member holds, plus `Event`'s column shape and order, the
 twelve-value `type` set and the two-value `visibility` set, `cost_usd` typed
 as an exact decimal rather than a float, the cascade on `campaign_run_id`
-and the clear-on-delete on `actor_member_id`, exactly two indexes with no
-unique constraint, no sequence column and no `updated_at`
+and the clear-on-delete on `actor_member_id`, both `embedding` columns
+being optional, exactly three indexes with no unique constraint -- the
+third a partial HNSW cosine index restricted to narration rows that carry
+a vector -- no sequence column and no `updated_at`
 (`research.md` "Interfaces"). Engine-free -- everything here is read off
 the declarative model's `Table`, never a real connection."""
 
 from decimal import Decimal
 
+from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     CHAR,
     Boolean,
@@ -32,6 +35,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import DateTime
 
 from app.modules.playthrough.models import (
+    EMBEDDING_WIDTH,
     AdventureRun,
     CampaignRun,
     CampaignRunMember,
@@ -577,6 +581,8 @@ def test_events_column_order_has_no_sequence_column():
         "completion_tokens",
         "cost_usd",
         "created_at",
+        "embedding",
+        "embedding_model",
     ]
 
 
@@ -689,14 +695,30 @@ def test_event_created_at_is_a_timezone_aware_datetime_with_server_default_and_n
     assert column.onupdate is None
 
 
+def test_event_embedding_is_a_nullable_vector_of_the_shared_width():
+    column = _column(Event, "embedding")
+    assert isinstance(column.type, VECTOR)
+    assert column.type.dim == EMBEDDING_WIDTH
+    assert column.nullable is True
+
+
+def test_event_embedding_model_is_a_nullable_string_with_no_default():
+    column = _column(Event, "embedding_model")
+    assert isinstance(column.type, String)
+    assert column.nullable is True
+    assert column.default is None
+    assert column.server_default is None
+
+
 def test_events_has_no_updated_at_column():
     assert "updated_at" not in Event.__table__.columns
 
 
-def test_events_has_exactly_two_indexes():
+def test_events_has_exactly_three_indexes():
     assert {index.name for index in Event.__table__.indexes} == {
         "ix_events_campaign_run_id_visibility_id",
         "ix_events_campaign_run_id_turn_id",
+        "ix_events_embedding_narration",
     }
 
 
@@ -712,6 +734,15 @@ def test_event_campaign_run_id_visibility_id_index_column_order():
 def test_event_campaign_run_id_turn_id_index_column_order():
     index = _index(Event, "ix_events_campaign_run_id_turn_id")
     assert [column.name for column in index.columns] == ["campaign_run_id", "turn_id"]
+
+
+def test_event_embedding_narration_index_is_a_partial_hnsw_cosine_index():
+    index = _index(Event, "ix_events_embedding_narration")
+    assert [column.name for column in index.columns] == ["embedding"]
+    assert index.dialect_options["postgresql"]["using"] == "hnsw"
+    assert index.dialect_options["postgresql"]["ops"] == {"embedding": "vector_cosine_ops"}
+    where = index.dialect_options["postgresql"]["where"]
+    assert str(where) == "type = 'narration' AND embedding IS NOT NULL"
 
 
 def test_events_has_no_unique_constraint():

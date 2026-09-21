@@ -65,9 +65,14 @@ Owns a player's playthrough of a campaign and who may act in it.
   JSONB column with no default; optional `prompt_tokens`,
   `completion_tokens` and `cost_usd` (an exact `NUMERIC(12,6)`, never a
   float); `created_at` only -- an event is never edited after it is
-  written. Indexed by `(campaign_run_id, visibility, id)` and by
-  `(campaign_run_id, turn_id)`; no unique constraint and no ORM
+  written; an optional `embedding` (`VECTOR(1536)`) and `embedding_model`,
+  populated only for `narration` rows. Indexed by `(campaign_run_id,
+  visibility, id)`, by `(campaign_run_id, turn_id)` and by a partial HNSW
+  cosine index (`ix_events_embedding_narration`) restricted to `type =
+  'narration' AND embedding IS NOT NULL`; no unique constraint and no ORM
   relationship.
+- The `events` embedding columns and index migration
+  (`alembic/versions/0008_event_embeddings.py`).
 - The dice engine (`dice.py`): `roll(expression)` parses `NdM+-K` and rolls
   it behind an `_rng()` seam (swappable in tests for a scripted sequence of
   faces), capped at 20 dice of at most 100 faces, raising
@@ -405,7 +410,15 @@ Service functions (`service.py`), called as `service.f(...)`:
   becomes `Decimal(str(...))`, never `Decimal(float)`. `add`s and `flush`es
   so the new id exists — **never commits**; the caller commits once, so the
   event and the state change it describes land together or not at all. No
-  membership check — every caller has already made one.
+  membership check — every caller has already made one. A non-blank
+  `narration` is also embedded through `core.llm.service.embed_texts`
+  (off the event loop via `asyncio.to_thread`) before the row is built: on
+  a right-width vector the columns and `get_settings().embedding_model`
+  are stored and the embedding's own usage is added on top of the
+  caller's `prompt_tokens`/`cost_usd`; any failure or wrong-width vector
+  leaves both columns `NULL`, logs one `warning` and never raises, so a
+  lost embedding never loses the narration. Every other event type never
+  calls the seam.
 - `list_events` — the caller's `player`-visible events for a run, ordered by
   `id`, `after` exclusive, `limit` capped at 500 (default 200). Checks
   membership; `dm`-visible rows are excluded, not merely hidden downstream.
@@ -444,6 +457,16 @@ fails exactly like `app playthrough cost` does on a bad expression: the
 offending text to stderr and exit `1`. Spending a roll has no CLI command
 of its own yet — nothing outside the test suite calls `resolve_check` or
 `resolve_save` today.
+
+`app playthrough narrate <run-id> "<text>" [--player-action]` (Typer,
+`commands.py`) is an operator command with no membership gate, like `app
+srd status`: no `--user`. It writes one `narration` event, or one
+`player_action` event with `--player-action`, both `player`-visible and
+carrying `{"text": <text>}`, through `append_event` — the module's one
+writer — commits, and prints `event: <id>`. A refusal from `append_event`
+fails exactly like `cost` and `roll` do: `f"{exc.code}: {exc}"` to stderr
+and exit `1`. An unknown run id is not caught here — `append_event` does
+no run lookup — and surfaces as the database's own error instead.
 
 **Interacting, taking, dropping, giving, using an item, attacking and
 dealing damage all have no HTTP route either, for the same reason**:

@@ -37,6 +37,22 @@ Failure is exactly `cost`'s shape: `f"{exc.code}: {exc}"` to stderr plus
 base class, but the same `.code`/message shape -- so it is caught
 alongside `PlaythroughError` and let through unreformatted, naming the
 expression exactly as `dice.py` already does.
+
+`app playthrough narrate` -- sprint 006/01 WI3, binding interface in that
+sprint's `plan.md` (I3), command half of AC5.
+
+An operator command with no membership gate, like `app srd status`: no
+`--user`, `append_event` performs no run lookup of its own. Writes one
+`narration` or, with `--player-action`, one `player_action` event --
+always `visibility="player"`, always `payload={"text": <TEXT>}` -- through
+`service.append_event`, the module's one writer, then commits and prints
+the new event's id. Opens its session the same way `cost` and `roll` do.
+An unknown run id is not a `PlaythroughError` here (`append_event` does no
+lookup): it surfaces as the database's own foreign-key error, accepted for
+this sprint. A refusal that *is* a `PlaythroughError` -- an unrecognised
+event type or visibility, neither reachable through this command's fixed
+arguments today -- fails exactly like `cost` and `roll`: `f"{exc.code}:
+{exc}"` to stderr plus `typer.Exit(code=1)`.
 """
 
 import asyncio
@@ -140,3 +156,34 @@ def roll(
     typer.echo(f"dice: {payload['faces']}")
     typer.echo(f"modifier: {payload['modifier']}")
     typer.echo(f"total: {payload['total']}")
+
+
+async def _narrate(*, run_id: str, text: str, player_action: bool) -> Event:
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as db:
+        event = await playthrough_service.append_event(
+            db,
+            run_id=run_id,
+            type="player_action" if player_action else "narration",
+            visibility="player",
+            payload={"text": text},
+        )
+        await db.commit()
+        return event
+
+
+@playthrough_app.command("narrate")
+def narrate(
+    run_id: str = typer.Argument(..., help="The campaign run id."),
+    text: str = typer.Argument(..., help="The narration or player action text."),
+    player_action: bool = typer.Option(
+        False, "--player-action", help="Write a 'player_action' event instead of 'narration'."
+    ),
+) -> None:
+    try:
+        event = asyncio.run(_narrate(run_id=run_id, text=text, player_action=player_action))
+    except PlaythroughError as exc:
+        typer.echo(f"{exc.code}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"event: {event.id}")
