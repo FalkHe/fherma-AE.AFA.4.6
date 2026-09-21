@@ -53,6 +53,18 @@ class EventsRead(CamelModel):
     awaiting: str
 
 
+class NarrationRead(CamelModel):
+    """One `narration` event, read by meaning or by recency (WI1/WI2,
+    sprint 006/02) -- `id, createdAt, text` and nothing else: no distance,
+    no payload, no vector. Deliberately not `EventRead`, which is the
+    transcript route's own wire model and carries `type`/`turnId`/
+    `payload`."""
+
+    id: str
+    created_at: datetime
+    text: str
+
+
 class AdventureRunRead(CamelModel):
     """One adventure run, on the wire -- `id, adventureId, status,
     startedAt` and nothing else (I1): the adventure run's internals
