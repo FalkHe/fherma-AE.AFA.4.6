@@ -131,9 +131,9 @@ def test_roll_prints_a_derivation_read_from_the_actor_and_the_rolled_result(
     owner_id, actor_id = asyncio.run(
         _make_run_and_character(playthrough_db, username="roll-cmd-ability")
     )
-    wisdom = (
-        content_service.load_campaign(CAMPAIGN_ID, VERSION).campaign.seed_character.abilities.wisdom
-    )
+    wisdom = content_service.load_campaign(
+        CAMPAIGN_ID, VERSION
+    ).campaign.seed_character.abilities.wisdom
     wisdom_modifier = (wisdom - 10) // 2
     monkeypatch.setattr(dice, "_rng", lambda: _ScriptedRandom([15]))
 
