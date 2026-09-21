@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-21
 updated: 2026-09-21
-stage: draft
+stage: done
 ---
 # Progress: Sprint 07b
 
@@ -37,3 +37,14 @@ Status: `open | running | done | failed`
 <none yet>
 
 ## Verify
+
+Round 1: approve — AC3 and AC4b both OK, and the verifier proved them by mutation rather than by reading: it
+broke each clause of the consumption rule in turn (already-spent, refusals counting as spends, the turn check,
+the kind check, the refusal's commit, and writing pass/fail onto the roll) and a test caught every one. It also
+confirmed the refusal record is read from a second connection, that `awaiting` fails when hardcoded, and that
+only the shape assertion changed in 05a's acceptance file — its other 43 assertions byte-identical.
+
+It judged the intent-004 test change the right call: the half that was dropped was tautological, since the test
+gate asserts it on every run, while the marker half still fails when the marker is unregistered.
+
+Noted, not fixed: `review.md` runs over the 250-word ceiling.
