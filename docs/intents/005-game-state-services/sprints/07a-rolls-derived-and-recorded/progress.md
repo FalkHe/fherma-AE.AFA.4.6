@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-21
 updated: 2026-09-21
-stage: draft
+stage: done
 ---
 # Progress: Sprint 07a
 
@@ -57,3 +57,13 @@ follows the stored one.
 
 Also noted: `README.md:263` cites `playthrough/cli.py` for the command, which lives in `commands.py`; the same
 wrong filename is already on `main` at line 250.
+
+Round 2: approve — `git diff` over `backend/app/` is empty since round 1, so every earlier confirmation stands by
+construction. The verifier re-applied its own mutation: a fresh derivation in place of the stored formula now
+fails the guard with `assert 5 == 1`, the only failure in the suite. It notes the `formula` assertion alone still
+would not bite — the modifier and total assertions carry the proof, which is the right place, since those are
+what the player receives. Gates: lint, 872 engine-free, 53 frontend, 67 database.
+
+Carried into 07b rather than fixed here: the module README cites `playthrough/cli.py` for the command, which
+lives in `commands.py` — a slip already on `main`, in a section 07b will touch. `review.md` also runs over the
+250-word cap.

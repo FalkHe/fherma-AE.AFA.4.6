@@ -38,3 +38,8 @@ Brief: docs/intents/005-game-state-services/sprints/07a-rolls-derived-and-record
 Round 1: changes requested — nothing in the automated checks would catch it if answering a player's roll request
 stopped using the formula the player was promised and worked one out fresh instead. That was proved by making
 exactly that change and watching every check still pass.
+
+Round 2: approve — the game works out every roll by itself, from the kind of roll and who is rolling, never a
+number handed to it; and a roll the player was promised is answered with that very promise, confirmed by
+breaking it on purpose and watching the new check catch it. Spending a roll, and the pass-or-fail that goes with
+it, remains 07b as planned.
