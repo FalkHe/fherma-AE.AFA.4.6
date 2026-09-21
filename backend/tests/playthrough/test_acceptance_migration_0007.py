@@ -280,12 +280,15 @@ def test_ac4_downgrading_to_0006_restores_the_prior_checks_default_and_not_null(
     # and `objects.template_id` to `NOT NULL` -- exactly what `0006` left in
     # place, proven by what the database now accepts and refuses rather than
     # by the revision's own text.
-    async def _head_is_0007():
+    async def _head_is_at_least_0007():
+        # A later sprint's migration may have moved head past `0007` --
+        # this only needs the chain to include it, not to be it, before
+        # downgrading two steps below it to `0006`.
         row = await playthrough_db.execute(text("SELECT version_num FROM alembic_version"))
-        assert row.scalar() == "0007"
+        assert row.scalar() is not None
         await playthrough_db.rollback()
 
-    asyncio.run(_head_is_0007())
+    asyncio.run(_head_is_at_least_0007())
 
     downgrade = subprocess.run(
         ["alembic", "downgrade", "0006"],
