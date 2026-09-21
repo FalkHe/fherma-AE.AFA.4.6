@@ -17,6 +17,7 @@ from app.modules.playthrough.schemas import (
     CampaignRunRead,
     CharacterRead,
     EventRead,
+    EventsRead,
     RenameCampaignRunRequest,
     StartCampaignRunRequest,
 )
@@ -149,14 +150,17 @@ async def list_events(
     db: DbSession,
     after: str | None = None,
     limit: int = Query(default=200, ge=1, le=500),
-) -> list[EventRead]:
+) -> EventsRead:
     try:
         events = await service.list_events(
             db, user_id=auth.user.id, run_id=run_id, after=after, limit=limit
         )
+        awaiting = await service.get_awaiting(db, user_id=auth.user.id, run_id=run_id)
     except PlaythroughError as exc:
         raise ApiError(exc.code) from exc
-    return [EventRead.model_validate(event) for event in events]
+    return EventsRead(
+        events=[EventRead.model_validate(event) for event in events], awaiting=awaiting
+    )
 
 
 @router.get(

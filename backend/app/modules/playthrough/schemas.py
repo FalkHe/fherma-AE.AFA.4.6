@@ -42,6 +42,17 @@ class EventRead(CamelModel):
     created_at: datetime
 
 
+class EventsRead(CamelModel):
+    """The events route's whole answer (WI2, AC4b) -- the caller's
+    player-visible transcript alongside `awaiting`, `service.list_events`
+    and `service.get_awaiting`'s answers for the same run, read together
+    so a client is never left asking twice about the same open turn.
+    `awaiting` is one of `"none"`, `"roll:<id>"` or `"answer:<id>"`."""
+
+    events: list[EventRead]
+    awaiting: str
+
+
 class AdventureRunRead(CamelModel):
     """One adventure run, on the wire -- `id, adventureId, status,
     startedAt` and nothing else (I1): the adventure run's internals

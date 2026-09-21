@@ -1194,6 +1194,55 @@ async def list_events(
     return list(result.scalars().all())
 
 
+async def get_awaiting(db: AsyncSession, *, user_id: str, run_id: str) -> str:
+    """What the game is waiting for right now, if anything (WI2, AC4b) --
+    `"none"`, a roll the player has been asked for and has not answered
+    (`"roll:<requestId>"`), or a question put to the player and not yet
+    answered (`"answer:<questionId>"`). Derived fresh from the transcript
+    every time this is called -- no stored cursor (← D9) -- so it can
+    never fall out of step with `events` itself.
+
+    `_require_member` first, exactly like every other function that takes
+    a `run_id`: a foreign or unknown run raises `CampaignRunNotFoundError`
+    before anything else runs. The "open turn" is whichever `turn_id` the
+    most recently written event for `run_id` carries (`None` is a turn of
+    its own, exactly as `_consume_roll` treats it); only that turn's own
+    events are then read back, oldest first: the newest `roll_requested`
+    with no `roll` naming it in `requestId` yet, else the newest
+    `question` with no `player_action` written after it, else `"none"`.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+
+    stmt = select(Event).where(Event.campaign_run_id == run_id).order_by(Event.id)
+    result = await db.execute(stmt)
+    all_events = list(result.scalars().all())
+    if not all_events:
+        return "none"
+
+    open_turn_id = all_events[-1].turn_id
+    events = [event for event in all_events if event.turn_id == open_turn_id]
+
+    answered_request_ids = {
+        event.payload.get("requestId")
+        for event in events
+        if event.type == "roll" and event.payload.get("requestId") is not None
+    }
+    for event in reversed(events):
+        if event.type == "roll_requested" and event.id not in answered_request_ids:
+            return f"roll:{event.id}"
+
+    question_events = [event for event in events if event.type == "question"]
+    if question_events:
+        newest_question = question_events[-1]
+        answered_after = any(
+            event.type == "player_action" and event.id > newest_question.id for event in events
+        )
+        if not answered_after:
+            return f"answer:{newest_question.id}"
+
+    return "none"
+
+
 async def run_cost(db: AsyncSession, *, user_id: str, run_id: str) -> RunCost:
     """What `run_id` has cost, whole and by turn (WI1, AC3) -- for its
     owner alone, exact to the last digit, and reachable only as
