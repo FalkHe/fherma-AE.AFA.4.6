@@ -331,9 +331,7 @@ def test_recall_with_k_option_passes_it_through(monkeypatch):
 
     monkeypatch.setattr(playthrough_service, "recall", fake_recall, raising=False)
 
-    result = runner.invoke(
-        cli, ["playthrough", "recall", RUN_ID, "the rusty key", "--k", "2"]
-    )
+    result = runner.invoke(cli, ["playthrough", "recall", RUN_ID, "the rusty key", "--k", "2"])
 
     assert result.exit_code == 0, result.output
 
