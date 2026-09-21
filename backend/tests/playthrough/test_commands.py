@@ -37,7 +37,7 @@ attribute access, never an isinstance check.
 
 import asyncio
 import random as random_module
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -307,7 +307,7 @@ def _fake_item(item_id: str, *, when: datetime, text: str) -> SimpleNamespace:
 def test_recall_prints_one_line_per_item_with_id_time_and_text_and_defaults_k_to_5(
     monkeypatch,
 ):
-    when = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    when = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
 
     async def fake_recall(db, *, run_id, query, k):
         assert run_id == RUN_ID
@@ -367,7 +367,7 @@ def test_recall_on_a_foreign_or_unknown_run_exits_1_with_not_found_on_stderr(mon
 def test_recap_prints_one_line_per_item_with_id_time_and_text_and_defaults_n_to_5(
     monkeypatch,
 ):
-    when = datetime(2024, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
+    when = datetime(2024, 3, 4, 5, 6, 7, tzinfo=UTC)
 
     async def fake_recap(db, *, run_id, n):
         assert run_id == RUN_ID

@@ -468,6 +468,19 @@ fails exactly like `cost` and `roll` do: `f"{exc.code}: {exc}"` to stderr
 and exit `1`. An unknown run id is not caught here — `append_event` does
 no run lookup — and surfaces as the database's own error instead.
 
+`app playthrough recall <run-id> "<query>" [--k]` and `app playthrough
+recap <run-id> [--n]` (Typer, `commands.py`) are the CLI reads over the
+run's remembered narration: `recall` finds entries by *meaning* — it
+searches with an embedding of `<query>` and returns the `k` (default 5)
+closest — while `recap` is recency alone — the `n` (default 5) most
+recent entries, oldest first, no query. Both are operator commands with
+no membership gate, like `narrate`: no `--user`. Each prints one line per
+entry — `<id> <time> <text>` — and nothing else; no matches or no
+narration yet prints nothing and exits `0`. An unknown run fails exactly
+like every other command here: `f"{exc.code}: {exc}"` to stderr and exit
+`1` (`NOT_FOUND`) — the lookup lives in `recall`/`recap` themselves, not
+in the command.
+
 **Interacting, taking, dropping, giving, using an item, attacking and
 dealing damage all have no HTTP route either, for the same reason**:
 `interact`, `take`, `drop`, `give`, `use_item`, `attack` and `damage` are
