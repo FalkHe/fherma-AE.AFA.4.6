@@ -28,6 +28,8 @@ class ErrorCode(StrEnum):
     ADVENTURE_ACTIVE = "ADVENTURE_ACTIVE"
     ADVENTURE_EXHAUSTED = "ADVENTURE_EXHAUSTED"
     EXIT_NOT_AVAILABLE = "EXIT_NOT_AVAILABLE"
+    ROLL_NOT_USABLE = "ROLL_NOT_USABLE"
+    INVALID_DC = "INVALID_DC"
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
@@ -61,6 +63,8 @@ _ERROR_INFO: dict[ErrorCode, tuple[int, str]] = {
     ErrorCode.ADVENTURE_ACTIVE: (409, "This campaign run already has an active adventure."),
     ErrorCode.ADVENTURE_EXHAUSTED: (409, "There is no adventure left to enter."),
     ErrorCode.EXIT_NOT_AVAILABLE: (409, "That exit is not available from here."),
+    ErrorCode.ROLL_NOT_USABLE: (409, "That roll cannot be spent here."),
+    ErrorCode.INVALID_DC: (409, "That difficulty is outside the allowed range."),
     ErrorCode.NOT_FOUND: (404, "Resource not found."),
     ErrorCode.METHOD_NOT_ALLOWED: (405, "Method not allowed."),
     ErrorCode.INTERNAL_ERROR: (500, "An unexpected error occurred."),

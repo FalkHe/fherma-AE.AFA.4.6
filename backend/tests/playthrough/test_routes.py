@@ -790,16 +790,24 @@ def test_list_events_without_session_cookie_returns_401(client, monkeypatch):
     assert calls == []
 
 
-def test_list_events_response_items_have_exactly_the_camelcase_field_set(
+def test_list_events_response_has_events_and_awaiting_shape(
     client, monkeypatch, session_cookie_header
 ):
+    # WI2, AC4b -- the read answers `{events, awaiting}` (`EventsRead`), not
+    # a bare array; each event still carries exactly its own camelCase
+    # field set.
     _stub_auth(monkeypatch)
     event = _make_event()
+    expected_awaiting = f"roll:{generate_id()}"
 
     async def fake_list_events(db, **kwargs):
         return [event]
 
+    async def fake_get_awaiting(db, **kwargs):
+        return expected_awaiting
+
     monkeypatch.setattr(playthrough_service, "list_events", fake_list_events)
+    monkeypatch.setattr(playthrough_service, "get_awaiting", fake_get_awaiting)
 
     response = client.get(
         f"/api/v1/playthrough/campaign/{event.campaign_run_id}/events",
@@ -808,8 +816,41 @@ def test_list_events_response_items_have_exactly_the_camelcase_field_set(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert len(body) == 1
-    assert set(body[0].keys()) == {"id", "type", "turnId", "payload", "createdAt"}
+    assert set(body.keys()) == {"events", "awaiting"}
+    assert len(body["events"]) == 1
+    assert set(body["events"][0].keys()) == {"id", "type", "turnId", "payload", "createdAt"}
+    assert body["awaiting"] == expected_awaiting
+
+
+def test_list_events_awaiting_reflects_get_awaiting_answer(
+    client, monkeypatch, session_cookie_header
+):
+    # WI2, AC4b -- `awaiting` is `service.get_awaiting`'s own answer for
+    # this run, called with the same `user_id`/`run_id` the read is gated
+    # on, not a value the route invents or hardcodes.
+    _stub_auth(monkeypatch)
+    calls = []
+
+    async def fake_list_events(db, **kwargs):
+        return []
+
+    async def fake_get_awaiting(db, **kwargs):
+        calls.append(kwargs)
+        return "answer:some-question-id"
+
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events)
+    monkeypatch.setattr(playthrough_service, "get_awaiting", fake_get_awaiting)
+
+    response = client.get(
+        "/api/v1/playthrough/campaign/some-run-id/events",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["events"] == []
+    assert body["awaiting"] == "answer:some-question-id"
+    assert calls == [{"user_id": USER_ID, "run_id": "some-run-id"}]
 
 
 def test_list_events_foreign_and_unknown_run_answer_the_identical_not_found_envelope(
