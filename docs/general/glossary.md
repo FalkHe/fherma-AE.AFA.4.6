@@ -72,9 +72,8 @@ Mutable state in Postgres. See [model.md](model.md).
   Deferred to the DM-turn phase; this phase builds no combat state, so no run
   entity carries it.
 - **Event** — *what happened*. The append-only stream of narration, player
-  input, rolls, tool calls, errors and cost.
-- **Journal entry** — *what is true*. Agent-written, embedded durable canon,
-  retrieved by similarity. Facts, not a transcript.
+  input, rolls, tool calls, errors and cost; its narration events are the DM's
+  long-term memory.
 
 ## Agent terms
 
