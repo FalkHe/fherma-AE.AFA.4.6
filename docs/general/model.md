@@ -30,8 +30,8 @@ RUN  (Postgres, mutable)
   User ──< campaign_run_members >── campaign_runs ──> campaign_id + content_version
                                         ├──< adventure_runs ──> adventure_id
                                         ├──< objects  (creature, item, fixture)
-                                        ├──< events   (what happened)
-                                        └──< JournalEntry (what is true)  -- phase 6
+                                        └──< events   (what happened;
+                                              narration rows carry a vector)
 
 KNOWLEDGE
   SrdRule  (pgvector, owned by nobody, built by an ingest CLI)
@@ -39,12 +39,12 @@ KNOWLEDGE
 
 - A **campaign run is one run of one campaign**, not of one adventure. The
   player plays adventure after adventure inside it with the same character, so
-  the character, the objects and the journal all hang off the campaign run and
-  survive adventure boundaries.
+  the character, the objects and the narration all hang off the campaign run
+  and survive adventure boundaries.
 - **Everything under a campaign run cascades from it.** `adventure_runs`,
-  `objects`, `events` and the phase-6 journal are owned rows with no independent
-  existence. A run that has actually been played is never deleted in normal
-  operation (see Lifecycle); the cascades are declared so that referential
+  `objects` and `events` are owned rows with no independent existence. A run
+  that has actually been played is never deleted in normal operation (see
+  Lifecycle); the cascades are declared so that referential
   integrity holds if an operator purge ever lands, and so that putting away a
   run abandoned before it ever got a character can remove it, and everything
   under it, in one operation.
@@ -185,59 +185,92 @@ it, not before.
 
 ### Situational facts have no flag store
 
-"The alarm was raised", "the village turned hostile" are **journal entries**,
-not columns. Consequence, accepted deliberately: an Adventure-Definition
-**cannot deterministically gate an exit** on a flag, because no flag exists for
-code to read. Situational conditions are written as scene *truth* — Story —
-and judged by the agent, which matches "facts + intentions + consequences, not
-scripts" — and means a mis-retrieved journal entry can un-raise an alarm.
+"The alarm was raised", "the village turned hostile" live in the **narration**
+that reported them, not in columns. Consequence, accepted deliberately: an
+Adventure-Definition **cannot deterministically gate an exit** on a flag,
+because no flag exists for code to read. Situational conditions are written as
+scene *truth* — Story — and judged by the agent, which matches "facts +
+intentions + consequences, not scripts" — and means a narration line that was
+true can still come back as a hit after it stopped being true, contained by the
+recent turns already in the chat history and by hard canon — hit points,
+position, inventory, scene — which lives on objects and is read by tool, never
+by search.
 
-### Events and journal are two things: what happened vs what is true
+### Narration is the memory: one stream, an optional vector
 
-**An event is what happened. A journal entry is what is true.**
+**The DM's long-term memory is its own past narration** — every narration line
+is encoded as it is written and searched by meaning across the whole campaign
+run, across adventures.
+
+It has to be durable, because campaigns outlive context windows. Chat history
+is a window, not storage: it gets summarised, and a summariser discards exactly
+the flavour that matters (a nickname the player coined for an NPC).
+Adventure-sized state may fit in context; **campaign**-sized state will not.
+The narration, though, is already written down, complete and in the adventure's
+voice — so the cheapest durable memory is the one the DM produced anyway, made
+findable by meaning rather than re-authored as facts.
 
 **Events** are system-written, complete and ordered: narration, player input,
 dice rolls, tool calls, errors and token cost in one append-only stream. The
 trace panel, roll log and cost display are one ordered query with a filter, and
 run cost is a sum over it — there is no denormalised total. Hidden rolls are
 written with DM visibility and filtered out on read, so the audit trail survives
-even when the player does not see it. Nothing is pruned and nothing is retrieved
-by meaning: events are the evidence of how the agent behaved.
+even when the player does not see it. Nothing is pruned: events are the evidence
+of how the agent behaved.
 
-**Journal entries** are agent-written and curated, because campaigns outlive
-context windows. Chat history is a window, not storage: it gets summarised, and
-a summariser discards exactly the flavour that matters (a nickname the player
-coined for an NPC). Adventure-sized state may fit in context; **campaign**-sized
-state will not. So durable canon is written deliberately via
-`add_journal_entry`, embedded on write, and retrieved as *top-k by similarity
-plus the most recent N unconditionally* — the DM must not depend on choosing to
-look. Entries are classified (a durable naming fact outranks a one-off outcome
-in retrieval) and may cite the event they came from, which is the only link
-between the two.
+**A narration event also carries an optional vector** and the name of the model
+that encoded it. The column is nullable by design and only narration rows fill
+it — rolls, tool calls and errors never enter the index. The vector is produced
+inside the single transcript writer, as the line is written: one write path, so
+no narration can reach the stream unencoded by taking another route. The
+embedding's tokens and cost are booked on that same row, which keeps the price
+of remembering inside the run total, like every other model call.
 
-The journal is **not a transcript**: entries are facts, not prose.
+The asymmetry is deliberate: **only the DM's narration is encoded, never the
+player's typed text**, which stays verbatim in the timeline. The player's intent
+still reaches memory, because narration always acknowledges what the player did,
+in the adventure's tone.
 
-*Rejected alternative — one table.* Collapsing them forces one of two losses:
-embed every narration line, and retrieval quality and cost collapse (the journal
-becomes the chat history with worse ergonomics); or carry a nullable embedding on
-the hottest and largest table, fusing two lifecycles — never pruned versus
-curated — and two access patterns — ordered scan versus similarity search.
+There are two reads and no third. `recall(query)` searches the run's past
+narration by meaning, on demand, for as long as the session runs. And when a run
+resumes as a new chat, the DM is handed the **most recent N narration lines up
+front**, by recency — there is no player action yet to match on, so that recap
+is given to it, not asked for: it is not a tool.
+
+**An encoding failure never fails a write.** It is logged, the narration is
+written and shown as usual, and only that one line is not findable by meaning
+later; the player notices nothing. Re-encoding the missed lines is a background
+job Stage 02 can add if it turns out to happen often.
+
+*Rejected alternative — a curated journal.* A second table of agent-written
+truths, reached by a fact event type and a DM fact-writing tool, buys
+classification (a durable naming fact outranking a one-off outcome) and a
+smaller, denser index. It costs more than it buys: the DM has to decide
+mid-turn what will matter later, and whatever it does not think to write down is
+gone for good, while the narration it wrote anyway is free and complete. It also
+adds a second write path beside the transcript writer, a second lifecycle to
+keep in step with the run, and a store of facts that can disagree with the
+narration the player actually read. If a curated journal turns out to be a need,
+it is added in Stage 02 on top of this — it is not the ground layer.
 
 ### One embedding model, two tables
 
-Journal entries and SRD rules share the embedding model, pinned in settings
+Narration events and SRD rules share the embedding model, pinned in settings
 with the dimension fixed in the migration, so they also share the ingest path,
 the similarity operator and the cost line. Each vector row records which model
 embedded it, so a re-embed is detectable.
 
-They do **not** share a table. A shared pipeline is not a shared shape: a
-journal entry is owned by a campaign run, cascades with it, points at an object
-and is classified; an SRD rule is owned by nobody, is replaced wholesale by a
-re-ingest, and cites a section and a position within it. *Rejected alternative
-— one `embeddings` table with a scope key.* Every column above turns nullable,
-the foreign key to the campaign run stops being enforceable, and two lifecycles
-— cascade-with-the-run versus rebuild-the-corpus — hide behind a
-discriminator.
+They do **not** share a table, and the two tables are the ones that already
+exist: `events` and `srd_rules`. A shared pipeline is not a shared shape: a
+narration row is owned by a campaign run, cascades with it, is ordered, and is
+read by scan for the timeline as often as by similarity for recall; an SRD rule
+is owned by nobody, is replaced wholesale by a re-ingest, and cites a section
+and a position within it. *Rejected alternative — one `embeddings` table with a
+scope key.* Every column above turns nullable, the foreign key to the campaign
+run stops being enforceable, two lifecycles — cascade-with-the-run versus
+rebuild-the-corpus — hide behind a discriminator, and the transcript writer
+would have to write the vector to a second table instead of onto the very row it
+describes.
 
 ### The checkpointer is the library's, not ours
 
@@ -340,9 +373,12 @@ player has put away.
 
 Recorded, not solved:
 
-1. **A mis-retrieved journal entry can contradict established canon**, because
-   situational facts have no deterministic flag store. Accepted trade for
-   keeping the Adventure-Definition declarative.
+1. **A narration line that was true can still come back as a hit after it
+   stopped being true**, because situational facts have no deterministic flag
+   store. Contained by the recent turns already in the chat history and by hard
+   canon — hit points, position, inventory, scene — which lives on objects and
+   is read by tool, never by search. Accepted trade for keeping the
+   Adventure-Definition declarative.
 2. **Campaign-Definition integrity is loader-enforced, not database-enforced.**
    A typo in a scene's exits is caught at load time or not at all.
 3. **Object state correctness rests entirely on the per-kind Pydantic models.**
