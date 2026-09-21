@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
+from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -20,6 +21,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 from app.core.ids import ID_TYPE, generate_id
+
+# Dimensionality of every stored narration embedding. Pinned here so the
+# model, the `0008` migration and any caller that validates an embedding
+# before insert share one source of truth -- mirrors
+# `app.modules.srd.models.EMBEDDING_WIDTH`.
+EMBEDDING_WIDTH = 1536
 
 
 class CampaignRun(Base):
@@ -188,8 +195,12 @@ class Event(Base):
     `actor_member_id` is cleared, not cascaded, when the acting member is
     removed, so the event itself survives. `turn_id` has no referent yet --
     no turn concept exists in this codebase -- so it is a bare column with
-    no foreign key. Immutable once written: no `updated_at`. No ORM
-    relationship."""
+    no foreign key. `embedding`/`embedding_model` are both nullable and
+    populated only for `narration` rows -- everything else in the
+    transcript has no meaning to index for nearest-meaning search; the
+    partial `ix_events_embedding_narration` index declared below the class
+    is what actually restricts the vector index to those rows. Immutable
+    once written: no `updated_at`. No ORM relationship."""
 
     __tablename__ = "events"
     __table_args__ = (
@@ -219,3 +230,14 @@ class Event(Base):
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    embedding: Mapped[list[float] | None] = mapped_column(VECTOR(EMBEDDING_WIDTH), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+Index(
+    "ix_events_embedding_narration",
+    Event.embedding,
+    postgresql_using="hnsw",
+    postgresql_ops={"embedding": "vector_cosine_ops"},
+    postgresql_where=text("type = 'narration' AND embedding IS NOT NULL"),
+)

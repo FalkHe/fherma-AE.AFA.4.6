@@ -157,6 +157,8 @@ EXPECTED_EVENTS_COLUMNS = {
     "completion_tokens",
     "cost_usd",
     "created_at",
+    "embedding",
+    "embedding_model",
 }
 
 # Every key `objects.state` may ever carry, whole-run, character or

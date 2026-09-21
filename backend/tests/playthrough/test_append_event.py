@@ -12,10 +12,10 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.llm.service import Usage
+from app.core.llm.service import EmbeddingResult, Usage
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import InvalidEventPayloadError
-from app.modules.playthrough.models import Event
+from app.modules.playthrough.models import EMBEDDING_WIDTH, Event
 from app.modules.playthrough.schemas import (
     AdventurePayload,
     NarrationPayload,
@@ -27,6 +27,24 @@ from app.modules.playthrough.schemas import (
     SceneEnteredPayload,
     ToolCallPayload,
 )
+
+
+@pytest.fixture(autouse=True)
+def _stub_embed_texts(monkeypatch):
+    """WI2 (sprint 006/01): `append_event` now embeds every narration
+    through `llm_service.embed_texts` before it writes the row. This
+    file's tests are about AC1, not that embedding (see
+    `test_append_event_narration_embedding.py` for AC2-4) -- stubbed here
+    with a zero-cost, right-width vector so no test in this file makes a
+    real network call or has its exact usage/cost assertions shifted."""
+    monkeypatch.setattr(
+        service.llm_service,
+        "embed_texts",
+        lambda texts, **kwargs: EmbeddingResult(
+            vectors=[[0.0] * EMBEDDING_WIDTH for _ in texts],
+            usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0, cost_usd=None),
+        ),
+    )
 
 
 class FakeSession:
@@ -294,11 +312,14 @@ def test_usage_with_no_cost_leaves_cost_null():
 
 
 def test_no_usage_leaves_tokens_and_cost_null():
+    # A non-narration type: narration's own embedding usage is exercised in
+    # `test_append_event_narration_embedding.py` (AC2) and does populate
+    # `prompt_tokens`/`cost_usd` even with no caller `usage`.
     db = FakeSession()
 
     event = asyncio.run(
         service.append_event(
-            db, run_id="run-1", type="narration", visibility="player", payload={"text": "hi"}
+            db, run_id="run-1", type="player_action", visibility="player", payload={"text": "hi"}
         )
     )
 
