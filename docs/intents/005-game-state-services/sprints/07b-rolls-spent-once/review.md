@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-21
 updated: 2026-09-21
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/33
 ---
 # Review: Sprint 07b — a roll is spent once, and the client sees what is awaited
 
