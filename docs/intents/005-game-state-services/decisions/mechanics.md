@@ -59,7 +59,8 @@ roll-result id of that `kind` (← D5) · every row appends at least one `tool_c
 | `use_item` | `actor_id, item_id, target_id?` | — | consumable effects — none authored yet; ships as the seam only |
 
 No `set_hp`, no `set_state`, no `create_object`, no `reveal`: scene secrets are prose (`Scene.hidden`), resolved by a
-check and narrated, remembered by phase 6's journal.
+check and narrated — and the narration is what remembers them, encoded as it is written and searched by
+meaning (← 006-D1).
 
 ## Combat (← D7: no encounter, no turn pointer)
 
