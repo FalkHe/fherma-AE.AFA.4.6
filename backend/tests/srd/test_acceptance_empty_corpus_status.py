@@ -13,8 +13,11 @@ runs before any database access, so a mismatched `EMBEDDING_DIMENSIONS`
 never needs a live server to be observed failing. AC5 checks the two halves
 of its own claim that are assertable without reading the fixture's
 internals: the `database` marker is registered (so using it never raises
-under `filterwarnings=["error"]`), and the pre-existing, engine-free suite
-still passes green when run for real.
+under `filterwarnings=["error"]`), and the engine-free default -- `-m "not
+database"`, exactly what `make backend-test` runs -- genuinely deselects a
+`database`-marked module rather than skipping or erroring it, proved
+against a small fixed target module rather than the whole suite (see the
+test's own comment for why).
 
 No `pytest-asyncio` in this suite (`AGENTS.md` gotchas) -- every async call
 is wrapped in a single `asyncio.run(...)` per test, never more than one, so
@@ -174,22 +177,45 @@ def test_ac5_database_marker_is_registered_and_the_existing_suite_stays_green():
     # marked `database`) without breaking the offline default. What is
     # assertable here without reading the sibling fixture's internals:
     # the marker exists (so using it never raises `PytestUnknownMarkWarning`
-    # under `filterwarnings=["error"]`), and the pre-existing, engine-free
-    # suite still runs green for real when driven as a fresh process. The
-    # marked tests' own clean skip with no reachable Postgres is this
-    # fixture's documented contract, exercised live by AC1/AC2/AC4 whenever
-    # a database *is* reachable, as here.
+    # under `filterwarnings=["error"]`), and the engine-free default -- the
+    # `-m "not database"` invocation `make backend-test` actually runs --
+    # deselects a `database`-marked module rather than skipping or erroring
+    # it. The marked tests' own clean skip with no reachable Postgres is
+    # this fixture's documented contract, exercised live by AC1/AC2/AC4
+    # whenever a database *is* reachable, as here.
+    #
+    # This used to re-run `pytest tests --ignore=tests/srd` as a subprocess
+    # and assert it exited 0: a single test making the whole suite run
+    # itself. That duplicated what `make backend-test` already asserts on
+    # every invocation, and its cost grew with the whole suite -- quadratic
+    # total runtime as more tests were added, which is what eventually blew
+    # past this test's own fixed timeout. Nesting a small, fixed target
+    # instead -- a module that actually carries the `database` marker --
+    # exercises the identical property (marker registered + engine-free
+    # default works) at constant cost, and would still fail if either half
+    # broke: an unregistered marker turns collection's
+    # `PytestUnknownMarkWarning` into a hard error here (`filterwarnings =
+    # ["error"]`), and a broken offline default fails the one deselected-out
+    # module's remaining, unmarked test.
     pyproject = tomllib.loads((BACKEND_ROOT / "pyproject.toml").read_text())
     markers = pyproject.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("markers", [])
     assert any(marker.split(":")[0].strip() == "database" for marker in markers), markers
 
+    # No explicit `-q` here: `pyproject.toml`'s `addopts` already supplies
+    # one, and a second stacks to a quiet level that swallows the summary
+    # line this assertion needs.
+    target = "tests/test_shared_scratch_database.py"
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "tests", "--ignore=tests/srd"],
+        [sys.executable, "-m", "pytest", "-m", "not database", target],
         cwd=BACKEND_ROOT,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=30,
     )
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "failed" not in result.stdout.lower()
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "failed" not in output.lower()
+    assert "error" not in output.lower()
+    assert "skipped" not in output.lower()
+    assert "deselected" in output.lower(), output

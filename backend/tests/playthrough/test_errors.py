@@ -12,8 +12,11 @@ from app.modules.playthrough.errors import (
     CharacterExistsError,
     ExitNotAvailableError,
     GameObjectNotFoundError,
+    InvalidDcError,
     InvalidRunStatusError,
     PlaythroughError,
+    RollNotFoundError,
+    RollNotUsableError,
     RunArchivedError,
 )
 
@@ -76,3 +79,21 @@ def test_exit_not_available_carries_exit_not_available():
     exc = ExitNotAvailableError("actor-1", "exit-1")
     assert isinstance(exc, PlaythroughError)
     assert exc.code == ErrorCode.EXIT_NOT_AVAILABLE
+
+
+def test_roll_not_found_carries_not_found():
+    exc = RollNotFoundError("roll-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.NOT_FOUND
+
+
+def test_roll_not_usable_carries_roll_not_usable():
+    exc = RollNotUsableError("roll-1")
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.ROLL_NOT_USABLE
+
+
+def test_invalid_dc_carries_invalid_dc():
+    exc = InvalidDcError(3)
+    assert isinstance(exc, PlaythroughError)
+    assert exc.code == ErrorCode.INVALID_DC

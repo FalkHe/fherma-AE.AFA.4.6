@@ -12,17 +12,20 @@ playthrough".
 Today the module ships its five tables and their migrations, plus the surface
 that starts a campaign run, gives it its character, renames it, reads it
 back, enters its next adventure, moves whoever is acting through an exit,
-derives and records a roll, appends to its transcript, reads that
-transcript back, reports what it has cost and puts the run away (§8): a
-service of seventeen functions behind nine authenticated endpoints, plus
-two commands run by hand rather than an endpoint (§11, §13). The sprint
-that added entering an adventure deliberately stopped there, leaving scene
-movement, an adventure's completion and the game's own end for the next
-one; this document now describes that lifecycle too, exactly as far as it
-reaches (§9) — a tool layer letting the Dungeon Master call it remains
-later work. A roll is the same story one layer down: this document
-describes how one is worked out and set down (§13), and stops exactly
-where spending it — deciding pass or fail — is not yet built.
+derives and records a roll, spends one against a difficulty, tells a reader
+of the transcript what the game is waiting for, appends to its transcript,
+reads that transcript back, reports what it has cost and puts the run away
+(§8): a service of twenty functions behind nine authenticated endpoints,
+plus two commands run by hand rather than an endpoint (§11, §13). The
+sprint that added entering an adventure deliberately stopped there, leaving
+scene movement, an adventure's completion and the game's own end for the
+next one; this document now describes that lifecycle too, exactly as far
+as it reaches (§9) — a tool layer letting the Dungeon Master call it
+remains later work. A roll is the same story one layer down: this document
+describes how one is worked out and set down (§13), how it is spent once
+and only once (§14), and what a reader of the transcript is told the game
+is waiting for as a result (§15) — the tool layer that would let the
+Dungeon Master reach any of this remains the same later work.
 
 ## 1. What the module owns, and what it does not
 
@@ -263,7 +266,7 @@ CSRF-guarded:
 | `POST /api/v1/playthrough/campaign/{runId}/character` | Creates the run's one player character — `201` and the character |
 | `POST /api/v1/playthrough/campaign/{runId}/adventure` | Enters the next adventure the campaign lists that this game has no record of — `201` and the adventure run |
 | `POST /api/v1/playthrough/campaign/{runId}/archive` | Puts the run away, or deletes it if it was never started — `204`, no body |
-| `GET /api/v1/playthrough/campaign/{runId}/events` | The run's player-visible transcript, oldest first — `200` and the entries |
+| `GET /api/v1/playthrough/campaign/{runId}/events` | The run's player-visible transcript, oldest first, alongside what the game is waiting for — `200`, the entries and `awaiting`; §15 |
 | `GET /api/v1/playthrough/campaign/{runId}/stream` | Tells the caller when the transcript above has grown — no cost route exists anywhere; §12 |
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
@@ -275,7 +278,10 @@ nothing else (`AdventureRunRead`) — the row itself, before anyone has moved
 through it. An event reads as `id, type, turnId, payload, createdAt` and
 nothing else (`EventRead`) — no `visibility`, because this endpoint only ever
 answers `player`-visible rows, and no cost, because that is bookkeeping for
-the run, not for the player reading it.
+the run, not for the player reading it. The transcript read itself answers
+more than a bare list of these: it wraps them alongside `awaiting`, one of
+`none`, a roll's id or a question's id — §15 describes what that value
+means and how it is worked out.
 
 The service (`service.py`) exposes `start_campaign_run`, `list_campaign_runs`,
 `get_campaign_run`, `create_character`, `rename_campaign_run`,
@@ -404,17 +410,23 @@ DM-only entries `append_event` also wrote are never in this answer, though
 they remain in `events` exactly as `archive_campaign_run` leaves the whole
 table: present, and readable by anyone with a reason to read it directly,
 just not through this endpoint. The ordering, and the one thing about it
-this document exists to flag, is §10.
+this document exists to flag, is §10. The same endpoint also calls
+`get_awaiting` and returns its answer alongside the entries, rather than
+making a client ask twice for two things that describe the same open turn;
+§15 covers what it derives and how.
 
 Errors this module raises: an unknown-or-foreign run, a campaign the content
-does not know, and an actor `use_exit` cannot find are **not found**; a run
-already started, a second character on a run, a write against an archived
-run, an invalid status transition, entering an adventure while one is
-already under way, entering when none is left to enter, and asking
-`use_exit` for an exit it will not take are each a **conflict**
-(`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`, `INVALID_RUN_STATUS`,
-`ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`, `EXIT_NOT_AVAILABLE`); a payload
-that does not match its type's shape is a **validation error**
+does not know, an actor `use_exit` cannot find, and a roll id neither
+consumer below recognises are **not found**; a run already started, a
+second character on a run, a write against an archived run, an invalid
+status transition, entering an adventure while one is already under way,
+entering when none is left to enter, asking `use_exit` for an exit it will
+not take, spending a roll that is already spent, from a later turn or of
+the wrong kind, and resolving against a difficulty outside 5–30 are each a
+**conflict** (`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
+`INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`,
+`EXIT_NOT_AVAILABLE`, `ROLL_NOT_USABLE`, `INVALID_DC`); a payload that does
+not match its type's shape is a **validation error**
 (`InvalidEventPayloadError`).
 
 ## 9. Using an exit: moving a scene, ending an adventure, finishing the game
@@ -642,4 +654,74 @@ already stored, never by working the numbers out again.
 the Dungeon Master asked for in secret stays the Dungeon Master's; nothing
 later widens or narrows who may see it. Whether that roll passed or failed
 is deliberately not part of it — that judgement belongs to whichever
-mechanic goes on to spend the roll, and that mechanic does not exist yet.
+mechanic goes on to spend the roll, resolving it against a difficulty on an
+entry of its own, never on the roll's own record. What spending a roll
+means, and the rules that keep it from being spent more than once, are §14.
+
+## 14. A roll is spent once
+
+**A roll on its own says only how the dice fell.** Turning it into an
+outcome — a pass or a fail — is a separate act: **resolving a check**, or
+**resolving a saving throw**, against a difficulty. Either act reads a roll
+already sitting on the transcript, never rolls dice of its own, and records
+what came of it on an entry of its own: the total the roll carried, the
+difficulty it was weighed against, and whether it succeeded, visible to the
+Dungeon Master, and answers pass or fail back to whatever asked for the
+roll to be spent. Worth stating plainly, because it is a deliberate shape:
+**whether a roll passed is never written on the roll itself**, only on the
+mechanic that spent it. One roll can therefore be looked at, or shown to a
+player, without that alone implying anything it was part of has been
+settled.
+
+**The same roll cannot be spent twice.** Once a spend against a roll has
+succeeded, a second attempt to resolve that same roll is refused, whichever
+of the two mechanics asks. A roll also cannot be spent in a turn later than
+the one it was rolled in, and cannot be spent for a kind of thing it was
+not rolled for — a roll made for a saving throw is not available to a
+check, and the reverse. A roll made from a bare expression rather than
+derived from the actor — a **custom** roll, §13's one kind whose number a
+caller supplied outright — is refused by both mechanics as a matter of
+course: it is the one roll a caller supplied a number for, so it may never
+be allowed to settle anything.
+
+None of this is tracked in a column recording whether a roll has been used.
+It is read from the transcript itself, every time: the roll's own entry is
+there, and so is every entry that has already spent something, and the
+rules above follow from comparing the two. There is nothing to keep in step
+and nothing to migrate — only the transcript, read again.
+
+**A refusal does not burn the roll.** Only a spend that succeeds counts
+against a roll, so a mistaken attempt — the wrong turn, the wrong kind, a
+roll already spent — leaves the player's roll exactly as good as it was
+before the mistake. Every refusal is still recorded, as its own entry
+visible to the Dungeon Master alone and marked refused, and that record
+survives the refusal that produced it, exactly as a refused exit's does
+(§9) — a player reading their own transcript sees no gap where a mistake
+happened, because the attempt was never theirs to see in the first place.
+
+**The difficulty a check or a saving throw is resolved against runs from 5
+to 30** — the SRD's own table of difficulties, and the same range adventure
+content is authored against (`docs/modules/content.md`). A difficulty
+outside that range is refused and recorded exactly as an unusable roll
+is — the roll itself is never spent.
+
+## 15. What the game is waiting for
+
+Reading a game's transcript now also answers a question no earlier read
+of it did: is the game waiting on something right now, and if so, on what?
+The answer is one of three shapes — nothing is awaited, a particular roll
+the player has been asked to make, or an answer to a particular question
+put to them — and it is worked out from the open turn's own entries each
+time it is asked, never read from a value anything keeps in storage. A
+requested roll with nothing yet spending it is a roll still awaited; a
+question with no answer after it is a question still awaited; anything
+else, and the game is waiting on nothing. There is no stored cursor
+pointing at what is awaited, so nothing about this can ever fall out of
+step with the transcript it is read from — every answer comes from asking
+the transcript again, not from consulting a copy of it.
+
+This travels with the transcript itself rather than behind a read of its
+own: the same endpoint that answers a run's events (§8) now answers what
+the game is waiting for in the same breath, so a client showing a player
+their game is told, without a second question, whether it should now put a
+roll or a question in front of them, or neither.

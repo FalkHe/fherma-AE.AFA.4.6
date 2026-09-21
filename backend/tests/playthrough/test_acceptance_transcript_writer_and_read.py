@@ -336,7 +336,11 @@ def test_ac2_the_player_visible_transcript_orders_pages_and_hides_dm_entries(
             captured.update(kwargs)
             return fake_events
 
+        async def fake_get_awaiting(db, **kwargs):
+            return "none"
+
         mp.setattr(playthrough_service, "list_events", fake_list_events)
+        mp.setattr(playthrough_service, "get_awaiting", fake_get_awaiting)
 
         response = client.get(
             f"/api/v1/playthrough/campaign/{wire_run_id}/events",
@@ -344,9 +348,13 @@ def test_ac2_the_player_visible_transcript_orders_pages_and_hides_dm_entries(
         )
         assert response.status_code == 200, response.text
         body = response.json()
-        assert isinstance(body, list)
-        assert len(body) == len(fake_events)
-        for item, source in zip(body, fake_events, strict=True):
+        # WI2, AC4b -- the read now answers `{events, awaiting}`, not a
+        # bare array; sprint 07b's own suite covers `awaiting` itself.
+        assert isinstance(body, dict)
+        assert set(body.keys()) == {"events", "awaiting"}
+        events = body["events"]
+        assert len(events) == len(fake_events)
+        for item, source in zip(events, fake_events, strict=True):
             assert set(item.keys()) == {"id", "type", "turnId", "payload", "createdAt"}, item
             assert item["id"] == str(source.id)
             assert item["type"] == source.type
