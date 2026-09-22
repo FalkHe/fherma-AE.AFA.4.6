@@ -31,7 +31,8 @@ or writes an event.
 | Tool | Status |
 |---|---|
 | `roll_dice(kind, context)` → `playthrough.service.roll` | done |
-| `lookup_rule`, `get_scene`, `get_monster`, `update_object` | not yet |
+| `get_scene`, `get_object`, `get_campaign` | done |
+| `lookup_rule`, `update_object` | not yet |
 
 ## Quirks
 

@@ -12,6 +12,9 @@ from langgraph.graph import MessagesState
 from sqlalchemy.ext.asyncio import AsyncSession
 
 ROLL_DICE_TOOL = "roll_dice"
+GET_SCENE_TOOL = "get_scene"
+GET_OBJECT_TOOL = "get_object"
+GET_CAMPAIGN_TOOL = "get_campaign"
 
 
 @dataclass

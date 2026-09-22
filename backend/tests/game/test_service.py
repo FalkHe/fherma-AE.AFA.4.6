@@ -201,6 +201,127 @@ def test_turn_only_reports_rolls_from_the_current_turn(prompt, roll_spy):
     assert len(state.values["messages"]) == 6
 
 
+def test_get_scene_tool_loads_scene_facts(prompt):
+    scene_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-scene-1",
+                "name": "get_scene",
+                "args": {
+                    "scene_id": "village-green",
+                    "campaign_id": "greenhollow",
+                    "version": "v1",
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([scene_call, AIMessage(content="You arrive at the Village Green.")])
+    )
+    result = _turn(agent, "Where am I?")
+    assert result.reply == "You arrive at the Village Green."
+
+
+def test_get_object_tool_loads_creature_or_item_by_id_or_name(prompt):
+    creature_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-object-1",
+                "name": "get_object",
+                "args": {
+                    "object_id": "Goblin Raider",
+                    "campaign_id": "greenhollow",
+                    "version": "v1",
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model(
+            [creature_call, AIMessage(content="The goblin raider snarls at you.")]
+        )
+    )
+    result = _turn(agent, "What is that creature?")
+    assert result.reply == "The goblin raider snarls at you."
+
+
+def test_get_campaign_tool_loads_overview(prompt):
+    campaign_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-campaign-1",
+                "name": "get_campaign",
+                "args": {"campaign_id": "greenhollow", "version": "v1"},
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([campaign_call, AIMessage(content="Welcome to Greenhollow.")])
+    )
+    result = _turn(agent, "Tell me about this world.")
+    assert result.reply == "Welcome to Greenhollow."
+
+
+def test_content_tools_resolve_campaign_and_version_from_run(prompt, monkeypatch):
+    @dataclass
+    class _FakeCampaignRun:
+        campaign_id: str = "greenhollow"
+        content_version: str = "v1"
+
+    async def fake_get_campaign_run(db, *, user_id, run_id):
+        return _FakeCampaignRun()
+
+    monkeypatch.setattr(tools.playthrough_service, "get_campaign_run", fake_get_campaign_run)
+
+    scene_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-scene-2",
+                "name": "get_scene",
+                "args": {"scene_id": "thornway"},
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model(
+            [scene_call, AIMessage(content="You see thorn bushes and a deer path.")]
+        )
+    )
+    result = _turn(agent, "Look at the path.")
+    assert result.reply == "You see thorn bushes and a deer path."
+
+
+def test_get_object_not_found_handled_gracefully(prompt):
+    object_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-object-2",
+                "name": "get_object",
+                "args": {
+                    "object_id": "ancient-red-dragon",
+                    "campaign_id": "greenhollow",
+                    "version": "v1",
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model(
+            [
+                object_call,
+                AIMessage(content="There are no dragons here, only whispers in the wind."),
+            ]
+        )
+    )
+    result = _turn(agent, "Is there a dragon?")
+    assert result.reply == "There are no dragons here, only whispers in the wind."
+
+
 def test_the_model_cannot_supply_session_or_user_id():
     schema = tools.roll_dice.tool_call_schema.model_json_schema()
     assert set(schema["properties"]) == {"kind", "context", "actor_id"}
