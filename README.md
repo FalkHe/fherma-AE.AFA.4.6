@@ -65,9 +65,8 @@ docker compose up -d --force-recreate frontend app-web
 ```
 
 The external proxy must support WebSocket upgrades for the Vite development
-server. When proxying the API directly instead of through Vite, it must also
-disable response buffering for `/api/*` so campaign SSE updates arrive
-immediately.
+server and disable response buffering for `/api/*` so campaign SSE updates
+arrive immediately.
 
 `OPENROUTER_API_KEY` is not needed yet — nothing calls a model until the game
 agent lands — but set it now if you have one; every LLM call in this project
