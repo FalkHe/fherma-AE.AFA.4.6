@@ -2,7 +2,7 @@
 author: Falk Hermann <307901131+falkhetc@users.noreply.github.com>
 owner: human
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-22
 ---
 # D11 — Dashboard and run screen design
 
@@ -57,7 +57,6 @@ shows data the product does not have, the rules below apply.
 
 ## Agent's call (listed for veto)
 
-- How fonts and icons are sourced (the design system loads Google Fonts and Lucide from CDNs; the repo forbids
-  an icon package in `structure.test.ts`).
+- How fonts are sourced; use a suitable Lucide-compatible icon package for the icons.
 - How the design tokens are applied — the system ships an MUI theme, and the frontend already uses MUI.
 - Runs in status "finished" (not reachable yet) appear under "Archived".

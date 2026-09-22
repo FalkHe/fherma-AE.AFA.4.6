@@ -2,7 +2,7 @@
 author: fhit:architect
 owner: agent
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-22
 ---
 # Research: 007 Initial Frontend
 
@@ -10,9 +10,9 @@ updated: 2026-09-19
 
 **Frontend today** — React 19.2.8, MUI 9.4.0, TanStack Query 5.102.8, React
 Router 8.3.1, react-i18next, `openapi-fetch` (`frontend/pnpm-lock.yaml`). No
-second UI/styling library; no icon package (forbidden by
-`frontend/src/structure.test.ts:78`). Modules `auth` and `home`; routes `/`,
-`/signin`, `/signup` with per-route `RequireAuth`/`RequireAnonymous`
+second UI/styling library and no icon package is currently installed; use a
+suitable icon package for the delivered design. Modules `auth` and `home`; routes
+`/`, `/signin`, `/signup` with per-route `RequireAuth`/`RequireAnonymous`
 (`frontend/src/App.tsx:13-39`). One network file, owning the CSRF token in
 module memory (`frontend/src/core/api/client.ts:11-32`); one hook per
 operation; server state only in Query. Tests drive one fetch dispatcher
