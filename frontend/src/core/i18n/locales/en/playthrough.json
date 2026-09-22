@@ -22,5 +22,16 @@
       "title": "Invite a player",
       "subtitle": "Up to six at the table"
     }
+  },
+  "adventures": {
+    "heading": "Adventures",
+    "waitingHint": "Every player needs a character before the first adventure can start.",
+    "start": "Start adventure",
+    "status": {
+      "nextUp": "Next up",
+      "waitingOnParty": "Waiting on party",
+      "locked": "Locked",
+      "done": "Done"
+    }
   }
 }

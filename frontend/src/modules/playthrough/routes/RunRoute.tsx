@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 
 import { useRunOverview } from "../hooks/useRunOverview";
 import { PartySection } from "../components/PartySection";
+import { AdventuresSection } from "../components/AdventuresSection";
 
 // D11's dashboard vocabulary, reused here so both screens speak of a run the
 // same way (decision handed down for this work item): `setup` reads "New";
@@ -98,6 +99,8 @@ export function RunRoute() {
           </Stack>
 
           <PartySection members={overview.members} />
+
+          <AdventuresSection adventures={overview.adventures} members={overview.members} />
         </>
       )}
     </Stack>
