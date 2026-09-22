@@ -29,6 +29,8 @@ class _Prompt:
 @dataclass
 class _Event:
     payload: dict[str, Any]
+    id: str = "event-1"
+    type: str = "roll"
 
 
 @dataclass
@@ -163,6 +165,7 @@ def test_turn_routes_the_roll_through_the_playthrough_service(prompt, roll_spy):
     assert result.reply == "You rolled 20 - the lock opens."
     assert result.rolls == [
         {
+            "roll_id": "event-1",
             "kind": "ability_check",
             "formula": "1d20+3",
             "faces": [17],
@@ -322,9 +325,179 @@ def test_get_object_not_found_handled_gracefully(prompt):
     assert result.reply == "There are no dragons here, only whispers in the wind."
 
 
+def test_resolve_check_tool_consumes_roll_and_evaluates_dc(prompt, monkeypatch):
+    resolved_calls = []
+
+    async def fake_resolve_check(db, *, user_id, roll_id, dc, turn_id=None):
+        resolved_calls.append(
+            {"user_id": user_id, "roll_id": roll_id, "dc": dc, "turn_id": turn_id}
+        )
+        return True
+
+    monkeypatch.setattr(tools.playthrough_service, "resolve_check", fake_resolve_check)
+
+    check_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-check-1",
+                "name": "resolve_check",
+                "args": {"roll_id": "roll-123", "dc": 15},
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([check_call, AIMessage(content="You successfully clear the gap.")])
+    )
+    result = _turn(agent, "I jump across.")
+    assert result.reply == "You successfully clear the gap."
+    assert resolved_calls == [
+        {"user_id": "user-1", "roll_id": "roll-123", "dc": 15, "turn_id": "turn-1"}
+    ]
+
+
+def test_resolve_save_tool_consumes_roll_and_evaluates_dc(prompt, monkeypatch):
+    resolved_calls = []
+
+    async def fake_resolve_save(db, *, user_id, roll_id, dc, turn_id=None):
+        resolved_calls.append(
+            {"user_id": user_id, "roll_id": roll_id, "dc": dc, "turn_id": turn_id}
+        )
+        return False
+
+    monkeypatch.setattr(tools.playthrough_service, "resolve_save", fake_resolve_save)
+
+    save_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-save-1",
+                "name": "resolve_save",
+                "args": {"roll_id": "roll-456", "dc": 18},
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model(
+            [save_call, AIMessage(content="You fail to dodge the dragon breath.")]
+        )
+    )
+    result = _turn(agent, "I try to dodge.")
+    assert result.reply == "You fail to dodge the dragon breath."
+    assert resolved_calls == [
+        {"user_id": "user-1", "roll_id": "roll-456", "dc": 18, "turn_id": "turn-1"}
+    ]
+
+
+def test_passive_check_tool_evaluates_score_without_rolling(prompt, monkeypatch):
+    passive_calls = []
+
+    async def fake_passive_check(db, *, user_id, actor_id, ability, dc, turn_id=None):
+        passive_calls.append(
+            {
+                "user_id": user_id,
+                "actor_id": actor_id,
+                "ability": ability,
+                "dc": dc,
+                "turn_id": turn_id,
+            }
+        )
+        return True
+
+    monkeypatch.setattr(tools.playthrough_service, "passive_check", fake_passive_check)
+
+    passive_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-passive-1",
+                "name": "passive_check",
+                "args": {"ability": "wisdom", "dc": 12, "actor_id": "actor-1"},
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([passive_call, AIMessage(content="You notice tracks in the mud.")])
+    )
+    result = _turn(agent, "Do I notice anything?")
+    assert result.reply == "You notice tracks in the mud."
+    assert passive_calls == [
+        {
+            "user_id": "user-1",
+            "actor_id": "actor-1",
+            "ability": "wisdom",
+            "dc": 12,
+            "turn_id": "turn-1",
+        }
+    ]
+
+
+def test_roll_initiative_tool_rolls_both_sides(prompt, monkeypatch):
+    initiative_calls = []
+
+    async def fake_roll_initiative(db, *, user_id, side_a_ids, side_b_ids, turn_id=None):
+        initiative_calls.append(
+            {
+                "user_id": user_id,
+                "side_a_ids": side_a_ids,
+                "side_b_ids": side_b_ids,
+                "turn_id": turn_id,
+            }
+        )
+        event_a = _Event(
+            payload={"kind": "initiative", "total": 18, "formula": "1d20+2"},
+            id="init-event-a",
+            type="roll",
+        )
+        event_b = _Event(
+            payload={"kind": "initiative", "total": 12, "formula": "1d20+1"},
+            id="init-event-b",
+            type="roll",
+        )
+        return event_a, event_b
+
+    monkeypatch.setattr(tools.playthrough_service, "roll_initiative", fake_roll_initiative)
+
+    init_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-init-1",
+                "name": "roll_initiative",
+                "args": {"side_a_ids": ["hero-1"], "side_b_ids": ["goblin-1"]},
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([init_call, AIMessage(content="You act first!")])
+    )
+    result = _turn(agent, "Roll initiative.")
+    assert result.reply == "You act first!"
+    assert initiative_calls == [
+        {
+            "user_id": "user-1",
+            "side_a_ids": ["hero-1"],
+            "side_b_ids": ["goblin-1"],
+            "turn_id": "turn-1",
+        }
+    ]
+
+
 def test_the_model_cannot_supply_session_or_user_id():
-    schema = tools.roll_dice.tool_call_schema.model_json_schema()
-    assert set(schema["properties"]) == {"kind", "context", "actor_id"}
+    roll_schema = tools.roll_dice.tool_call_schema.model_json_schema()
+    assert set(roll_schema["properties"]) == {"kind", "context", "actor_id"}
+
+    check_schema = tools.resolve_check.tool_call_schema.model_json_schema()
+    assert set(check_schema["properties"]) == {"roll_id", "dc"}
+
+    save_schema = tools.resolve_save.tool_call_schema.model_json_schema()
+    assert set(save_schema["properties"]) == {"roll_id", "dc"}
+
+    passive_schema = tools.passive_check.tool_call_schema.model_json_schema()
+    assert set(passive_schema["properties"]) == {"ability", "dc", "actor_id"}
+
+    init_schema = tools.roll_initiative.tool_call_schema.model_json_schema()
+    assert set(init_schema["properties"]) == {"side_a_ids", "side_b_ids"}
 
 
 def test_the_model_can_supply_explicit_actor_id(prompt, roll_spy):

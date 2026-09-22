@@ -15,6 +15,10 @@ ROLL_DICE_TOOL = "roll_dice"
 GET_SCENE_TOOL = "get_scene"
 GET_OBJECT_TOOL = "get_object"
 GET_CAMPAIGN_TOOL = "get_campaign"
+RESOLVE_CHECK_TOOL = "resolve_check"
+RESOLVE_SAVE_TOOL = "resolve_save"
+PASSIVE_CHECK_TOOL = "passive_check"
+ROLL_INITIATIVE_TOOL = "roll_initiative"
 
 
 @dataclass

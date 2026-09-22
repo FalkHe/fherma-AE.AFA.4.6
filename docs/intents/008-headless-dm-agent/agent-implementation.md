@@ -11,7 +11,7 @@ Ordered list
 2. [x] Postgres checkpointer replacing InMemorySaver for session-level persistence. Delete demo_graph.py here.
 3. [x] validate_state node: mechanic errors become tool results the model narrates around.
 4. [x] Content read tools: get_scene, get_object, get_campaign.
-5. [ ] Roll tools without a player click: resolve_check, resolve_save, passive_check, roll_initiative.
+5. [x] Roll tools without a player click: resolve_check, resolve_save, passive_check, roll_initiative.
 6. [ ] load_context node: scene, character, awaiting state, creature/object state, and recap injected into the prompt on a cold/resumed thread.
 7. [ ] ask_player as an interrupt node, plus request_player_roll resuming through resolve_roll_request.
 8. [ ] Action tools: interact, take, drop, give, use_item, use_exit.

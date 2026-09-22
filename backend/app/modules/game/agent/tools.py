@@ -16,7 +16,11 @@ from app.modules.game.agent.state import (
     GET_CAMPAIGN_TOOL,
     GET_OBJECT_TOOL,
     GET_SCENE_TOOL,
+    PASSIVE_CHECK_TOOL,
+    RESOLVE_CHECK_TOOL,
+    RESOLVE_SAVE_TOOL,
     ROLL_DICE_TOOL,
+    ROLL_INITIATIVE_TOOL,
     DmContext,
 )
 from app.modules.playthrough import service as playthrough_service
@@ -71,11 +75,112 @@ async def roll_dice(
     )
     payload = event.payload
     return {
+        "roll_id": event.id,
         "kind": payload["kind"],
         "formula": payload["formula"],
         "faces": payload["faces"],
         "modifier": payload["modifier"],
         "total": payload["total"],
+    }
+
+
+@tool(RESOLVE_CHECK_TOOL)
+async def resolve_check(
+    roll_id: str,
+    dc: int,
+    runtime: ToolRuntime[DmContext],
+) -> dict[str, Any]:
+    """Resolve an ability check roll against a Difficulty Class (DC 1-30).
+    Consumes the roll event identified by `roll_id`. Returns whether the check succeeded."""
+    ctx = runtime.context
+    success = await playthrough_service.resolve_check(
+        ctx.db,
+        user_id=ctx.user_id,
+        roll_id=roll_id,
+        dc=dc,
+        turn_id=ctx.turn_id,
+    )
+    return {"success": success, "dc": dc, "roll_id": roll_id}
+
+
+@tool(RESOLVE_SAVE_TOOL)
+async def resolve_save(
+    roll_id: str,
+    dc: int,
+    runtime: ToolRuntime[DmContext],
+) -> dict[str, Any]:
+    """Resolve a saving throw roll against a Difficulty Class (DC 1-30).
+    Consumes the roll event identified by `roll_id`. Returns whether the save succeeded."""
+    ctx = runtime.context
+    success = await playthrough_service.resolve_save(
+        ctx.db,
+        user_id=ctx.user_id,
+        roll_id=roll_id,
+        dc=dc,
+        turn_id=ctx.turn_id,
+    )
+    return {"success": success, "dc": dc, "roll_id": roll_id}
+
+
+@tool(PASSIVE_CHECK_TOOL)
+async def passive_check(
+    ability: str,
+    dc: int,
+    runtime: ToolRuntime[DmContext],
+    actor_id: str | None = None,
+) -> dict[str, Any]:
+    """Evaluate a passive ability score (10 + ability modifier) against a DC without rolling dice.
+    `ability` is one of strength, dexterity, constitution, intelligence, wisdom, charisma.
+    `actor_id` is optional, defaulting to the current actor in context."""
+    ctx = runtime.context
+    target_actor_id = actor_id or ctx.actor_id
+    if not target_actor_id:
+        raise ValueError(
+            "actor_id is required for passive_check when no default actor is set in context."
+        )
+    success = await playthrough_service.passive_check(
+        ctx.db,
+        user_id=ctx.user_id,
+        actor_id=target_actor_id,
+        ability=ability,
+        dc=dc,
+        turn_id=ctx.turn_id,
+    )
+    return {
+        "success": success,
+        "dc": dc,
+        "ability": ability,
+        "actor_id": target_actor_id,
+    }
+
+
+@tool(ROLL_INITIATIVE_TOOL)
+async def roll_initiative(
+    side_a_ids: list[str],
+    side_b_ids: list[str],
+    runtime: ToolRuntime[DmContext],
+) -> dict[str, Any]:
+    """Roll initiative for two opposing sides to determine turn order.
+    `side_a_ids` and `side_b_ids` are lists of actor IDs for each side."""
+    ctx = runtime.context
+    event_a, event_b = await playthrough_service.roll_initiative(
+        ctx.db,
+        user_id=ctx.user_id,
+        side_a_ids=side_a_ids,
+        side_b_ids=side_b_ids,
+        turn_id=ctx.turn_id,
+    )
+    return {
+        "side_a": {
+            "id": event_a.id,
+            "type": event_a.type,
+            "payload": event_a.payload,
+        },
+        "side_b": {
+            "id": event_b.id,
+            "type": event_b.type,
+            "payload": event_b.payload,
+        },
     }
 
 
@@ -149,4 +254,13 @@ async def get_campaign(
 
 
 ## Tool registry
-TOOLS = [roll_dice, get_scene, get_object, get_campaign]
+TOOLS = [
+    roll_dice,
+    resolve_check,
+    resolve_save,
+    passive_check,
+    roll_initiative,
+    get_scene,
+    get_object,
+    get_campaign,
+]
