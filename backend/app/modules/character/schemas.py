@@ -216,3 +216,49 @@ class CharacterCreateRequest(CamelModel):
     equipment_picks: list[int] = []
     appearance: str = ""
     backstory: str = ""
+
+
+CreationStepName = Literal[
+    "raceClass", "scores", "identity", "skills", "alignment", "equipment", "review"
+]
+
+
+class SheetSoFar(CamelModel):
+    """The draft as it stands, on the wire (sprint 009-05, WI1): every
+    field nullable, filled in only as the conversation settles it.
+    `maxHp`, `armourClass`, `speed`, `skills` and `equipment` only ever
+    come from a successful `service.build_sheet` -- everything else is
+    read straight off the draft (← research Decision 3)."""
+
+    name: str | None = None
+    race: RaceName | None = None
+    character_class: ClassName | None = None
+    level: Literal[1] | None = None
+    alignment: AlignmentName | None = None
+    abilities: Abilities | None = None
+    max_hp: int | None = None
+    armour_class: int | None = None
+    speed: int | None = None
+    skills: list[SkillName] = Field(default_factory=list)
+    equipment: list[str] = Field(default_factory=list)
+    appearance: str | None = None
+    backstory: str | None = None
+
+
+class SendCreationMessageRequest(CamelModel):
+    text: str = Field(min_length=1)
+
+
+class CreationReply(CamelModel):
+    """Both creation-chat routes answer this (sprint 009-05, WI1): the
+    Keeper's words plus everything the sheet-so-far panel needs, so the
+    page never makes a second read (← AC3)."""
+
+    conversation_id: str
+    reply: str
+    sheet: SheetSoFar
+    step: CreationStepName
+    step_number: int = Field(ge=1, le=7)
+    can_save: bool
+    saved: bool
+    error: bool
