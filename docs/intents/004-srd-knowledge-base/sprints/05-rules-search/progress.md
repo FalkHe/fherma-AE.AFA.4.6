@@ -9,7 +9,7 @@ stage: running
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
+| 1 | done | `search_rules`, `RuleMatch`, `DEFAULT_LIMIT`, `app srd search`, heading-trail embedding in `ingest`, README; re-ingest 13:04 UTC (USD 0.0106); live: "how does half cover work" → Combat › Cover #0 (0.515) first; "what happens when a creature is frightened" → Conditions › … › Frightened (0.389) first; "what does fire bolt do" --limit 3 → Spell Descriptions › … › Fire Bolt (0.486) first; stored source unchanged; commits 9069fe9 841beb6 |
 
 Status: `open | running | done | failed`
 
@@ -21,5 +21,10 @@ Status: `open | running | done | failed`
 - `glab` is signed in as `f4lkh3`; MR assignee is set to `st3ll4` explicitly.
 
 ## Backlog proposals
+- Heading paths nest wrongly in places: `Adventuring › Conditions › Blinded › Frightened` and `Spell Lists › Spell Descriptions › Acid Arrow › Fire Bolt` — the first sibling heading becomes the parent of the rest, probably because the source raises the level for the first entry only or the chunker mishandles equal-level siblings after a deeper heading. The citation still points at the right passage but reads oddly; worth a chunker fix before citations are shown to players.
+- Runner-up matches are lexical look-alikes (Half-Dragon, Half-Elf for "half cover"); sprint 06's floor will decide how many of those survive.
+
+## Gates
+Lint, backend suite (1021 passed), database-marked suite (151 passed) and frontend suite (65) pass.
 
 ## Verify
