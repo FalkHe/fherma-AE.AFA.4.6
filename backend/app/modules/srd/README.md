@@ -58,3 +58,9 @@ this module reaches the corpus directly (D1).
   (D6).
 - `srd_rules` is owned by nobody and replaced wholesale on re-ingest — no
   row-level ownership or partial update (`module-structure.md` §2).
+- Re-ingesting an unchanged source yields the same row count at a later
+  ingest time; a changed source changes the file's byte diff and the row
+  count together, since both derive from the same stored bytes (D3). A
+  source whose chunking would produce two identical citations fails the
+  write's unique constraint at commit and leaves the previous corpus
+  untouched, rather than silently overwriting one citation with another.
