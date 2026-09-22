@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
@@ -222,12 +222,27 @@ async def turn(
     context: CreationContext,
     player_text: str,
 ) -> CreationTurn:
+    """`show_sheet`'s rendered text (draft or ready-made preview) only
+    ever reaches the transcript as a `ToolMessage`, which nothing prints
+    on its own (← AC4) -- so this turn's own `show_sheet` results are
+    collected and put ahead of the model's closing words, deterministic
+    and un-paraphrased. `before` bounds the collection to this turn, so an
+    earlier turn's sheet is never repeated."""
     config = RunnableConfig(
         **tracing.langchain_config("creation-turn"), configurable={"thread_id": thread_id}
     )
+    before = (await agent.aget_state(config)).values.get("messages", [])
     result: dict[str, Any] = await agent.ainvoke(
         {"messages": [HumanMessage(content=player_text)]}, config=config, context=context
     )
     messages = result.get("messages", [])
-    reply = messages[-1].text if messages and hasattr(messages[-1], "text") else ""
+    shown = [
+        message.content
+        for message in messages[len(before) :]
+        if isinstance(message, ToolMessage)
+        and message.name == "show_sheet"
+        and isinstance(message.content, str)
+    ]
+    closing = messages[-1].text if messages and hasattr(messages[-1], "text") else ""
+    reply = "\n\n".join([*shown, closing]) if shown else closing
     return CreationTurn(reply=reply, saved=result.get("saved", False))

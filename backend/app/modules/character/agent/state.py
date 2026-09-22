@@ -5,7 +5,7 @@ and the model must never be able to supply. It reaches a tool through
 """
 
 from dataclasses import dataclass
-from typing import Any, NotRequired
+from typing import Annotated, Any, NotRequired
 
 from langgraph.graph import MessagesState
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,11 +21,20 @@ class CreationContext:
     ready_made: SeedCharacter | None = None
 
 
+def _merge_draft(current: dict[str, Any] | None, update: dict[str, Any]) -> dict[str, Any]:
+    """A single model step can carry two draft-writing tool calls at once
+    (e.g. "suggest the scores and show me the sheet"); a plain last-value
+    channel raises `InvalidUpdateError` on the second write in that step.
+    Each writing tool now returns only its own delta, and this reducer
+    merges them -- last write wins per key."""
+    return {**(current or {}), **update}
+
+
 class CreationState(MessagesState):
     """`draft` accumulates the keys of a `CharacterCreateRequest` as the
     player and the agent settle them: `name`, `race`, `character_class`,
     `abilities`, `appearance`, `backstory`. `saved` flips once
     `save_character` has written the run's character."""
 
-    draft: NotRequired[dict[str, Any]]
+    draft: NotRequired[Annotated[dict[str, Any], _merge_draft]]
     saved: NotRequired[bool]

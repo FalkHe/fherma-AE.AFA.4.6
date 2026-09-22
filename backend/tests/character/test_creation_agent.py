@@ -1,4 +1,4 @@
-"""AC1-AC6 -- sprint 009-03 WI2.
+"""AC1-AC6 -- sprint 009-03, plus one round-1-review regression test.
 
 Driven through `typer.testing.CliRunner` against the real `cli`, with a
 scripted fake model (`_ToolAwareFakeModel`, mirrors
@@ -6,7 +6,11 @@ scripted fake model (`_ToolAwareFakeModel`, mirrors
 `playthrough.service.get_campaign_run` and `.create_character`
 monkeypatched -- no real database, no real model call. `content_service`
 reads the real `greenhollow` campaign file (pure, no I/O worth stubbing),
-so the greeting genuinely names its seed hero, Rosalind Thorn."""
+so the greeting genuinely names its seed hero, Rosalind Thorn.
+
+AC3/AC4 let `show_sheet` run for real through the `ToolNode` -- the
+scripted model's own lines never contain the sheet's numbers, so a
+passing assertion proves the tool, not the test, put them on screen."""
 
 import ast
 from pathlib import Path
@@ -87,9 +91,10 @@ def _patch_create_character(monkeypatch) -> list[dict]:
 def test_ac1_taking_the_ready_made_hero_saves_it_directly_and_names_it_in_the_greeting(
     monkeypatch,
 ):
+    show_call = _tool_call("call-0", "show_sheet", {"ready_made": True})
     save_call = _tool_call("call-1", "save_character", {"confirmed": True, "ready_made": True})
     reply = AIMessage(content="Rosalind Thorn steps up, ready as she'll ever be.")
-    scripted = _scripted_model([save_call, reply])
+    scripted = _scripted_model([show_call, save_call, reply])
     _patch_common(monkeypatch, scripted)
     calls = _patch_create_character(monkeypatch)
 
@@ -97,6 +102,11 @@ def test_ac1_taking_the_ready_made_hero_saves_it_directly_and_names_it_in_the_gr
 
     assert result.exit_code == 0, result.output
     assert "Rosalind Thorn" in result.stdout
+    # `show_sheet(ready_made=True)` -> `render_seed` is what actually put
+    # her stats on screen -- the script's own closing line never mentions
+    # them (← D14 §1.3).
+    assert "Hit points" in result.stdout
+    assert result.stdout.index("Hit points") < result.stdout.index(commands.FINALITY_LINE)
     assert calls == [{"user_id": "user-1", "run_id": "run-1", "sheet": None}]
     assert commands.FINALITY_LINE in result.stdout
 
@@ -131,8 +141,11 @@ def test_ac3_every_number_on_the_sheet_comes_from_build_sheet(monkeypatch):
         abilities=builder.suggested_scores("Rogue"),
     )
     expected_sheet = character_service.build_sheet(request)
-    sheet_text = character_service.render_sheet(expected_sheet)
 
+    # The script's own closing line never mentions a number: `show_sheet`
+    # runs for real through the `ToolNode`, so the HP/AC that land in the
+    # output can only have come from `service.build_sheet`, never the
+    # model's own words.
     scripted = _scripted_model(
         [
             _tool_call(
@@ -141,7 +154,7 @@ def test_ac3_every_number_on_the_sheet_comes_from_build_sheet(monkeypatch):
             _tool_call("c2", "set_identity", {"name": "Pip"}),
             _tool_call("c3", "suggest_scores", {}),
             _tool_call("c4", "show_sheet", {}),
-            AIMessage(content=sheet_text),
+            AIMessage(content="There it is."),
         ]
     )
     _patch_common(monkeypatch, scripted)
@@ -157,24 +170,64 @@ def test_ac3_every_number_on_the_sheet_comes_from_build_sheet(monkeypatch):
 def test_ac4_the_sheet_is_shown_before_saving_and_an_unconfirmed_save_writes_nothing(
     monkeypatch,
 ):
-    shown = AIMessage(content="Here's how it stands so far.")
+    request = CharacterCreateRequest(
+        name="Pip",
+        race="Halfling",
+        character_class="Rogue",
+        alignment="Neutral",
+        abilities=builder.suggested_scores("Rogue"),
+    )
+    expected_sheet = character_service.build_sheet(request)
     refused = AIMessage(content="Not written down until you say so.")
     scripted = _scripted_model(
         [
-            _tool_call("c1", "show_sheet", {}),
-            shown,
-            _tool_call("c2", "save_character", {"confirmed": False}),
+            _tool_call(
+                "c1", "set_race_and_class", {"race": "Halfling", "character_class": "Rogue"}
+            ),
+            _tool_call("c2", "set_identity", {"name": "Pip"}),
+            _tool_call("c3", "suggest_scores", {}),
+            _tool_call("c4", "show_sheet", {}),
+            AIMessage(content="Here's how it stands so far."),
+            _tool_call("c5", "save_character", {"confirmed": False}),
             refused,
         ]
     )
     _patch_common(monkeypatch, scripted)
     calls = _patch_create_character(monkeypatch)
 
-    result = _invoke("show me the sheet\nnot yet\n")
+    result = _invoke("a halfling rogue named Pip, show me the sheet\nnot yet\n")
 
     assert result.exit_code == 0, result.output
-    assert result.stdout.index(shown.content) < result.stdout.index(refused.content)
+    assert result.stdout.index(str(expected_sheet.max_hp)) < result.stdout.index(refused.content)
     assert calls == []
+
+
+def test_regression_two_draft_writing_tool_calls_in_one_step_do_not_crash(monkeypatch):
+    """← item 1: `set_identity` and `suggest_scores` both write to
+    `draft` in the same model step (a plain last-value channel raises
+    `InvalidUpdateError` here); the merge reducer on `CreationState.draft`
+    must let both land and the session must keep running."""
+    set_race = _tool_call(
+        "c1", "set_race_and_class", {"race": "Halfling", "character_class": "Rogue"}
+    )
+    ack_race = AIMessage(content="Halfling Rogue, noted.")
+    both_at_once = AIMessage(
+        content="",
+        tool_calls=[
+            {"id": "c2", "name": "set_identity", "args": {"name": "Pip"}},
+            {"id": "c3", "name": "suggest_scores", "args": {}},
+        ],
+    )
+    final = AIMessage(content="Got it all down.")
+    scripted = _scripted_model([set_race, ack_race, both_at_once, final])
+    _patch_common(monkeypatch, scripted)
+    _patch_create_character(monkeypatch)
+
+    result = _invoke("a halfling rogue\ny\n")
+
+    assert result.exit_code == 0, result.output
+    assert commands.MODEL_ERROR_REPLY not in result.stdout
+    assert final.content in result.stdout
 
 
 def test_ac5_quitting_before_saving_keeps_nothing(monkeypatch):

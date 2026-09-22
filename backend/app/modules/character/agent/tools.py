@@ -5,9 +5,12 @@ to call it; `runtime` is injected by `ToolNode` and hidden from the
 model's schema (same seam as `game.agent.tools`).
 
 Every number on the sheet comes from `builder` through these tools --
-never from the model's own words (← AC3). The draft lives in graph state:
-a writing tool merges into `runtime.state["draft"]` and returns a
-`Command`; a reading tool only reads it.
+never from the model's own words (← AC3). The draft lives in graph state
+behind `CreationState.draft`'s merge reducer: a writing tool returns only
+its own delta in a `Command`, never the full merged dict -- two
+draft-writing tool calls can land in the same model step, and merging
+locally here would drop whichever ran second. A reading tool only reads
+the already-merged `runtime.state["draft"]`.
 """
 
 from typing import Any
@@ -78,10 +81,9 @@ def set_race_and_class(
 ) -> Command:
     """Write down the player's race and class. Call this only after the
     player has said yes to both -- never before agreement."""
-    draft = {**runtime.state.get("draft", {}), "race": race, "character_class": character_class}
     return Command(
         update={
-            "draft": draft,
+            "draft": {"race": race, "character_class": character_class},
             "messages": [
                 ToolMessage(
                     content=f"Race set to {race}, class set to {character_class}.",
@@ -103,15 +105,14 @@ def set_identity(
     player has told you. Leave `appearance`/`backstory` empty to leave
     what is already written down untouched -- call again as the player
     fills in what was missing."""
-    draft = dict(runtime.state.get("draft", {}))
-    draft["name"] = name
+    delta: dict[str, Any] = {"name": name}
     if appearance:
-        draft["appearance"] = appearance
+        delta["appearance"] = appearance
     if backstory:
-        draft["backstory"] = backstory
+        delta["backstory"] = backstory
     return Command(
         update={
-            "draft": draft,
+            "draft": delta,
             "messages": [
                 ToolMessage(
                     content=f"Identity written down for {name}.", tool_call_id=runtime.tool_call_id
@@ -131,11 +132,10 @@ def suggest_scores(runtime: ToolRuntime[CreationContext]) -> Command:
     if character_class is None:
         raise ValueError("Choose a race and class before suggesting ability scores.")
     abilities = builder.suggested_scores(character_class)
-    new_draft = {**draft, "abilities": abilities.model_dump()}
     summary = ", ".join(f"{ability} {value}" for ability, value in abilities.model_dump().items())
     return Command(
         update={
-            "draft": new_draft,
+            "draft": {"abilities": abilities.model_dump()},
             "messages": [
                 ToolMessage(
                     content=f"Suggested scores: {summary}.", tool_call_id=runtime.tool_call_id
@@ -146,9 +146,17 @@ def suggest_scores(runtime: ToolRuntime[CreationContext]) -> Command:
 
 
 @tool("show_sheet")
-def show_sheet(runtime: ToolRuntime[CreationContext]) -> str:
-    """Render the full sheet built so far for the player's review. Never
-    restate its numbers yourself -- this tool is the only source of them."""
+def show_sheet(runtime: ToolRuntime[CreationContext], ready_made: bool = False) -> str:
+    """Render the sheet for the player's review -- never restate its
+    numbers yourself, this tool is the only source of them. Pass
+    `ready_made=True` to show the campaign's ready-made hero instead of
+    the draft being built."""
+    if ready_made:
+        seed = runtime.context.ready_made
+        if seed is None:
+            return "There is no ready-made hero offered at this table."
+        return service.render_seed(seed)
+
     draft = runtime.state.get("draft", {})
     gaps = _draft_gaps(draft)
     if gaps:

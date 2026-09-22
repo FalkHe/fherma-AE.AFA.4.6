@@ -118,7 +118,9 @@ async def _create_session(*, user_id: str, run_id: str) -> None:
                 seed=seed,
                 text=stripped,
             )
-        except LlmError:
+        except Exception:  # noqa: BLE001 -- one turn misbehaving must never surface a
+            # traceback in the tavern's voice (← AC6); the model, a tool or the graph
+            # itself can all raise here, so nothing narrower would hold.
             typer.echo(MODEL_ERROR_REPLY)
             continue
 
