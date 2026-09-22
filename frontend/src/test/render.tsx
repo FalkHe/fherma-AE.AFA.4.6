@@ -26,7 +26,7 @@ import App from "../App";
 // eslint-disable-next-line react-refresh/only-export-components
 function Providers({ children, initialEntries }: { children: ReactNode; initialEntries: string[] }) {
   return (
-    <ThemeProvider theme={theme} noSsr>
+    <ThemeProvider theme={theme} noSsr defaultMode="dark">
       <CssBaseline />
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={createQueryClient()}>

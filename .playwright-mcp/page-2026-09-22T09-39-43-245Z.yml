@@ -1,0 +1,4 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e2]: Serif via direct AbcQuick
+  - generic [ref=f1e3]: Serif via alias AbcQuick
+  - generic [ref=f1e4]: Fallback baseline AbcQuick
