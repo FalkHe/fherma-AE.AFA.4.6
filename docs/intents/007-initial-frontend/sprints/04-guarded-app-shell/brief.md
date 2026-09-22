@@ -19,7 +19,7 @@ that exact address, under the shared header with a working account menu.
 ## Acceptance criteria
 - AC1: The guard is declared once for all signed-in pages, not repeated per route (← D5).
 - AC2: A signed-out visitor to any protected address is sent to sign-in and, after signing in, lands on that address —
-  not the dashboard (← D5).
+  not the landing page (← D5). An empty dashboard page ships as that second protected address.
 - AC3: The header shows the wordmark "The Goblin's Tavern" and an account button whose menu carries the player's name
   and sign out; signing out returns to sign-in (← D11, D14).
 - AC4: The shell no longer belongs to the landing screen; the structure test records its new home and the permitted
@@ -34,6 +34,9 @@ that exact address, under the shared header with a working account menu.
 - The account menu reads the existing current-user query; the design's e-mail line is omitted because users have no
   e-mail, and the username is the name shown.
 - No avatar image — the design's initial letter stands in.
+- The dashboard page is an empty frame with a heading only; sprint 07 fills it. Added on the human's call, so that
+  returning to a requested address is something you can see rather than only test.
 
 ## Out of scope
-No dashboard or run-screen content · no backend · no redesign of the sign-in form beyond the theme it inherits.
+No dashboard or run-screen *content* beyond the empty page above · no backend · no redesign of the sign-in form
+beyond the theme it inherits.

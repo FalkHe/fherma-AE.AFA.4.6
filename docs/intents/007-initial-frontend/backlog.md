@@ -14,7 +14,7 @@ Dependency-ordered. 01 and 02 have no screen and are checked through the interac
 | 01 | The product can list the campaigns a player may choose from, with title, teaser and number of adventures | – | #37 | done |
 | 02 | A player's runs can be read with everything the screens show: campaign, progress, who is at the table, which adventures lie ahead | – | #38 | done |
 | 03 | The whole product wears the delivered dark "Goblin Pub" look and is named The Goblin's Tavern | – | #39 | done |
-| 04 | Every page sits behind sign-in under one shared header with an account menu; a signed-out visitor is sent to sign-in and then back to the page they asked for | 03 | – | open |
+| 04 | Every page sits behind sign-in under one shared header with an account menu; a signed-out visitor is sent to sign-in and then back to the page they asked for | 03 | – | running |
 | 05 | Opening a run shows the campaign, who is at the table and whether their character is ready, plus an invite slot | 02, 04 | – | open |
 | 06 | The run screen lists the adventures in order, marks which is next and says what the party is waiting for | 05 | – | open |
 | 07 | Signing in lands on a dashboard of the player's runs, or on an invitation to start the first one | 05 | – | open |
@@ -35,6 +35,3 @@ Dependency-ordered. 01 and 02 have no screen and are checked through the interac
 
 - The backend has since gained the "enter adventure" write that Start would call. D1 keeps Start disabled;
   wiring it would be one small sprint after 06 — your call.
-- 04 is two sprints' worth and did not start. Suggested split: **04a** one sign-in guard, the shared header and the
-  account menu; **04b** returning to the page you asked for — which cannot be seen working until a second page sits
-  behind sign-in, something 04 currently rules out. Your call.
