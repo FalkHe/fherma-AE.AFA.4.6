@@ -91,6 +91,16 @@ def _basis(index: int) -> list[float]:
     return vector
 
 
+def _skewed(other_index: int, weight: float) -> list[float]:
+    """A vector at a known, sub-`RELEVANCE_FLOOR` cosine distance from
+    `_basis(0)`: `weight` controls how far, without ever reaching an
+    orthogonal (distance `1.0`) vector, which the floor now drops."""
+    vector = [0.0] * EMBEDDING_WIDTH
+    vector[0] = 1.0
+    vector[other_index] = weight
+    return vector
+
+
 def _row(*, heading_path: str, ordinal: int, text: str, embedding: list[float]) -> SrdRule:
     return SrdRule(
         source_version="v1",
@@ -156,18 +166,21 @@ def test_the_closest_passage_ranks_first_and_score_is_the_raw_distance(srd_db, m
         text="identical direction",
         embedding=_basis(0),
     )
-    orthogonal_one = _row(
-        heading_path="Combat › Cover", ordinal=0, text="unrelated direction", embedding=_basis(1)
+    near_one = _row(
+        heading_path="Combat › Cover",
+        ordinal=0,
+        text="a further-but-still-relevant direction",
+        embedding=_skewed(1, 1.0),
     )
-    orthogonal_two = _row(
+    near_two = _row(
         heading_path="Conditions › Frightened",
         ordinal=0,
-        text="also unrelated",
-        embedding=_basis(2),
+        text="the furthest-but-still-relevant direction",
+        embedding=_skewed(2, 2.0),
     )
 
     async def _seed():
-        srd_db.add_all([orthogonal_one, orthogonal_two, identical])
+        srd_db.add_all([near_one, near_two, identical])
         await srd_db.commit()
 
     asyncio.run(_seed())
@@ -176,8 +189,93 @@ def test_the_closest_passage_ranks_first_and_score_is_the_raw_distance(srd_db, m
 
     assert matches[0].heading_path == "Spells › Fire Bolt"
     assert matches[0].score == pytest.approx(0.0, abs=1e-6)
-    assert matches[1].score == pytest.approx(1.0, abs=1e-6)
-    assert matches[2].score == pytest.approx(1.0, abs=1e-6)
+    assert matches[1].score == pytest.approx(1 - 1 / (2**0.5), abs=1e-6)
+    assert matches[2].score == pytest.approx(1 - 1 / (5**0.5), abs=1e-6)
+
+
+def test_rows_past_the_floor_are_dropped_rows_at_or_below_it_are_kept_in_order(monkeypatch):
+    db = FakeScalarSession(1)
+    gateway = FakeGateway(vectors=[_basis(0)])
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", gateway)
+
+    class _FixedDistanceResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+    async def execute(_stmt):
+        return _FixedDistanceResult(
+            [
+                ("Combat › Cover", 0, "closest", 0.1),
+                (
+                    "Using Ability Scores › Saving Throws",
+                    0,
+                    "at the floor",
+                    srd_service.RELEVANCE_FLOOR,
+                ),
+                ("Spell Lists › Fireball", 0, "past the floor", srd_service.RELEVANCE_FLOOR + 0.01),
+            ]
+        )
+
+    db.execute = execute
+
+    matches = asyncio.run(srd_service.search_rules(db, "irrelevant query text"))
+
+    assert [match.heading_path for match in matches] == [
+        "Combat › Cover",
+        "Using Ability Scores › Saving Throws",
+    ]
+
+
+def test_a_result_of_only_above_floor_rows_returns_empty_list(monkeypatch):
+    db = FakeScalarSession(1)
+    gateway = FakeGateway(vectors=[_basis(0)])
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", gateway)
+
+    class _FixedDistanceResult:
+        def all(self):
+            return [
+                ("Spell Lists › Fireball", 0, "past the floor", srd_service.RELEVANCE_FLOOR + 0.01)
+            ]
+
+    async def execute(_stmt):
+        return _FixedDistanceResult()
+
+    db.execute = execute
+
+    matches = asyncio.run(srd_service.search_rules(db, "irrelevant query text"))
+
+    assert matches == []
+
+
+@pytest.mark.database
+def test_a_row_above_the_relevance_floor_is_filtered_a_row_at_it_is_kept(srd_db, monkeypatch):
+    query_vector = _basis(0)
+    gateway = FakeGateway(vectors=[query_vector])
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", gateway)
+
+    identical = _row(
+        heading_path="Spells › Fire Bolt",
+        ordinal=0,
+        text="identical direction",
+        embedding=_basis(0),
+    )
+    orthogonal = _row(
+        heading_path="Combat › Cover", ordinal=0, text="unrelated direction", embedding=_basis(1)
+    )
+
+    async def _seed():
+        srd_db.add_all([orthogonal, identical])
+        await srd_db.commit()
+
+    asyncio.run(_seed())
+
+    matches = asyncio.run(srd_service.search_rules(srd_db, "irrelevant query text", limit=2))
+
+    assert [match.heading_path for match in matches] == ["Spells › Fire Bolt"]
+    assert matches[0].score == pytest.approx(0.0, abs=1e-6)
 
 
 @pytest.mark.database
@@ -187,7 +285,12 @@ def test_limit_caps_how_many_matches_come_back(srd_db, monkeypatch):
     monkeypatch.setattr(srd_service.llm_service, "embed_texts", gateway)
 
     rows = [
-        _row(heading_path=f"Section {i}", ordinal=0, text=f"passage {i}", embedding=_basis(i))
+        _row(
+            heading_path=f"Section {i}",
+            ordinal=0,
+            text=f"passage {i}",
+            embedding=_basis(0) if i == 0 else _skewed(i, float(i)),
+        )
         for i in range(4)
     ]
 

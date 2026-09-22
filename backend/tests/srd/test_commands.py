@@ -262,6 +262,37 @@ def test_search_on_vector_width_mismatch_exits_1_naming_both_widths(monkeypatch)
     assert "1536" in result.stderr
 
 
+def test_search_on_no_relevant_rule_prints_the_message_to_stdout_and_exits_0(monkeypatch):
+    async def fake_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        return []
+
+    monkeypatch.setattr(srd_service, "search_rules", fake_search_rules)
+
+    result = runner.invoke(cli, ["srd", "search", "how do I reload a plasma rifle"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert result.stdout.strip() == srd_commands.NO_RELEVANT_RULE_MESSAGE
+
+
+def test_search_no_relevant_rule_is_distinguishable_from_empty_corpus(monkeypatch):
+    async def fake_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        return []
+
+    monkeypatch.setattr(srd_service, "search_rules", fake_search_rules)
+    no_relevant_result = runner.invoke(cli, ["srd", "search", "how do I reload a plasma rifle"])
+
+    async def failing_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        raise SrdCorpusEmptyError("the SRD corpus holds no rules; run `app srd ingest` first")
+
+    monkeypatch.setattr(srd_service, "search_rules", failing_search_rules)
+    empty_corpus_result = runner.invoke(cli, ["srd", "search", "how do I reload a plasma rifle"])
+
+    assert no_relevant_result.exit_code == 0
+    assert empty_corpus_result.exit_code == 1
+    assert no_relevant_result.exit_code != empty_corpus_result.exit_code
+
+
 def test_search_zero_limit_exits_1_before_any_call(monkeypatch):
     def _forbidden(db, query, *, limit=srd_service.DEFAULT_LIMIT):
         raise AssertionError("a non-positive --limit must never reach search_rules")
