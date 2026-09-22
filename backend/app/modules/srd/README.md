@@ -21,7 +21,10 @@ this module reaches the corpus directly (D1).
 - The fetched SRD source markdown, `content/srd/<version>/SOURCE_FILENAME`
   (`SRD_ROOT`, `SOURCE_URL`, `SOURCE_VERSION`, `SOURCE_FILENAME` in
   `service.py`) and its `LICENSE.md` sibling, plus the chunking constants
-  `MAX_CHUNK_TOKENS` / `CHUNK_OVERLAP_TOKENS`.
+  `MAX_CHUNK_TOKENS` / `CHUNK_OVERLAP_TOKENS`. A chunk's heading path closes
+  its open heading stack by level, so a source that skips levels (e.g. `##`
+  followed directly by `####`) still cites later siblings side by side
+  instead of nesting them under the first one (sprint 004-07 WI1).
 
 ## Surface
 
