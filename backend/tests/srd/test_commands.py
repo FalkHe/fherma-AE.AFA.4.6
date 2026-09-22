@@ -16,9 +16,10 @@ from datetime import UTC, datetime
 from typer.testing import CliRunner
 
 from app.cli import cli
+from app.modules.srd import commands as srd_commands
 from app.modules.srd import service as srd_service
-from app.modules.srd.errors import SrdVectorWidthError
-from app.modules.srd.schemas import CorpusStatus
+from app.modules.srd.errors import SrdCorpusEmptyError, SrdVectorWidthError
+from app.modules.srd.schemas import CorpusStatus, RuleMatch
 
 runner = CliRunner()
 
@@ -170,3 +171,105 @@ def test_ingest_dry_run_on_srd_source_error_exits_1_with_its_message(monkeypatch
     assert result.exit_code == 1, result.output
     assert result.stdout == ""
     assert "the source could not be reached" in result.stderr
+
+
+def _matches() -> list[RuleMatch]:
+    return [
+        RuleMatch(
+            heading_path="Combat › Cover › Half Cover",
+            ordinal=0,
+            text="You have half cover if an obstacle blocks at least half of your body.",
+            score=0.412,
+        ),
+        RuleMatch(
+            heading_path="Combat › Cover › Three-Quarters Cover",
+            ordinal=1,
+            text="You have three-quarters cover if three-quarters of your body is blocked.",
+            score=0.688,
+        ),
+    ]
+
+
+def test_search_prints_the_block_format_from_search_rules(monkeypatch):
+    captured: dict = {}
+
+    async def fake_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        captured["query"] = query
+        captured["limit"] = limit
+        return _matches()
+
+    monkeypatch.setattr(srd_service, "search_rules", fake_search_rules)
+
+    result = runner.invoke(cli, ["srd", "search", "how does half cover work"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert captured["query"] == "how does half cover work"
+    assert captured["limit"] == srd_service.DEFAULT_LIMIT
+
+    first_match, second_match = _matches()
+    first_index = result.stdout.index(first_match.heading_path)
+    second_index = result.stdout.index(second_match.heading_path)
+    assert first_index < second_index, result.stdout
+
+    for position, match in enumerate(_matches(), start=1):
+        assert f"{position}. {match.heading_path} #{match.ordinal}" in result.stdout
+        assert f"(distance {match.score:.3f})" in result.stdout
+        assert match.text in result.stdout
+
+
+def test_search_limit_option_is_passed_through(monkeypatch):
+    captured: dict = {}
+
+    async def fake_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        captured["limit"] = limit
+        return []
+
+    monkeypatch.setattr(srd_service, "search_rules", fake_search_rules)
+
+    result = runner.invoke(cli, ["srd", "search", "half cover", "--limit", "3"])
+
+    assert result.exit_code == 0, result.output
+    assert captured["limit"] == 3
+
+
+def test_search_on_empty_corpus_exits_1_with_the_empty_corpus_message(monkeypatch):
+    async def fake_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        raise SrdCorpusEmptyError("the SRD corpus holds no rules; run `app srd ingest` first")
+
+    monkeypatch.setattr(srd_service, "search_rules", fake_search_rules)
+
+    result = runner.invoke(cli, ["srd", "search", "half cover"])
+
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert result.stderr.strip() == srd_commands.EMPTY_CORPUS_MESSAGE
+
+
+def test_search_on_vector_width_mismatch_exits_1_naming_both_widths(monkeypatch):
+    async def failing_search_rules(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        raise SrdVectorWidthError(
+            "configured embedding width 4 does not match the srd_rules column width 1536"
+        )
+
+    monkeypatch.setattr(srd_service, "search_rules", failing_search_rules)
+
+    result = runner.invoke(cli, ["srd", "search", "half cover"])
+
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert "4" in result.stderr
+    assert "1536" in result.stderr
+
+
+def test_search_zero_limit_exits_1_before_any_call(monkeypatch):
+    def _forbidden(db, query, *, limit=srd_service.DEFAULT_LIMIT):
+        raise AssertionError("a non-positive --limit must never reach search_rules")
+
+    monkeypatch.setattr(srd_service, "search_rules", _forbidden)
+
+    result = runner.invoke(cli, ["srd", "search", "half cover", "--limit", "0"])
+
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert "0" in result.stderr
