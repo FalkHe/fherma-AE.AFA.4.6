@@ -16,8 +16,8 @@ Ordered list
 7. [x] ask_player as an interrupt node, plus request_player_roll resuming through resolve_roll_request.
 8. [x] Action tools: interact, take, drop, give, use_item, use_exit.
 9. [x] Combat tools: attack, damage.
-10. [ ] Progression tools: enter_adventure, activate_campaign_run.
-11. [ ] Memory tool recall.
+10. [x] ~~Progression tools: enter_adventure, activate_campaign_run~~ (Out of scope for DM agent: lifecycle transitions and adventure entry are triggered via API/UI).
+11. [x] Memory tool recall.
 12. [ ] guard node. Last, because it needs the full set of tools and state to know what counts as out-of-band.
 13. [ ] lookup_rule, once SRD search exists.
 

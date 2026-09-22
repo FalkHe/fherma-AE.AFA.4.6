@@ -35,6 +35,7 @@ or writes an event.
 | `ask_player`, `request_player_roll` (interrupts) | done |
 | `interact`, `take`, `drop`, `give`, `use_item`, `use_exit` | done |
 | `attack`, `damage` | done |
+| `recall` | done |
 | `get_scene`, `get_object`, `get_campaign` | done |
 | `lookup_rule`, `update_object` | not yet |
 

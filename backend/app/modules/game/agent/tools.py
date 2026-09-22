@@ -25,6 +25,7 @@ from app.modules.game.agent.state import (
     GIVE_TOOL,
     INTERACT_TOOL,
     PASSIVE_CHECK_TOOL,
+    RECALL_TOOL,
     REQUEST_PLAYER_ROLL_TOOL,
     RESOLVE_CHECK_TOOL,
     RESOLVE_SAVE_TOOL,
@@ -652,6 +653,30 @@ async def damage(
     }
 
 
+## Memory Tools
+@tool(RECALL_TOOL)
+async def recall(
+    query: str,
+    runtime: ToolRuntime[DmContext],
+    k: int = 5,
+) -> dict[str, Any]:
+    """Search past narration and story memories from anywhere in the campaign by semantic meaning.
+    `query` is the search phrase or question about past events, characters, or lore.
+    `k` is the maximum number of past narrations to retrieve (default 5)."""
+    ctx = runtime.context
+    if not ctx.run_id:
+        return {"status": "ok", "query": query, "items": []}
+    items = await playthrough_service.recall(ctx.db, run_id=ctx.run_id, query=query, k=k)
+    return {
+        "status": "ok",
+        "query": query,
+        "items": [
+            {"id": item.id, "created_at": item.created_at.isoformat(), "text": item.text}
+            for item in items
+        ],
+    }
+
+
 ## Tool registry
 TOOLS = [
     roll_dice,
@@ -669,6 +694,7 @@ TOOLS = [
     use_exit,
     attack,
     damage,
+    recall,
     get_scene,
     get_object,
     get_campaign,

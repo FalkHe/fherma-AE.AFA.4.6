@@ -4,6 +4,7 @@ come from `playthrough.service.roll`, never from the model."""
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import UTC
 from typing import Any
 
 import pytest
@@ -551,6 +552,9 @@ def test_the_model_cannot_supply_session_or_user_id():
 
     damage_schema = tools.damage.tool_call_schema.model_json_schema()
     assert set(damage_schema["properties"]) == {"target_id", "roll_id", "hit_id"}
+
+    recall_schema = tools.recall.tool_call_schema.model_json_schema()
+    assert set(recall_schema["properties"]) == {"query", "k"}
 
 
 def test_ask_player_tool_interrupts_and_resumes_with_answer(prompt, monkeypatch):
@@ -1421,6 +1425,60 @@ def test_combat_tool_refusal_is_caught_and_narrated(prompt, monkeypatch):
 
     res = _turn(agent, "Apply damage.")
     assert res.reply == "The attack did not land, so no damage could be applied."
+
+
+def test_recall_tool_delegates_to_playthrough_service(prompt, monkeypatch):
+    from datetime import datetime
+
+    from app.modules.playthrough.schemas import NarrationRead
+
+    calls = []
+
+    async def fake_recall(db, *, run_id, query, k=5):
+        calls.append({"run_id": run_id, "query": query, "k": k})
+        return [
+            NarrationRead(
+                id="event-mem-1",
+                created_at=datetime(2026, 9, 22, 10, 0, 0, tzinfo=UTC),
+                text="The hooded figure warned you never to enter the cellar.",
+            )
+        ]
+
+    monkeypatch.setattr(tools.playthrough_service, "recall", fake_recall)
+
+    call_recall = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "c-rec",
+                "name": "recall",
+                "args": {
+                    "query": "What did the hooded figure say about the cellar?",
+                    "k": 3,
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model(
+            [
+                call_recall,
+                AIMessage(
+                    content="You recall the hooded figure warning you never to enter the cellar."
+                ),
+            ]
+        )
+    )
+
+    res = _turn(agent, "Do I remember anything about the cellar?")
+    assert res.reply == "You recall the hooded figure warning you never to enter the cellar."
+    assert calls == [
+        {
+            "run_id": "run-1",
+            "query": "What did the hooded figure say about the cellar?",
+            "k": 3,
+        }
+    ]
 
 
 class _FakeSessionmaker:
