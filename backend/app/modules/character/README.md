@@ -28,6 +28,11 @@ same "content lives in git" approach as the `content` module.
 - `app character options` (`commands.py`) — prints every race and class
   with its key stats to stdout, for a quick look at the option set without
   starting the API.
+- `app character create --run <id> --user <id>` (`commands.py`, sprint
+  009-03 WI2) — the terminal creation chat: prints the greeting, then
+  loops turns through `service.build_creation_agent()`/`service.turn()`
+  (WI1) until the player quits or a save lands. No Postgres checkpointer
+  — the thread, and any unsaved draft, dies with the process.
 - `service.build_sheet(request)` (`builder.py`, WI1) — turns a
   `CharacterCreateRequest` into a finished `CharacterSheet`: validates the
   point-buy spread, applies the race, and derives hit points, armour
