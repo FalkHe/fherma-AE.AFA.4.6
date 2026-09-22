@@ -80,3 +80,60 @@ def test_status_on_vector_width_mismatch_exits_1_with_stderr_naming_both_widths(
     assert result.stdout == ""
     assert "4" in result.stderr
     assert "1536" in result.stderr
+
+
+def test_ingest_without_dry_run_exits_1_naming_sprint_03(monkeypatch):
+    result = runner.invoke(cli, ["srd", "ingest"])
+
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert "sprint 03" in result.stderr
+
+
+def test_ingest_dry_run_prints_path_byte_count_chunk_count_tokens_and_sample_headings(
+    monkeypatch, tmp_path
+):
+    from app.modules.srd.schemas import RuleChunk
+
+    fixture_path = tmp_path / "SRD_CC_v5.1.md"
+    fixture_path.write_bytes(b"some markdown source")
+
+    monkeypatch.setattr(srd_service, "fetch_source", lambda: fixture_path)
+    monkeypatch.setattr(
+        srd_service,
+        "chunk_source",
+        lambda path: [
+            RuleChunk(
+                heading_path="Combat › Cover › Half Cover", ordinal=0, text="x", token_count=5
+            ),
+            RuleChunk(
+                heading_path="Combat › Cover › Half Cover", ordinal=1, text="y", token_count=3
+            ),
+            RuleChunk(heading_path="Combat › Actions", ordinal=0, text="z", token_count=7),
+        ],
+    )
+
+    result = runner.invoke(cli, ["srd", "ingest", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert str(fixture_path) in result.stdout
+    assert str(len(fixture_path.read_bytes())) in result.stdout
+    assert "3" in result.stdout  # chunk count
+    assert "15" in result.stdout  # total tokens
+    assert "Combat › Cover › Half Cover" in result.stdout
+    assert "Combat › Actions" in result.stdout
+
+
+def test_ingest_dry_run_on_srd_source_error_exits_1_with_its_message(monkeypatch):
+    from app.modules.srd.errors import SrdSourceError
+
+    def failing_fetch():
+        raise SrdSourceError("the source could not be reached")
+
+    monkeypatch.setattr(srd_service, "fetch_source", failing_fetch)
+
+    result = runner.invoke(cli, ["srd", "ingest", "--dry-run"])
+
+    assert result.exit_code == 1, result.output
+    assert result.stdout == ""
+    assert "the source could not be reached" in result.stderr
