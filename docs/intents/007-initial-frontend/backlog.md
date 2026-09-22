@@ -19,7 +19,7 @@ Dependency-ordered. 01 and 02 have no screen and are checked through the interac
 | 06 | The run screen lists the adventures in order, marks which is next and says what the party is waiting for | 05 | #43 | done |
 | 07 | Signing in lands on a dashboard of the player's runs, or on an invitation to start the first one | 05 | #44 | done |
 | 08 | The dashboard sorts runs under "In progress", "New" and "Archived" and opens on the one that matters | 07 | #53 | done |
-| 09 | "New campaign" lets a player pick a story and drops them straight at its table | 01, 07 | #54 | running |
+| 09 | "New campaign" lets a player pick a story and drops them straight at its table | 01, 07 | #54 | done |
 
 ## Notes
 

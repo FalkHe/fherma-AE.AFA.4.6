@@ -35,3 +35,8 @@ Brief: docs/intents/007-initial-frontend/sprints/09-start-campaign-dialog/brief.
 Round 1: changes requested — every acceptance criterion passed, but the dialog gave no visible way to close it, only
 the Escape key or a click outside, while the delivered design and the product's other dialog both show a close
 control, and the module's own notes already described one as present.
+Round 2: changes requested — the close control works with mouse and keyboard, closes without creating anything, and
+the module's notes match what shipped. But putting it inside the dialog's title meant a screen-reader user heard the
+dialog announced as "Select a campaign Close". That was corrected after the verdict — the control moved out of the
+title and the name now reads exactly "Select a campaign", confirmed in a real browser — but the two-round limit means
+this verdict stands, so the merge request is a draft for you to release.

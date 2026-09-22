@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: running
+stage: done
 ---
 # Progress: Sprint 09
 
@@ -19,5 +19,10 @@ Status: `open | running | done | failed`
 - Sprint 08 lost two verify rounds to a stale module README, so this sprint's work item carries the README update explicitly rather than leaving it to be caught in review.
 
 ## Backlog proposals
+- jsdom does not fold a nested interactive descendant into an element's accessible name the way Chrome does, so this class of defect passes the suite and is only catchable in a real browser. Worth a browser-level accessibility check if more dialogs arrive.
+- Dialog panels sit lighter than the rest of the dark palette — both this dialog and the in-development one. One pass over dialog styling.
+- The seeded catalogue holds one campaign, so the picker shows a single card on the running site.
 
 ## Verify
+Round 1: changes requested — all six acceptance criteria passed; the dialog had no visible close control and the module README claimed one.
+Round 2: changes requested — the close control was added inside `DialogTitle`, folding "Close" into the dialog's accessible name. Corrected after the verdict (the button is now a sibling of the title, verified in a real browser), but the two-round limit means the verdict stands and the merge request is a draft.
