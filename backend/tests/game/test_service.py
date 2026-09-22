@@ -243,6 +243,28 @@ def test_the_real_dm_prompt_names_the_tool_and_the_graph_has_all_nodes():
     }
 
 
+def test_tool_failure_is_caught_and_narrated_without_crashing(monkeypatch, prompt):
+    from app.modules.playthrough.dice import InvalidDiceExpressionError
+
+    async def failing_roll(*args, **kwargs):
+        raise InvalidDiceExpressionError("bad_formula")
+
+    monkeypatch.setattr(tools.playthrough_service, "roll", failing_roll)
+
+    scripted = _scripted_model(
+        [
+            _ROLL_CALL,
+            AIMessage(content="The spell fizzles because the dice formula was invalid."),
+        ]
+    )
+    agent = service.build_agent(model=scripted)
+
+    result = _turn(agent, "Cast a spell with weird dice.")
+
+    assert result.reply == "The spell fizzles because the dice formula was invalid."
+    assert result.rolls == []
+
+
 def test_cli_play_prints_reply_on_stdout_and_rolls_on_stderr(monkeypatch, prompt, roll_spy):
     scripted = _scripted_model([_ROLL_CALL, AIMessage(content="The lock opens.")])
     monkeypatch.setattr(service, "chat_model", lambda: scripted)

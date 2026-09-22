@@ -64,8 +64,12 @@ def make_narrate(model: BaseChatModel, system_prompt: str) -> Node:
     return narrate
 
 
+def _handle_tool_error(exc: Exception) -> str:
+    return f"refused: {exc}"
+
+
 def make_tools() -> ToolNode:
-    return ToolNode(TOOLS)
+    return ToolNode(TOOLS, handle_tool_errors=_handle_tool_error)
 
 
 def make_record_narration() -> Node:

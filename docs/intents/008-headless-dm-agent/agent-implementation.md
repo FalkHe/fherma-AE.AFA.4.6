@@ -9,7 +9,7 @@ Ordered list
 
 1. [x] record_action and record_narration nodes: the turn writes player_action and narration events with usage. From here every turn leaves a trace in the timeline.
 2. [x] Postgres checkpointer replacing InMemorySaver for session-level persistence. Delete demo_graph.py here.
-3. [ ] validate_state node: mechanic errors become tool results the model narrates around.
+3. [x] validate_state node: mechanic errors become tool results the model narrates around.
 4. [ ] Content read tools: get_scene, get_monster, get_campaign.
 5. [ ] Roll tools without a player click: resolve_check, resolve_save, passive_check, roll_initiative.
 6. [ ] load_context node: scene, character, awaiting state, creature/object state, and recap injected into the prompt on a cold/resumed thread.
