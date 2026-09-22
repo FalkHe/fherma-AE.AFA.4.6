@@ -46,7 +46,24 @@ this module reaches the corpus directly (D1).
   gateway failure each print one stderr line and exit 1; a failure after
   the source file was replaced restores it to what it held before the
   call, and a failure during the write leaves the previous corpus
-  untouched. Retrieval is owned by a later work item in this intent.
+  untouched. Each chunk is embedded as `heading_path + "\n\n" + text` — the
+  citation trail joined to the body — so a passage whose subject only
+  appears in its heading (e.g. a spell's name) is still findable by that
+  name; the stored `text` and `token_count` report the body alone, so the
+  reported token count understates what was actually embedded by the
+  heading trail's own length.
+- `app srd search "<query>" [--limit N]` (`commands.py` / `service.search_rules`,
+  sprint 004-05 WI1): embeds `query` through the shared gateway seam and
+  returns up to `--limit` (default `DEFAULT_LIMIT = 5`) closest `srd_rules`
+  passages, best first, ordered by pgvector cosine distance. Prints one
+  numbered block per match — citation, ordinal and raw distance on the
+  heading line, the passage text indented below it. `SrdCorpusEmptyError`
+  (checked before any gateway call) prints the same empty-corpus message as
+  `status`; a non-positive `--limit` is rejected before any call; any other
+  `SrdError` or an LLM gateway failure prints one stderr line — each case
+  exits 1 with no traceback. `RuleMatch.score` is the raw cosine distance
+  (`<=>`), 0..2, lower is closer — not a similarity score; no relevance
+  floor is applied yet (sprint 06).
 
 ## Notes
 
