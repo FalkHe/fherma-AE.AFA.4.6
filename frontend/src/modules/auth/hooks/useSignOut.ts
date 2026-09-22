@@ -32,6 +32,20 @@ export function useSignOut() {
       navigate("/signin", { replace: true });
       clearCsrfToken();
       queryClient.setQueryData<CurrentUserState>(["currentUser"], { user: null, sessionExpired: false });
+      // `navigate()` above runs through a React transition (BrowserRouter's
+      // default), while the cache write just above is not deferrable the
+      // same way — it can commit first, so the still-mounted RequireAuth
+      // briefly sees the page being signed out of with `user: null` and
+      // fires its own redirect to /signin, carrying that page as
+      // `state.from`. That effect always runs after this callback returns,
+      // so it cannot be beaten by writing state here — only overwritten
+      // afterwards. Queuing this last, empty-state replace for the next
+      // macrotask lets that effect (and React's dev-only double-invoke of
+      // it) settle first, then wins: the remembered address does not
+      // outlive the sign-in that consumes it.
+      setTimeout(() => {
+        navigate("/signin", { replace: true, state: null });
+      }, 0);
     },
   });
 }
