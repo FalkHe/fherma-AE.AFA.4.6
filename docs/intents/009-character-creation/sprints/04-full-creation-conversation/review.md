@@ -24,3 +24,4 @@ The Tavern Keeper now takes a player through the complete sheet. Ability scores 
 Brief: docs/intents/009-character-creation/sprints/04-full-creation-conversation/brief.md
 
 ## Verdict
+Round 1: approve — a player goes from a handful of free words to a finished hero: points spent by hand with the remainder shown after every change, dice that can be re-rolled, name, looks and story read back and corrected, skills, alignment and gear settled before saving; the ready-made hero's gear now reads as real names. Watch: while a score is out of range the "points left" figure ignores it until the spread is legal again.

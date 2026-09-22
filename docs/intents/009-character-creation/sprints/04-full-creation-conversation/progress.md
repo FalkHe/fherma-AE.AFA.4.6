@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: draft
+stage: done
 ---
 # Progress: Sprint 04
 
@@ -19,5 +19,7 @@ Status: `open | running | done | failed`
 - glab is signed in as f4lkh3; human instruction: merge on my own when the sprint went without bigger issues, rebase from main before starting and before each merge.
 
 ## Backlog proposals
+- "Points left" counts an out-of-range score as free; cost the clamp or say "n/a" while illegal (tiny polish).
 
 ## Verify
+Round 1: approve, no failed criteria (live run with the real model, maths hand-checked).
