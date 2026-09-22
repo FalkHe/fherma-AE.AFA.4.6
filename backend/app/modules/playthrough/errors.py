@@ -93,6 +93,22 @@ class CharacterExistsError(PlaythroughError):
         super().__init__(f"campaign run already has a character: {run_id}")
 
 
+class CharacterNotFoundError(PlaythroughError):
+    """This run's member has no character yet.
+
+    `get_member_character` is the only place this can originate: it
+    raises `_require_member`'s `CampaignRunNotFoundError` first, so this
+    is reachable only once the caller is already a known member of a
+    known run.
+    """
+
+    code = ErrorCode.NOT_FOUND
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        super().__init__(f"campaign run has no character yet: {run_id}")
+
+
 class InvalidRunStatusError(PlaythroughError):
     """The run's current status does not allow the requested transition."""
 

@@ -19,9 +19,17 @@ or writes an event.
   `playthrough.service` or `content.service`.
 - `prompts/v<n>/system/dm.md` — the DM system prompt, resolved through
   `core/prompts/` as `game/system/dm`.
-- `commands.py` — `app game play --user <id> [--run-id <run-id>]` for an
-  interactive game loop across turns; `app game graph [-o <path>] [-f <png|mermaid>]`
-  to inspect or export the agent's graph visualization.
+- `commands.py` — `app game play --user <id> [--run-id <run-id>] [--actor
+  <actor-id>] [--thread-id <thread-id>]` for an interactive game loop across
+  turns: with a `--run-id` and no `--actor`, the acting hero is resolved from
+  the signed-in player's own character on that run
+  (`playthrough_service.get_member_character`) -- a run with no character
+  yet fails with that lookup's error; `--actor`/`--actor-id` still overrides
+  for debugging. The checkpointer thread defaults to the run id, so quitting
+  and re-running `play` on the same run rejoins the same thread and any
+  question or roll the Dungeon Master was waiting on; `--thread-id`
+  overrides that default. `app game graph [-o <path>] [-f <png|mermaid>]`
+  inspects or exports the agent's graph visualization.
 
 ## Surface
 

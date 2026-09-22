@@ -20,7 +20,9 @@ from app.core.ids import generate_id
 from app.modules.content import service as content_service
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import (
+    CampaignRunNotFoundError,
     CharacterExistsError,
+    CharacterNotFoundError,
     InvalidRunStatusError,
     RunArchivedError,
 )
@@ -354,3 +356,36 @@ def test_activate_campaign_run_raises_invalid_run_status_otherwise(status):
 
     with pytest.raises(InvalidRunStatusError):
         asyncio.run(service.activate_campaign_run(db, user_id="user-1", run_id="run-1"))
+
+
+# --- get_member_character ---------------------------------------------------
+
+
+def test_get_member_character_returns_the_callers_own_character():
+    character = GameObject(
+        id="obj-1",
+        campaign_run_id="run-1",
+        kind="creature",
+        instance_key="pc:member-1:1",
+        member_id="member-1",
+        name="Hero",
+    )
+    db = FakeSession(FakeResult(scalar=_member()), FakeResult(scalar=character))
+
+    result = asyncio.run(service.get_member_character(db, user_id="user-1", run_id="run-1"))
+
+    assert result is character
+
+
+def test_get_member_character_raises_campaign_run_not_found_for_a_foreign_or_unknown_run():
+    db = FakeSession(FakeResult(scalar=None))
+
+    with pytest.raises(CampaignRunNotFoundError):
+        asyncio.run(service.get_member_character(db, user_id="user-1", run_id="run-1"))
+
+
+def test_get_member_character_raises_character_not_found_when_the_member_has_none():
+    db = FakeSession(FakeResult(scalar=_member()), FakeResult(scalar=None))
+
+    with pytest.raises(CharacterNotFoundError):
+        asyncio.run(service.get_member_character(db, user_id="user-1", run_id="run-1"))

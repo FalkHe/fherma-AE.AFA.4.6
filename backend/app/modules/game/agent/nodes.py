@@ -325,6 +325,14 @@ def make_record_narration() -> Node:
                     turn_id=ctx.turn_id,
                 )
                 await ctx.db.commit()
+
+                run = await playthrough_service.get_campaign_run(
+                    ctx.db, user_id=ctx.user_id, run_id=ctx.run_id
+                )
+                if run.status == "ready":
+                    await playthrough_service.activate_campaign_run(
+                        ctx.db, user_id=ctx.user_id, run_id=ctx.run_id
+                    )
         return {}
 
     return record_narration
