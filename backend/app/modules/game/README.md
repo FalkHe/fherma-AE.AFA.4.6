@@ -33,6 +33,7 @@ or writes an event.
 | `roll_dice(kind, context)` → `playthrough.service.roll` | done |
 | `resolve_check`, `resolve_save`, `passive_check`, `roll_initiative` | done |
 | `ask_player`, `request_player_roll` (interrupts) | done |
+| `interact`, `take`, `drop`, `give`, `use_item`, `use_exit` | done |
 | `get_scene`, `get_object`, `get_campaign` | done |
 | `lookup_rule`, `update_object` | not yet |
 

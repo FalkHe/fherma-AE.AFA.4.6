@@ -14,7 +14,7 @@ Ordered list
 5. [x] Roll tools without a player click: resolve_check, resolve_save, passive_check, roll_initiative.
 6. [x] load_context node: scene, character, awaiting state, creature/object state, and recap injected into the prompt on a cold/resumed thread.
 7. [x] ask_player as an interrupt node, plus request_player_roll resuming through resolve_roll_request.
-8. [ ] Action tools: interact, take, drop, give, use_item, use_exit.
+8. [x] Action tools: interact, take, drop, give, use_item, use_exit.
 9. [ ] Combat tools: attack, damage.
 10. [ ] Progression tools: enter_adventure, activate_campaign_run.
 11. [ ] Memory tool recall.

@@ -528,6 +528,24 @@ def test_the_model_cannot_supply_session_or_user_id():
     request_roll_schema = tools.request_player_roll.tool_call_schema.model_json_schema()
     assert set(request_roll_schema["properties"]) == {"kind", "actor_id", "context"}
 
+    interact_schema = tools.interact.tool_call_schema.model_json_schema()
+    assert set(interact_schema["properties"]) == {"object_id", "action", "actor_id", "roll_id"}
+
+    take_schema = tools.take.tool_call_schema.model_json_schema()
+    assert set(take_schema["properties"]) == {"item_id", "actor_id"}
+
+    drop_schema = tools.drop.tool_call_schema.model_json_schema()
+    assert set(drop_schema["properties"]) == {"item_id", "actor_id"}
+
+    give_schema = tools.give.tool_call_schema.model_json_schema()
+    assert set(give_schema["properties"]) == {"item_id", "to_id", "from_id"}
+
+    use_item_schema = tools.use_item.tool_call_schema.model_json_schema()
+    assert set(use_item_schema["properties"]) == {"item_id", "actor_id", "target_id"}
+
+    use_exit_schema = tools.use_exit.tool_call_schema.model_json_schema()
+    assert set(use_exit_schema["properties"]) == {"exit_id", "actor_id"}
+
 
 def test_ask_player_tool_interrupts_and_resumes_with_answer(prompt, monkeypatch):
     ask_calls = []
@@ -1026,6 +1044,249 @@ def test_load_context_injects_scene_party_and_recap_into_system_prompt(monkeypat
     assert "Oak Chest (id: chest-1, kind: fixture)" in content
     assert "### Awaiting\n- roll:ability_check:dexterity" in content
     assert "You arrived at the tavern in the dead of night." in content
+
+
+def test_action_tools_delegate_to_playthrough_service(prompt, monkeypatch):
+    calls = []
+
+    async def fake_interact(
+        db, *, user_id, actor_id, object_id, action, roll_id=None, turn_id=None
+    ):
+        calls.append(
+            {
+                "tool": "interact",
+                "user_id": user_id,
+                "actor_id": actor_id,
+                "object_id": object_id,
+                "action": action,
+                "roll_id": roll_id,
+                "turn_id": turn_id,
+            }
+        )
+        return True
+
+    async def fake_take(db, *, user_id, actor_id, item_id, turn_id=None):
+        calls.append(
+            {
+                "tool": "take",
+                "user_id": user_id,
+                "actor_id": actor_id,
+                "item_id": item_id,
+                "turn_id": turn_id,
+            }
+        )
+
+    async def fake_drop(db, *, user_id, actor_id, item_id, turn_id=None):
+        calls.append(
+            {
+                "tool": "drop",
+                "user_id": user_id,
+                "actor_id": actor_id,
+                "item_id": item_id,
+                "turn_id": turn_id,
+            }
+        )
+
+    async def fake_give(db, *, user_id, from_id, to_id, item_id, turn_id=None):
+        calls.append(
+            {
+                "tool": "give",
+                "user_id": user_id,
+                "from_id": from_id,
+                "to_id": to_id,
+                "item_id": item_id,
+                "turn_id": turn_id,
+            }
+        )
+
+    async def fake_use_item(db, *, user_id, actor_id, item_id, target_id=None, turn_id=None):
+        calls.append(
+            {
+                "tool": "use_item",
+                "user_id": user_id,
+                "actor_id": actor_id,
+                "item_id": item_id,
+                "target_id": target_id,
+                "turn_id": turn_id,
+            }
+        )
+
+    async def fake_use_exit(db, *, user_id, actor_id, exit_id):
+        calls.append(
+            {
+                "tool": "use_exit",
+                "user_id": user_id,
+                "actor_id": actor_id,
+                "exit_id": exit_id,
+            }
+        )
+
+    monkeypatch.setattr(tools.playthrough_service, "interact", fake_interact)
+    monkeypatch.setattr(tools.playthrough_service, "take", fake_take)
+    monkeypatch.setattr(tools.playthrough_service, "drop", fake_drop)
+    monkeypatch.setattr(tools.playthrough_service, "give", fake_give)
+    monkeypatch.setattr(tools.playthrough_service, "use_item", fake_use_item)
+    monkeypatch.setattr(tools.playthrough_service, "use_exit", fake_use_exit)
+
+    # 1. Test interact
+    call_interact = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "c-int",
+                "name": "interact",
+                "args": {
+                    "object_id": "chest-1",
+                    "action": "open",
+                    "roll_id": "roll-1",
+                    "actor_id": "actor-2",
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([call_interact, AIMessage(content="The chest creaks open.")])
+    )
+    res = _turn(agent, "Open the chest.")
+    assert res.reply == "The chest creaks open."
+    assert calls[-1] == {
+        "tool": "interact",
+        "user_id": "user-1",
+        "actor_id": "actor-2",
+        "object_id": "chest-1",
+        "action": "open",
+        "roll_id": "roll-1",
+        "turn_id": "turn-1",
+    }
+
+    # 2. Test take
+    call_take = AIMessage(
+        content="",
+        tool_calls=[{"id": "c-take", "name": "take", "args": {"item_id": "sword-1"}}],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([call_take, AIMessage(content="You pick up the sword.")])
+    )
+    res = _turn(agent, "Take the sword.")
+    assert res.reply == "You pick up the sword."
+    assert calls[-1] == {
+        "tool": "take",
+        "user_id": "user-1",
+        "actor_id": "actor-1",
+        "item_id": "sword-1",
+        "turn_id": "turn-1",
+    }
+
+    # 3. Test drop
+    call_drop = AIMessage(
+        content="",
+        tool_calls=[{"id": "c-drop", "name": "drop", "args": {"item_id": "shield-1"}}],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([call_drop, AIMessage(content="You drop the shield on the floor.")])
+    )
+    res = _turn(agent, "Drop the shield.")
+    assert res.reply == "You drop the shield on the floor."
+    assert calls[-1] == {
+        "tool": "drop",
+        "user_id": "user-1",
+        "actor_id": "actor-1",
+        "item_id": "shield-1",
+        "turn_id": "turn-1",
+    }
+
+    # 4. Test give
+    call_give = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "c-give",
+                "name": "give",
+                "args": {"item_id": "potion-1", "to_id": "actor-2", "from_id": "actor-1"},
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model(
+            [call_give, AIMessage(content="You hand the potion to your companion.")]
+        )
+    )
+    res = _turn(agent, "Give potion to companion.")
+    assert res.reply == "You hand the potion to your companion."
+    assert calls[-1] == {
+        "tool": "give",
+        "user_id": "user-1",
+        "from_id": "actor-1",
+        "to_id": "actor-2",
+        "item_id": "potion-1",
+        "turn_id": "turn-1",
+    }
+
+    # 5. Test use_item
+    call_use = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "c-use",
+                "name": "use_item",
+                "args": {"item_id": "potion-1", "target_id": "actor-1"},
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([call_use, AIMessage(content="You drink the healing potion.")])
+    )
+    res = _turn(agent, "Drink potion.")
+    assert res.reply == "You drink the healing potion."
+    assert calls[-1] == {
+        "tool": "use_item",
+        "user_id": "user-1",
+        "actor_id": "actor-1",
+        "item_id": "potion-1",
+        "target_id": "actor-1",
+        "turn_id": "turn-1",
+    }
+
+    # 6. Test use_exit
+    call_exit = AIMessage(
+        content="",
+        tool_calls=[{"id": "c-exit", "name": "use_exit", "args": {"exit_id": "cellar-door"}}],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([call_exit, AIMessage(content="You step down into the cellar.")])
+    )
+    res = _turn(agent, "Go down to cellar.")
+    assert res.reply == "You step down into the cellar."
+    assert calls[-1] == {
+        "tool": "use_exit",
+        "user_id": "user-1",
+        "actor_id": "actor-1",
+        "exit_id": "cellar-door",
+    }
+
+
+def test_action_tool_refusal_is_caught_and_narrated(prompt, monkeypatch):
+    from app.modules.playthrough.service import ObjectNotReachableError
+
+    async def refusing_take(*args, **kwargs):
+        raise ObjectNotReachableError("sword-1")
+
+    monkeypatch.setattr(tools.playthrough_service, "take", refusing_take)
+
+    call_take = AIMessage(
+        content="",
+        tool_calls=[{"id": "c-take-fail", "name": "take", "args": {"item_id": "sword-1"}}],
+    )
+    scripted = _scripted_model(
+        [
+            call_take,
+            AIMessage(content="The sword is out of reach on a high shelf."),
+        ]
+    )
+    agent = service.build_agent(model=scripted)
+
+    res = _turn(agent, "I grab the sword.")
+    assert res.reply == "The sword is out of reach on a high shelf."
 
 
 class _FakeSessionmaker:

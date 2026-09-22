@@ -21,6 +21,12 @@ PASSIVE_CHECK_TOOL = "passive_check"
 ROLL_INITIATIVE_TOOL = "roll_initiative"
 ASK_PLAYER_TOOL = "ask_player"
 REQUEST_PLAYER_ROLL_TOOL = "request_player_roll"
+INTERACT_TOOL = "interact"
+TAKE_TOOL = "take"
+DROP_TOOL = "drop"
+GIVE_TOOL = "give"
+USE_ITEM_TOOL = "use_item"
+USE_EXIT_TOOL = "use_exit"
 
 
 @dataclass

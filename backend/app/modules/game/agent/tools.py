@@ -16,15 +16,21 @@ from sqlalchemy import select
 from app.modules.content import service as content_service
 from app.modules.game.agent.state import (
     ASK_PLAYER_TOOL,
+    DROP_TOOL,
     GET_CAMPAIGN_TOOL,
     GET_OBJECT_TOOL,
     GET_SCENE_TOOL,
+    GIVE_TOOL,
+    INTERACT_TOOL,
     PASSIVE_CHECK_TOOL,
     REQUEST_PLAYER_ROLL_TOOL,
     RESOLVE_CHECK_TOOL,
     RESOLVE_SAVE_TOOL,
     ROLL_DICE_TOOL,
     ROLL_INITIATIVE_TOOL,
+    TAKE_TOOL,
+    USE_EXIT_TOOL,
+    USE_ITEM_TOOL,
     DmContext,
 )
 from app.modules.playthrough import models as playthrough_models
@@ -366,6 +372,201 @@ async def request_player_roll(
     }
 
 
+## Action Tools
+@tool(INTERACT_TOOL)
+async def interact(
+    object_id: str,
+    action: str,
+    runtime: ToolRuntime[DmContext],
+    actor_id: str | None = None,
+    roll_id: str | None = None,
+) -> dict[str, Any]:
+    """Interact with a fixture in the scene to perform an authored action (e.g. open, pick_lock).
+    `object_id` is the fixture object ID in the scene.
+    `action` is the exact authored action string (e.g. 'open', 'pick_lock', 'force_open').
+    `actor_id` is the acting character ID (defaults to current actor).
+    `roll_id` is the ID of an ability_check roll if required by the action."""
+    ctx = runtime.context
+    target_actor_id = actor_id or ctx.actor_id
+    if not target_actor_id:
+        raise ValueError(
+            "actor_id is required for interact when no default actor is set in context."
+        )
+
+    passed = await playthrough_service.interact(
+        ctx.db,
+        user_id=ctx.user_id,
+        actor_id=target_actor_id,
+        object_id=object_id,
+        action=action,
+        roll_id=roll_id,
+        turn_id=ctx.turn_id,
+    )
+    return {
+        "status": "ok",
+        "action": action,
+        "object_id": object_id,
+        "actor_id": target_actor_id,
+        "passed": passed,
+    }
+
+
+@tool(TAKE_TOOL)
+async def take(
+    item_id: str,
+    runtime: ToolRuntime[DmContext],
+    actor_id: str | None = None,
+) -> dict[str, Any]:
+    """Pick up an item from the current scene or an open container into inventory.
+    `item_id` is the item object ID.
+    `actor_id` is the acting character ID (defaults to current actor)."""
+    ctx = runtime.context
+    target_actor_id = actor_id or ctx.actor_id
+    if not target_actor_id:
+        raise ValueError("actor_id is required for take when no default actor is set in context.")
+
+    await playthrough_service.take(
+        ctx.db,
+        user_id=ctx.user_id,
+        actor_id=target_actor_id,
+        item_id=item_id,
+        turn_id=ctx.turn_id,
+    )
+    return {
+        "status": "ok",
+        "action": "take",
+        "item_id": item_id,
+        "actor_id": target_actor_id,
+    }
+
+
+@tool(DROP_TOOL)
+async def drop(
+    item_id: str,
+    runtime: ToolRuntime[DmContext],
+    actor_id: str | None = None,
+) -> dict[str, Any]:
+    """Drop an item currently carried by the actor into the scene.
+    `item_id` is the item object ID carried in inventory.
+    `actor_id` is the acting character ID (defaults to current actor)."""
+    ctx = runtime.context
+    target_actor_id = actor_id or ctx.actor_id
+    if not target_actor_id:
+        raise ValueError("actor_id is required for drop when no default actor is set in context.")
+
+    await playthrough_service.drop(
+        ctx.db,
+        user_id=ctx.user_id,
+        actor_id=target_actor_id,
+        item_id=item_id,
+        turn_id=ctx.turn_id,
+    )
+    return {
+        "status": "ok",
+        "action": "drop",
+        "item_id": item_id,
+        "actor_id": target_actor_id,
+    }
+
+
+@tool(GIVE_TOOL)
+async def give(
+    item_id: str,
+    to_id: str,
+    runtime: ToolRuntime[DmContext],
+    from_id: str | None = None,
+) -> dict[str, Any]:
+    """Hand an item carried by one character/creature to another creature in the same scene.
+    `item_id` is the item object ID carried by the giver.
+    `to_id` is the recipient creature object ID.
+    `from_id` is the giving character/creature ID (defaults to current actor)."""
+    ctx = runtime.context
+    giver_id = from_id or ctx.actor_id
+    if not giver_id:
+        raise ValueError("from_id is required for give when no default actor is set in context.")
+
+    await playthrough_service.give(
+        ctx.db,
+        user_id=ctx.user_id,
+        from_id=giver_id,
+        to_id=to_id,
+        item_id=item_id,
+        turn_id=ctx.turn_id,
+    )
+    return {
+        "status": "ok",
+        "action": "give",
+        "item_id": item_id,
+        "from_id": giver_id,
+        "to_id": to_id,
+    }
+
+
+@tool(USE_ITEM_TOOL)
+async def use_item(
+    item_id: str,
+    runtime: ToolRuntime[DmContext],
+    actor_id: str | None = None,
+    target_id: str | None = None,
+) -> dict[str, Any]:
+    """Use a consumable item from the actor's inventory.
+    `item_id` is the item object ID.
+    `actor_id` is the character using the item (defaults to current actor).
+    `target_id` is the optional target creature or object ID."""
+    ctx = runtime.context
+    target_actor_id = actor_id or ctx.actor_id
+    if not target_actor_id:
+        raise ValueError(
+            "actor_id is required for use_item when no default actor is set in context."
+        )
+
+    await playthrough_service.use_item(
+        ctx.db,
+        user_id=ctx.user_id,
+        actor_id=target_actor_id,
+        item_id=item_id,
+        target_id=target_id,
+        turn_id=ctx.turn_id,
+    )
+    return {
+        "status": "ok",
+        "action": "use_item",
+        "item_id": item_id,
+        "actor_id": target_actor_id,
+        "target_id": target_id,
+    }
+
+
+@tool(USE_EXIT_TOOL)
+async def use_exit(
+    exit_id: str,
+    runtime: ToolRuntime[DmContext],
+    actor_id: str | None = None,
+) -> dict[str, Any]:
+    """Move a character through an exit in the current scene to a new scene or adventure completion.
+    `exit_id` is the exit identifier on the current scene.
+    `actor_id` is the character moving (defaults to current actor)."""
+    ctx = runtime.context
+    target_actor_id = actor_id or ctx.actor_id
+    if not target_actor_id:
+        raise ValueError(
+            "actor_id is required for use_exit when no default actor is set in context."
+        )
+
+    await playthrough_service.use_exit(
+        ctx.db,
+        user_id=ctx.user_id,
+        actor_id=target_actor_id,
+        exit_id=exit_id,
+    )
+    return {
+        "status": "ok",
+        "action": "use_exit",
+        "exit_id": exit_id,
+        "actor_id": target_actor_id,
+    }
+
+
 ## Tool registry
 TOOLS = [
     roll_dice,
@@ -375,6 +576,12 @@ TOOLS = [
     roll_initiative,
     ask_player,
     request_player_roll,
+    interact,
+    take,
+    drop,
+    give,
+    use_item,
+    use_exit,
     get_scene,
     get_object,
     get_campaign,
