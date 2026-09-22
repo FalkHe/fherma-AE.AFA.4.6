@@ -23,3 +23,4 @@ Rules passages are now cited under the heading they actually sit beneath. Before
 Brief: docs/intents/004-srd-knowledge-base/sprints/07-citation-heading-levels/brief.md
 
 ## Verdict
+Round 1: Approve. Every rule in the rulebook is now cited under the heading it actually sits beneath — spells no longer appear under "Acid Arrow", creatures under "Ape" or conditions under "Blinded" — with the rulebook re-loaded at the same 1,750 passages and the relevance cut-off re-measured and unchanged. Asking about fire bolt or the frightened condition returns the right passage under the right citation.

@@ -20,3 +20,4 @@ stage: done
 - Splitting monster stat blocks into separately citable Actions / Legendary Actions / Reactions (+345 passages) needs its own decision (research.md, option B).
 
 ## Verify
+Round 1: approve, no failed criteria.
