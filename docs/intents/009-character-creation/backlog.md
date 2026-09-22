@@ -13,7 +13,7 @@ the browser. 06 and 07 also need the run screen of intent 007, sprint 05, which 
 | # | Task | Depends on | Issue | Status |
 |---|---|---|---|---|
 | 01 | The game knows the nine races, twelve classes, skills and alignments a player may pick, and the numbers each of them fixes | – | #45 | done |
-| 02 | A character built from those facts gets correct ability scores, hit points, armour class and usable gear, and can be saved to a run in place of the ready-made hero | 01 | #46 | running |
+| 02 | A character built from those facts gets correct ability scores, hit points, armour class and usable gear, and can be saved to a run in place of the ready-made hero | 01 | #46 | done |
 | 03 | In the terminal the Tavern Keeper greets the player, offers the campaign's ready-made hero or turns free words into a race and class, and saves the confirmed character | 02 | #47 | open |
 | 04 | The Tavern Keeper covers the whole sheet: ability scores by suggestion, dice or by hand, the story retold in the campaign's voice, two skills, an alignment and the class's equipment choices | 03 | #48 | open |
 | 05 | The same conversation can be held over the network, one message at a time, returning the reply and the sheet so far | 03 | #49 | open |

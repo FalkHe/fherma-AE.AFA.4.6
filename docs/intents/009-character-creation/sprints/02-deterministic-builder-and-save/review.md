@@ -25,3 +25,4 @@ A character described by name, race, class, alignment, point-buy scores, skills,
 Brief: docs/intents/009-character-creation/sprints/02-deterministic-builder-and-save/brief.md
 
 ## Verdict
+Round 1: approve — a player's own character with a legal point-buy spread saves in place of the ready-made hero, with hit points, armour class and gear the player never put numbers on, and it can fight with the weapon it picked; a run without a described character still gives Rosalind Thorn exactly as before.

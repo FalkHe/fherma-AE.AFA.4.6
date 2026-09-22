@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: draft
+stage: done
 ---
 # Progress: Sprint 02
 
@@ -20,5 +20,8 @@ Status: `open | running | done | failed`
 - glab is signed in as f4lkh3; human instruction for this run: merge on my own when the sprint went without bigger issues, rebase from main before starting and before each merge.
 
 ## Backlog proposals
+- Quantity items (20 arrows) are saved as 20 carried rows; fine today, an inventory screen would want one row with a count.
+- `builder.modifier` reaches into the dice module's private helper (noqa); a public `ability_modifier` in dice.py would clean it up.
 
 ## Verify
+Round 1: approve, no failed criteria. MR description was empty (body extraction bug) and assignee was the agent; both fixed on !54 and !56 before merge.
