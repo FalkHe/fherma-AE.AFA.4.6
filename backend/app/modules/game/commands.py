@@ -4,10 +4,13 @@ checkpointer.
 """
 
 import asyncio
+import sys
 import uuid
+from pathlib import Path
 from typing import Any
 
 import typer
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.runnables import RunnableConfig
 
 from app.core.checkpointer import service as checkpointer_service
@@ -161,6 +164,11 @@ async def _play_session(
             in_flight_interrupt = result.interrupt
 
 
+class _ToolAwareStubModel(GenericFakeChatModel):
+    def bind_tools(self, tools: Any, **kwargs: Any) -> Any:
+        return self
+
+
 @game_app.command("play")
 def play(
     user_id: str = typer.Option(..., "--user", help="The caller's user id."),
@@ -183,3 +191,52 @@ def play(
     except (LlmError, PlaythroughError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+
+
+@game_app.command("graph")
+def graph(
+    output: str | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Optional file path to write the graph visualization (e.g. graph.png or graph.mmd).",
+    ),
+    format: str = typer.Option(
+        "mermaid",
+        "--format",
+        "-f",
+        help="Output format: 'mermaid' (default) or 'png'.",
+    ),
+) -> None:
+    """Print or export the DM agent StateGraph visualization."""
+    stub_model = _ToolAwareStubModel(messages=iter([]))
+    agent = game_service.build_agent(model=stub_model)
+    state_graph = agent.get_graph()
+
+    fmt = format.lower()
+    if output and output.lower().endswith(".png"):
+        fmt = "png"
+
+    if fmt == "png":
+        try:
+            png_bytes = state_graph.draw_mermaid_png()
+        except Exception as exc:
+            typer.echo(f"Failed to generate PNG: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+
+        if output:
+            out_path = Path(output)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(png_bytes)
+            typer.echo(f"Saved graph image to {output}")
+        else:
+            sys.stdout.buffer.write(png_bytes)
+    else:
+        mermaid_code = state_graph.draw_mermaid()
+        if output:
+            out_path = Path(output)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(mermaid_code, encoding="utf-8")
+            typer.echo(f"Saved mermaid diagram to {output}")
+        else:
+            typer.echo(mermaid_code)

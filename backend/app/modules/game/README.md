@@ -11,7 +11,7 @@ or writes an event.
 - `service.py` — the public surface: `build_agent()` compiles the graph over
   the core chat model and the resolved system prompt; `turn()` runs one
   player message on a thread and returns the reply plus the rolls made.
-- `agent/graph.py` — the `StateGraph`: `load_context -> record_action -> narrate -> (tools -> narrate)* -> record_narration -> END`.
+- `agent/graph.py` — the `StateGraph`: `load_context -> record_action -> guard -> narrate -> (tools -> narrate)* -> record_narration -> END`.
 - `agent/nodes.py` — node factories, context hydration, and routing functions.
 - `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id —
   what tools need and the model must never supply) and readers.
@@ -20,7 +20,8 @@ or writes an event.
 - `prompts/v<n>/system/dm.md` — the DM system prompt, resolved through
   `core/prompts/` as `game/system/dm`.
 - `commands.py` — `app game play --user <id> [--run-id <run-id>]` for an
-  interactive game loop across turns.
+  interactive game loop across turns; `app game graph [-o <path>] [-f <png|mermaid>]`
+  to inspect or export the agent's graph visualization.
 
 ## Surface
 

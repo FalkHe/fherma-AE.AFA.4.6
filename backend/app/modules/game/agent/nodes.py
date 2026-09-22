@@ -3,6 +3,7 @@ build the graph with a scripted model instead of monkeypatching here.
 Everything is async because `playthrough.service` is.
 """
 
+import re
 from typing import Literal, Protocol
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -18,9 +19,67 @@ from app.modules.playthrough import service as playthrough_service
 
 LOAD_CONTEXT: Literal["load_context"] = "load_context"
 RECORD_ACTION: Literal["record_action"] = "record_action"
+GUARD: Literal["guard"] = "guard"
 NARRATE: Literal["narrate"] = "narrate"
 TOOLS_NODE: Literal["tools"] = "tools"
 RECORD_NARRATION: Literal["record_narration"] = "record_narration"
+
+
+GUARD_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(
+            r"\b(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior|above)\s+instructions\b",
+            re.I,
+        ),
+        "I cannot ignore or override my core Dungeon Master instructions. "
+        "Please describe your character's actions within the game world.",
+    ),
+    (
+        re.compile(
+            r"\b(?:system\s*prompt|system\s*instruction|developer\s*mode|jailbreak|DAN\s*mode)\b",
+            re.I,
+        ),
+        "I am your Dungeon Master and cannot reveal or alter system instructions. "
+        "What would your character like to do?",
+    ),
+    (
+        re.compile(r"\b(?:you\s+are\s+now\s+an?\s+unrestricted|override\s+system)\b", re.I),
+        "I cannot alter my role as Dungeon Master. "
+        "Please continue by declaring your in-game action.",
+    ),
+    (
+        re.compile(
+            r"\b(?:my\s+(?:current\s+)?(?:hp|hit\s*points)\s+(?:is|are|=|set\s+to)\s+\d+|set\s+(?:my\s+)?(?:hp|hit\s*points)\s+to\s+\d+)\b",
+            re.I,
+        ),
+        "State changes such as HP adjustments must be resolved through game mechanics "
+        "and dice rolls, not declared directly. What action is your character attempting?",
+    ),
+    (
+        re.compile(
+            r"\b(?:i\s+have\s+(?:infinite|max)\s+hp|i\s+am\s+invincible)\b",
+            re.I,
+        ),
+        "Invulnerability cannot be granted out-of-band. "
+        "Game outcomes are determined by the rules and rolls.",
+    ),
+    (
+        re.compile(
+            r"\b(?:give\s+myself\s+\d+\s+gold|set\s+(?:my\s+)?gold\s+to\s+\d+|my\s+gold\s+is\s+\d+)\b",
+            re.I,
+        ),
+        "Inventory and wealth cannot be modified out-of-band. "
+        "Items and gold must be acquired through in-game actions.",
+    ),
+    (
+        re.compile(
+            r"\b(?:set\s+(?:my\s+)?level\s+to\s+\d+|i\s+level\s+up\s+to\s+\d+|set\s+(?:my\s+)?(?:str|dex|con|int|wis|cha|strength|dexterity|constitution|intelligence|wisdom|charisma)\s+to\s+\d+)\b",
+            re.I,
+        ),
+        "Character statistics and levels cannot be changed out-of-band. "
+        "They are determined by your character sheet and gameplay progression.",
+    ),
+]
 
 
 class Node(Protocol):
@@ -190,6 +249,33 @@ def make_record_action() -> Node:
         return {}
 
     return record_action
+
+
+def make_guard() -> Node:
+    async def guard(state: DmState) -> dict:
+        last_human = next(
+            (msg for msg in reversed(state["messages"]) if isinstance(msg, HumanMessage)),
+            None,
+        )
+        if last_human is not None:
+            text = (
+                last_human.content
+                if isinstance(last_human.content, str)
+                else str(last_human.content)
+            )
+            for pattern, refusal in GUARD_PATTERNS:
+                if pattern.search(text):
+                    return {"messages": [AIMessage(content=refusal)]}
+        return {}
+
+    return guard
+
+
+def route_after_guard(state: DmState) -> str:
+    last = state["messages"][-1]
+    if isinstance(last, AIMessage):
+        return RECORD_NARRATION
+    return NARRATE
 
 
 def make_narrate(model: BaseChatModel, system_prompt: str) -> Node:
