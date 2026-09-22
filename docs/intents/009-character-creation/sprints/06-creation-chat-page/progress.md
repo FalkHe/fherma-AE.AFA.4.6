@@ -9,8 +9,8 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 0 | running | |
-| 1 | running | |
+| 0 | done | readyMadeName on every reply, client regenerated |
+| 1 | done | page, hook, panel, dialog, locale, run-screen link, 6 tests |
 
 Status: `open | running | done | failed`
 
