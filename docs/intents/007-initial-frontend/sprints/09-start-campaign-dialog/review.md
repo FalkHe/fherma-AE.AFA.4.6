@@ -3,7 +3,7 @@ author: sprint
 owner: human
 created: 2026-09-22
 updated: 2026-09-22
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/55
 ---
 # Review: Sprint 09 — "New campaign" lets a player pick a story and drops them straight at its table
 
@@ -32,3 +32,6 @@ create.
 Brief: docs/intents/007-initial-frontend/sprints/09-start-campaign-dialog/brief.md
 
 ## Verdict
+Round 1: changes requested — every acceptance criterion passed, but the dialog gave no visible way to close it, only
+the Escape key or a click outside, while the delivered design and the product's other dialog both show a close
+control, and the module's own notes already described one as present.
