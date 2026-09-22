@@ -82,8 +82,12 @@ function headersToRecord(init: HeadersInit | undefined): Record<string, string> 
   return record;
 }
 
-function parseBody(rawBody: BodyInit | null | undefined): unknown {
-  if (typeof rawBody !== "string") {
+function parseBody(rawBody: string | null | undefined): unknown {
+  // An empty string reads identically to "no body" (a GET/HEAD's `Request`
+  // still yields "" from `.text()`, below) — treated as `undefined`, not as
+  // a JSON-parse failure, so a bodyless request's recorded `body` matches
+  // what it was before request objects were read at all.
+  if (typeof rawBody !== "string" || rawBody === "") {
     return undefined;
   }
   try {
@@ -102,7 +106,15 @@ export function installFetchMock(): void {
     ).toUpperCase() as Method;
     const pathname = new URL(url, DUMMY_BASE).pathname;
     const headers = headersToRecord(init?.headers ?? (isRequestObject ? (input as Request).headers : undefined));
-    const body = parseBody(init?.body);
+    // openapi-fetch (`core/api/client.ts`) constructs a `Request` up front
+    // and hands it to `fetch(request, requestInitExt)` — the JSON body lives
+    // on that `Request`, never in `init.body` (checked against the
+    // installed openapi-fetch's own source, not just observed behaviour).
+    // `.clone()` before consuming it: nothing downstream still needs
+    // `input`'s own body, but cloning is the correct way to read a
+    // `Request`'s body without it being a footgun for the next caller.
+    const rawBody = isRequestObject ? await (input as Request).clone().text() : ((init?.body ?? null) as string | null);
+    const body = parseBody(rawBody);
     const credentials = init?.credentials ?? (isRequestObject ? (input as Request).credentials : undefined);
 
     requests.push({ method, path: pathname, headers, body, credentials });

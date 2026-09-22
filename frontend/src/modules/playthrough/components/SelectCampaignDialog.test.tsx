@@ -35,6 +35,14 @@ const RUN_A = {
   status: "setup",
   createdAt: "2026-09-10T00:00:00.000000+00:00",
 };
+const RUN_B = {
+  id: "run-b",
+  campaignId: CAMPAIGN_B.id,
+  contentVersion: "1",
+  title: null,
+  status: "setup",
+  createdAt: "2026-09-10T00:00:00.000000+00:00",
+};
 
 function stubAuthenticated() {
   mockRoute("GET", "/api/v1/users/me", { status: 200, body: USER, headers: { "X-CSRF-Token": "csrf-token-value" } });
@@ -66,10 +74,14 @@ describe("SelectCampaignDialog (AC1-AC6)", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("AC2: choosing a campaign creates the run, shows the rolling-up state, then opens the run screen", async () => {
+  it("AC2: choosing a campaign creates *that* campaign's run, shows the rolling-up state, then opens the run screen", async () => {
     stubAuthenticated();
     mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
-    mockRoute("GET", "/api/v1/content/campaigns", { status: 200, body: [CAMPAIGN_A] });
+    // Two campaigns in the catalogue, and the second one is chosen below —
+    // proving the card-to-id wiring, not just that *some* request landed
+    // (a bug that always sent the first campaign's id would pass a
+    // single-campaign fixture unnoticed).
+    mockRoute("GET", "/api/v1/content/campaigns", { status: 200, body: [CAMPAIGN_A, CAMPAIGN_B] });
     const pending = deferredResponse();
     mockRoute("POST", "/api/v1/playthrough/campaign", () => pending.promise);
 
@@ -77,20 +89,22 @@ describe("SelectCampaignDialog (AC1-AC6)", () => {
     const app = renderApp(["/"]);
     await openDialog(user);
 
-    const card = screen.getByRole("button", { name: new RegExp(CAMPAIGN_A.title) });
+    const card = screen.getByRole("button", { name: new RegExp(CAMPAIGN_B.title) });
     await user.click(card);
 
     expect(
-      await screen.findByText('Rolling up "Bogwater Assizes" — taking you to the table.'),
+      await screen.findByText(`Rolling up "${CAMPAIGN_B.title}" — taking you to the table.`),
     ).toBeInTheDocument();
     expect(card).toBeDisabled();
 
-    pending.resolve({ status: 201, body: RUN_A });
+    pending.resolve({ status: 201, body: RUN_B });
 
-    await waitFor(() => expect(app.getPathname()).toBe(`/runs/${RUN_A.id}`));
+    await waitFor(() => expect(app.getPathname()).toBe(`/runs/${RUN_B.id}`));
 
     const postRequests = getRequests({ method: "POST", path: "/api/v1/playthrough/campaign" });
     expect(postRequests).toHaveLength(1);
+    // The chosen card's id, not the catalogue's first entry.
+    expect(postRequests[0].body).toEqual({ campaignId: CAMPAIGN_B.id });
     // The write reuses the one CSRF-stamping client (sprint brief) — this
     // POST carries the token the earlier GET /users/me handed it.
     expect(postRequests[0].headers["x-csrf-token"]).toBe("csrf-token-value");
@@ -129,7 +143,10 @@ describe("SelectCampaignDialog (AC1-AC6)", () => {
     await user.click(screen.getByRole("button", { name: new RegExp(CAMPAIGN_A.title) }));
     await waitFor(() => expect(app.getPathname()).toBe("/runs/run-a-2"));
 
-    expect(getRequests({ method: "POST", path: "/api/v1/playthrough/campaign" })).toHaveLength(2);
+    const postRequests = getRequests({ method: "POST", path: "/api/v1/playthrough/campaign" });
+    expect(postRequests).toHaveLength(2);
+    expect(postRequests[0].body).toEqual({ campaignId: CAMPAIGN_A.id });
+    expect(postRequests[1].body).toEqual({ campaignId: CAMPAIGN_A.id });
 
     app.goBack();
     await waitFor(() => expect(app.getPathname()).toBe("/"));
