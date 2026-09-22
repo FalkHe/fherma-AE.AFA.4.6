@@ -167,6 +167,9 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
       // moved into this module too (the `home` module and its own
       // `home.json` are gone — see criterion 42(c) below).
       "i18n/locales/en/playthrough.json",
+      // Sprint 009/06: the creation-chat page's own namespace — `chat.*`,
+      // `choices.*`, `sheet.*`, `leave.*`.
+      "i18n/locales/en/character.json",
       "queryClient.ts",
       // Sprint 007/03: the theme grew from a single `theme.ts` (removed)
       // into a directory, because AC1 needs somewhere to hold the design
