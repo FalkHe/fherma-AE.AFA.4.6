@@ -66,7 +66,7 @@ describe("DashboardRoute on / (AC1-AC5)", () => {
     await waitFor(() => expect(heading).toHaveFocus());
   });
 
-  it("AC1 / AC2: one card per run, in the server's own order, with cover art, badge, teaser, the adventure/player/date line and a Begin or Resume action", async () => {
+  it("AC2 / AC4 (sprint 007/08): an active run files under In progress, which is the opening tag, with cover art, badge, teaser and a Resume action; the New card stays hidden", async () => {
     vi.setSystemTime(new Date("2026-09-10T00:00:00.000Z"));
     stubAuthenticated();
     mockRoute("GET", "/api/v1/playthrough/runs", {
@@ -79,29 +79,104 @@ describe("DashboardRoute on / (AC1-AC5)", () => {
 
     renderApp(["/"]);
 
-    await screen.findAllByText("Bogwater Assizes");
-    const links = screen.getAllByRole("link", { name: /^(begin|resume)$/i });
-    expect(links).toHaveLength(2);
-    // Server order kept exactly — not re-sorted by status or anything else.
+    const links = await screen.findAllByRole("link", { name: /^(begin|resume)$/i });
+    expect(links).toHaveLength(1);
     expect(links[0]).toHaveAccessibleName("Resume");
     expect(links[0]).toHaveAttribute("href", "/runs/run-newer");
-    expect(links[1]).toHaveAccessibleName("Begin");
-    expect(links[1]).toHaveAttribute("href", "/runs/run-older");
 
-    expect(screen.getAllByText("New")).toHaveLength(1);
-    expect(screen.getAllByText("In progress")).toHaveLength(1);
-    expect(screen.getAllByText("Bogwater Assizes")).toHaveLength(2);
-    expect(screen.getAllByText(/A courtroom under a marsh/)).toHaveLength(2);
-    // adventuresCompleted 2 of 8 total → on adventure 3; 3 players. Relative
-    // to the frozen "now" above (Intl.RelativeTimeFormat, numeric: auto),
-    // run-newer (created 2026-09-09) reads "yesterday", run-older (created
-    // 2026-09-08) reads "2 days ago" — proving each card computes its own
-    // date rather than sharing one.
+    expect(screen.getByRole("button", { name: "In progress" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "New" })).toHaveAttribute("aria-pressed", "false");
+
+    // adventuresCompleted 2 of 8 total → on adventure 3; 3 players; relative
+    // to the frozen "now" above (Intl.RelativeTimeFormat, numeric: auto)
+    // run-newer (created 2026-09-09) reads "yesterday" — proving the visible
+    // card computes its own date.
     expect(screen.getByText("Adventure 3 of 8 · 3 players · Created yesterday")).toBeInTheDocument();
-    expect(screen.getByText("Adventure 3 of 8 · 3 players · Created 2 days ago")).toBeInTheDocument();
+    expect(screen.queryByText(/Created 2 days ago/)).not.toBeInTheDocument();
   });
 
-  it("AC3: with no runs, the invitation card replaces the list and there is no counting subtitle", async () => {
+  it("AC4 (sprint 007/08): with nothing in progress, the dashboard opens on New", async () => {
+    stubAuthenticated();
+    mockRoute("GET", "/api/v1/playthrough/runs", {
+      status: 200,
+      body: [runSummary({ id: "run-new", status: "setup" })],
+    });
+
+    renderApp(["/"]);
+
+    const link = await screen.findByRole("link", { name: /^(begin|resume)$/i });
+    expect(link).toHaveAccessibleName("Begin");
+    expect(screen.getByRole("button", { name: "New" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "In progress" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("AC1 (sprint 007/08): switching a tag filters the list", async () => {
+    stubAuthenticated();
+    mockRoute("GET", "/api/v1/playthrough/runs", {
+      status: 200,
+      body: [
+        runSummary({ id: "run-active", status: "active", campaignTitle: "Bogwater Assizes" }),
+        runSummary({ id: "run-new", status: "setup", campaignTitle: "Greenhollow Woods" }),
+        runSummary({ id: "run-archived", status: "archived", campaignTitle: "Sunken Keep" }),
+      ],
+    });
+
+    const user = userEvent.setup();
+    renderApp(["/"]);
+
+    await screen.findByText("Bogwater Assizes");
+    expect(screen.queryByText("Greenhollow Woods")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sunken Keep")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "New" }));
+    expect(await screen.findByText("Greenhollow Woods")).toBeInTheDocument();
+    expect(screen.queryByText("Bogwater Assizes")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Archived" }));
+    expect(await screen.findByText("Sunken Keep")).toBeInTheDocument();
+    expect(screen.queryByText("Greenhollow Woods")).not.toBeInTheDocument();
+  });
+
+  it("AC3 (sprint 007/08): an archived run's card is muted with no open action, and the note above the list says runs are kept and view-only with no mention of unarchiving", async () => {
+    stubAuthenticated();
+    mockRoute("GET", "/api/v1/playthrough/runs", {
+      status: 200,
+      body: [runSummary({ id: "run-archived", status: "archived", campaignTitle: "Sunken Keep" })],
+    });
+
+    const user = userEvent.setup();
+    renderApp(["/"]);
+
+    // No in-progress run exists, so the dashboard opens on New (AC4), which
+    // is empty — switch to Archived to see the card.
+    await user.click(await screen.findByRole("button", { name: "Archived" }));
+
+    await screen.findByText("Sunken Keep");
+    expect(screen.queryByRole("link", { name: /^(begin|resume)$/i })).not.toBeInTheDocument();
+
+    const note = screen.getByText("Archived runs are kept as they are and are view-only.");
+    expect(note).toBeInTheDocument();
+    expect(screen.queryByText(/unarchive/i)).not.toBeInTheDocument();
+  });
+
+  it("an empty tag shows its own 'nothing here' line instead of an empty list", async () => {
+    stubAuthenticated();
+    mockRoute("GET", "/api/v1/playthrough/runs", {
+      status: 200,
+      body: [runSummary({ id: "run-active", status: "active", campaignTitle: "Bogwater Assizes" })],
+    });
+
+    const user = userEvent.setup();
+    renderApp(["/"]);
+
+    await screen.findByText("Bogwater Assizes");
+    await user.click(screen.getByRole("button", { name: "Archived" }));
+
+    expect(await screen.findByText("Nothing here yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Bogwater Assizes")).not.toBeInTheDocument();
+  });
+
+  it("AC1/AC4 (sprint 007/08): with no runs, the invitation card replaces the list, there is no counting subtitle and no tags render", async () => {
     stubAuthenticated();
     mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
 
@@ -113,6 +188,8 @@ describe("DashboardRoute on / (AC1-AC5)", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/campaign.*waiting on you/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /^(begin|resume)$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Filter campaigns by status" })).not.toBeInTheDocument();
+    expect(screen.queryByText("My campaigns")).not.toBeInTheDocument();
   });
 
   it("AC5: with runs present, the subtitle counts them", async () => {
@@ -148,12 +225,16 @@ describe("DashboardRoute on / (AC1-AC5)", () => {
     });
 
     const app = renderApp(["/"]);
+    const user = userEvent.setup();
+
+    // Only an archived run exists, so the dashboard opens on New (empty)
+    // — switch to Archived to see it (sprint 007/08 WI1, AC4).
+    await user.click(await screen.findByRole("button", { name: "Archived" }));
 
     await screen.findByText("Campaign unavailable");
     expect(screen.queryByRole("link", { name: /^(begin|resume)$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/no longer available/i)).not.toBeInTheDocument();
 
-    const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /why can.?t i open this/i }));
 
     expect(await screen.findByText(/no longer available/i)).toBeInTheDocument();
