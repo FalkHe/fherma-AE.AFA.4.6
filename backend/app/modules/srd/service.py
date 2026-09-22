@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import os
 import re
@@ -15,7 +16,7 @@ from app.core.llm import service as llm_service
 from app.core.settings import get_settings
 from app.modules.srd.errors import SrdCorpusEmptyError, SrdSourceError, SrdVectorWidthError
 from app.modules.srd.models import EMBEDDING_WIDTH, SrdRule
-from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleChunk
+from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleChunk, RuleMatch
 
 logger = structlog.get_logger()
 
@@ -351,7 +352,10 @@ async def ingest(
 
         for start in range(0, total, EMBED_BATCH_SIZE):
             batch = chunks[start : start + EMBED_BATCH_SIZE]
-            result = llm_service.embed_texts([chunk.text for chunk in batch], model=embedding_model)
+            result = llm_service.embed_texts(
+                [f"{chunk.heading_path}\n\n{chunk.text}" for chunk in batch],
+                model=embedding_model,
+            )
             vectors.extend(result.vectors)
             if result.usage.cost_usd is None:
                 any_batch_unpriced = True
@@ -395,3 +399,52 @@ async def ingest(
         cost_usd=cost_total if any_batch_priced else None,
         cost_complete=cost_complete,
     )
+
+
+# A handful of passages, best first, is enough context for a DM's
+# narration or rules check; callers that need more can pass `limit`.
+DEFAULT_LIMIT = 5
+
+
+async def search_rules(
+    db: AsyncSession, query: str, *, limit: int = DEFAULT_LIMIT
+) -> list[RuleMatch]:
+    """Answers `query` with up to `limit` closest `SrdRule` passages, best
+    (closest) first.
+
+    Checks the embedding width first (AC3), then `require_corpus` -- an
+    empty corpus raises `SrdCorpusEmptyError` before `query` is ever sent
+    to the embedding gateway, so a spent gateway call for an unusable
+    corpus never happens (AC6). `query` is embedded through
+    `llm_service.embed_texts`, called attribute-style
+    (`llm_service.embed_texts(...)`) so tests can monkeypatch it, run off
+    the event loop via `asyncio.to_thread` since the call is blocking, same
+    as `recall` (`playthrough/service.py`).
+
+    The nearest-neighbour query orders by `SrdRule.embedding.
+    cosine_distance(vector)` *with* the `LIMIT` applied in the same
+    statement -- that combination is what lets Postgres use the `hnsw`
+    index (`ix_srd_rules_embedding`) instead of a full sequential scan plus
+    sort; the distance expression is selected alongside each row, once, so
+    it does not have to be recomputed to derive `score`. `score` is the raw
+    cosine distance (pgvector's `<=>`), 0..2, lower is closer -- no floor,
+    no re-ranking (sprint 06). Nothing commits; errors travel unwrapped.
+    """
+    check_vector_width()
+    await require_corpus(db)
+
+    embedding_model = get_settings().embedding_model
+    embedded = await asyncio.to_thread(llm_service.embed_texts, [query], model=embedding_model)
+    query_vector = embedded.vectors[0]
+
+    distance = SrdRule.embedding.cosine_distance(query_vector).label("distance")
+    result = await db.execute(
+        select(SrdRule.heading_path, SrdRule.ordinal, SrdRule.text, distance)
+        .order_by(distance)
+        .limit(limit)
+    )
+
+    return [
+        RuleMatch(heading_path=heading_path, ordinal=ordinal, text=text, score=rule_distance)
+        for heading_path, ordinal, text, rule_distance in result.all()
+    ]

@@ -25,6 +25,20 @@ class CorpusStatus(CamelModel):
     ingested_at: datetime | None
 
 
+class RuleMatch(CamelModel):
+    """One passage returned by `service.search_rules`: `heading_path`/
+    `ordinal` are the same citation pair `RuleChunk` carries, identifying
+    which stored `SrdRule` row this is. `score` is the raw pgvector cosine
+    distance (`<=>`) between the query and the passage, 0..2, LOWER IS
+    CLOSER -- not a similarity score. Results are ordered best-first
+    (ascending distance); no relevance floor is applied here (sprint 06)."""
+
+    heading_path: str
+    ordinal: int
+    text: str
+    score: float
+
+
 class IngestReport(CamelModel):
     """What `service.ingest` did. `cost_usd` is `None` when no batch
     reported a cost; `cost_complete` is `False` when only some batches did
