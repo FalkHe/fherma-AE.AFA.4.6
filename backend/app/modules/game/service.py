@@ -205,11 +205,16 @@ async def run_turn(
        player row for it.
 
     Kinds 1-3 reuse the open turn's own id (`playthrough_service.
-    open_turn_id`) rather than minting a new one; kinds 4-5 each mint a
-    fresh one (`core.ids.generate_id`, the same ULID every other id in
-    this app is). `awaiting` on the returned `TurnOutcome` is
-    `get_awaiting` read *after* the turn runs, so it always reflects
-    whatever the turn just did, not what it started from.
+    open_turn_id`) rather than minting a new one -- except when there is
+    none to reuse (`open_turn_id` returns `None`: the leg that broke had
+    written no event yet, e.g. an opening turn that crashed before its
+    first narration), in which case a fresh one is minted the same way
+    kinds 4-5 always do (`core.ids.generate_id`, the same ULID every other
+    id in this app is) and the resumed leg continues under it -- never
+    left `None`, which would fail `TurnOutcome.turn_id: str` downstream.
+    `awaiting` on the returned `TurnOutcome` is `get_awaiting` read *after*
+    the turn runs, so it always reflects whatever the turn just did, not
+    what it started from.
     """
     character = await playthrough_service.get_member_character(db, user_id=user_id, run_id=run_id)
 
@@ -229,7 +234,10 @@ async def run_turn(
                     )
                     raise ActionNotAvailableError(awaiting=awaiting, options=options)
 
-                turn_id = await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
+                turn_id = (
+                    await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
+                    or generate_id()
+                )
                 await playthrough_service.append_event(
                     db,
                     run_id=run_id,
@@ -249,7 +257,10 @@ async def run_turn(
                 await resume(agent, thread_id=run_id, context=context, resume_value=text)
             elif interrupt_type == "roll_request":
                 kind = "roll"
-                turn_id = await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
+                turn_id = (
+                    await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
+                    or generate_id()
+                )
                 context = DmContext(
                     db=db, user_id=user_id, actor_id=character.id, run_id=run_id, turn_id=turn_id
                 )
@@ -260,7 +271,10 @@ async def run_turn(
                 raise AssertionError(f"unknown interrupt type: {interrupt_type!r}")
         elif snapshot.pending:
             kind = "retry"
-            turn_id = await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
+            turn_id = (
+                await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
+                or generate_id()
+            )
             context = DmContext(
                 db=db, user_id=user_id, actor_id=character.id, run_id=run_id, turn_id=turn_id
             )

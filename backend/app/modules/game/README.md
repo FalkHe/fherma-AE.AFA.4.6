@@ -87,4 +87,7 @@ or writes an event.
   `ThreadState`) and `retry()` (`invoke(None)`, resuming a broken turn from
   its last saved step without repeating it); `playthrough_service.
   open_turn_id` supplies the id a resumed leg reuses instead of minting a
-  new one.
+  new one — or, when it answers `None` (the leg that broke wrote no event
+  at all, e.g. an opening turn that crashed before its first narration),
+  `run_turn` mints one on the spot so the resumed leg, and the
+  `TurnOutcome` it returns, always carry a real turn id.
