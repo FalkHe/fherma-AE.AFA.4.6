@@ -2,7 +2,7 @@
 author: sprint
 owner: human
 created: 2026-09-22
-stage: draft
+stage: approved
 ---
 # Sprint 07: Every rule is cited under its real heading
 
