@@ -9,7 +9,7 @@ stage: running
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | done | dashboard, run cards, empty state; home retired |
+| 1 | done | dashboard, run cards, empty state; home retired; round 2 restored two lost guard tests |
 | qa | – | folded into WI1's route tests |
 
 Status: `open | running | done | failed`

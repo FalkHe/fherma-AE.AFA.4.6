@@ -3,7 +3,7 @@ author: sprint
 owner: human
 created: 2026-09-22
 updated: 2026-09-22
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/52
 ---
 # Review: Sprint 07 — Signing in lands on a dashboard of the player's runs, or on an invitation to start the first one
 
@@ -28,7 +28,14 @@ campaigns yet is invited to start one instead. The old landing page is gone.
   keyboard users where they have landed, and it is unchanged from the old landing page — but it is visible to
   everyone and was never in the design, so it is worth a decision of its own.
 - The separate `/dashboard` address is gone with the old page; everything now lives at the site root.
+- The invitation shown to a player with no campaigns uses the same words as the card at the foot of a populated
+  dashboard; it never says "your first". Worth its own copy pass.
+- An archived campaign would still show a "Resume" button. Nothing in the product can archive one yet, and sorting
+  archived campaigns out is the next sprint's job.
 
 Brief: docs/intents/007-initial-frontend/sprints/07-campaign-dashboard/brief.md
 
 ## Verdict
+Round 1: changes requested — when the old landing page was removed, the checks that a player whose session has
+expired is told so, and that an unreachable server offers a retry instead of dumping them at sign-in, were deleted
+with it. Both still behaved correctly, but nothing guarded them any more.
