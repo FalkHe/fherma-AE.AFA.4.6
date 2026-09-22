@@ -31,6 +31,41 @@ campaign at its newest valid version.
 - `app content validate` — walks every campaign and version under
   `CONTENT_ROOT/campaigns` and reports every problem found.
 
+## API
+
+Mounted under `/api/v1/content` (`backend/app/api/v1/router.py`). Every route
+requires a signed-in session (`auth.CurrentAuth`); an anonymous call answers
+`401` with the standard error envelope.
+
+| Verb | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/content/campaigns` | Every campaign under the content root at its newest valid version — id, title, summary and adventure count. No paging, filtering or ordering. |
+
+Example — `GET /api/v1/content/campaigns` → `200`:
+
+```json
+[
+  {
+    "id": "greenhollow",
+    "title": "Greenhollow",
+    "summary": "A hedge-village at the edge of the Thornway woods has lost two flocks and a shepherd to something that came out of the trees. The village cannot pay for soldiers, only a hot meal, a warm bed, and whatever coin the collection plate holds.",
+    "adventureCount": 1
+  }
+]
+```
+
+Anonymous — `GET /api/v1/content/campaigns` → `401`:
+
+```json
+{
+  "error": {
+    "code": "NOT_AUTHENTICATED",
+    "message": "Authentication required.",
+    "details": null
+  }
+}
+```
+
 ## Notes
 
 - Field reference, directory layout, versioning and the full rule list are
