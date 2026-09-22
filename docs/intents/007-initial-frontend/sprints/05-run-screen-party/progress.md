@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: running
+stage: done
 ---
 # Progress: Sprint 05
 
@@ -22,7 +22,11 @@ Status: `open | running | done | failed`
 - A separate qa work item was cut on the human's instruction to keep test effort small; acceptance is checked in the browser.
 
 ## Backlog proposals
+- A player who already has a character still sees "Create character" beside that character's name; revisit when character creation is real.
+- `docs/architecture.md` still lists the frontend modules as "(today: auth, home)" — standing drift, now also missing `playthrough`.
+- The signed-in shell is now 1080px wide on every page, not just the run screen.
 
 ## Verify
+Round 1: approve — no failed criteria.
 - WI1's back link targets `/` (today's landing route); the campaigns page itself arrives in sprint 07.
 - `useRunOverview` casts the generated response type: this endpoint's 422 is typed `HTTPValidationError` instead of the shared error envelope every auth endpoint uses — a backend schema gap worth a later look.

@@ -3,7 +3,7 @@ author: sprint
 owner: human
 created: 2026-09-22
 updated: 2026-09-22
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/50
 ---
 # Review: Sprint 05 — Opening a run shows the campaign, who is at the table and whether their character is ready, plus an invite slot
 
@@ -35,3 +35,7 @@ player. The buttons that would create a character or send an invitation say, pol
 Brief: docs/intents/007-initial-frontend/sprints/05-run-screen-party/brief.md
 
 ## Verdict
+Round 1: approve — opening a run now shows its campaign, how far along it is, everyone at the table and whether each
+of them has a character yet, with an empty seat for inviting another player. The buttons for creating a character and
+sending an invitation politely say the feature is not built yet, and a run that does not exist or is not yours says so
+plainly instead of failing.
