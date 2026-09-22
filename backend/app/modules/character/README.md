@@ -33,8 +33,10 @@ same "content lives in git" approach as the `content` module.
   turns through `service.build_creation_agent()`/`service.turn()` until
   the player quits or a save lands. `show_sheet` — draft or, for the
   ready-made hero, `show_sheet(ready_made=True)` (its equipment printed by
-  name, from the campaign's own object templates, loaded once at startup)
-  — always prints the full sheet itself ahead of the agent's own words,
+  name, from the campaign's own object templates, loaded once at startup;
+  also marks the draft `ready_made: True` for the web chat's review, sprint
+  009-07) — always prints the full sheet itself ahead of the agent's own
+  words,
   before the save is ever asked for; the agent never restates its
   numbers. A turn that raises (model, tool or graph) prints the same
   in-voice line as a refusal and keeps the session running, never a
@@ -48,10 +50,15 @@ same "content lives in git" approach as the `content` module.
   the step reached 1-7, `canSave`, `saved`, `error`). Both routes keep
   their state only on `app.state` — one lazily built agent and a dict of
   live conversations, nothing persisted (a restart starts over, ← D12).
-  `character/service.creation_progress(draft)` renders the sheet-so-far
-  and the step purely from the draft; a turn that raises answers 200 with
-  the in-voice `MODEL_ERROR_REPLY` line and `error: true` rather than a
-  raw failure.
+  `character/service.creation_progress(draft, *, seed=None,
+  seed_items=None)` renders the sheet-so-far and the step purely from the
+  draft; a turn that raises answers 200 with the in-voice
+  `MODEL_ERROR_REPLY` line and `error: true` rather than a raw failure.
+  `show_sheet(ready_made=True)` (sprint 009-07) also writes
+  `{"ready_made": True}` to the draft; `creation_progress` renders that
+  branch straight to `review`/`canSave: true` off the seed's own facts
+  once no race has since been chosen — a player who goes on to build their
+  own falls back to the ordinary steps with no extra bookkeeping.
 - The chat (sprint 009-04) walks: ready-made offer → race/class (a yes
   before writing) → ability scores, offered three ways — "suggest a set
   for my class" (`suggest_scores`), "roll for me" (`roll_scores`, the

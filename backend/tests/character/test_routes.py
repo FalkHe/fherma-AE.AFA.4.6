@@ -23,7 +23,9 @@ def _send(client, signed_in, conversation_id: str, text: str):
     )
 
 
-def test_ac1_starting_greets_and_a_run_with_a_character_is_refused(client, signed_in, run_overview):
+def test_ac1_starting_greets_and_a_run_with_a_character_is_refused(
+    client, signed_in, run_overview, scripted_model
+):
     run_id = generate_id()
     run_overview(run_id)
 
@@ -34,6 +36,23 @@ def test_ac1_starting_greets_and_a_run_with_a_character_is_refused(client, signe
     assert "Rosalind Thorn" in body["reply"]
     assert body["step"] == "raceClass"
     assert body["readyMadeName"] == "Rosalind Thorn"
+
+    # Taking the ready-made hero (← D14 §1.3, research Decision 4): a
+    # scripted `show_sheet(ready_made=True)` turn reaches the same review
+    # a built character would, off the seed's own facts.
+    scripted_model(
+        ("show_sheet", {"ready_made": True}), "Here she stands, ready as she'll ever be."
+    )
+    conversation_id = body["conversationId"]
+
+    review = _send(client, signed_in, conversation_id, "take Rosalind")
+
+    assert review.status_code == 200, review.text
+    review_body = review.json()
+    assert review_body["step"] == "review"
+    assert review_body["canSave"] is True
+    assert review_body["sheet"]["name"] == "Rosalind Thorn"
+    assert review_body["sheet"]["equipment"]
 
     taken_run_id = generate_id()
     run_overview(taken_run_id, has_character=True)

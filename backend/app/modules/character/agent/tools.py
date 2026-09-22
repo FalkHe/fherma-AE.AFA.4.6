@@ -353,7 +353,7 @@ def take_default_equipment(runtime: ToolRuntime[CreationContext]) -> Command:
 
 
 @tool("show_sheet")
-def show_sheet(runtime: ToolRuntime[CreationContext], ready_made: bool = False) -> str:
+def show_sheet(runtime: ToolRuntime[CreationContext], ready_made: bool = False) -> str | Command:
     """Render the sheet for the player's review -- never restate its
     numbers yourself, this tool is the only source of them. Pass
     `ready_made=True` to show the campaign's ready-made hero instead of
@@ -362,7 +362,17 @@ def show_sheet(runtime: ToolRuntime[CreationContext], ready_made: bool = False) 
         seed = runtime.context.ready_made
         if seed is None:
             return "There is no ready-made hero offered at this table."
-        return service.render_seed(seed, item_names=runtime.context.ready_made_items)
+        content = service.render_seed(seed, item_names=runtime.context.ready_made_items)
+        # ← research Decision 4: marks the draft so `creation_progress`
+        # renders the seed's own review once this turn's collector has
+        # printed `content` verbatim (`service.turn`'s `ToolMessage`
+        # collection, which this must stay to feed).
+        return Command(
+            update={
+                "draft": {"ready_made": True},
+                "messages": [ToolMessage(content=content, tool_call_id=runtime.tool_call_id)],
+            }
+        )
 
     draft = runtime.state.get("draft", {})
     gaps = _draft_gaps(draft)

@@ -344,7 +344,12 @@ class CreationProgress:
     can_save: bool
 
 
-def creation_progress(draft: dict[str, Any]) -> CreationProgress:
+def creation_progress(
+    draft: dict[str, Any],
+    *,
+    seed: SeedCharacter | None = None,
+    seed_items: list[str] | None = None,
+) -> CreationProgress:
     """Pure: the sheet-so-far and the step reached, straight off the
     conversation's own draft dict, no I/O (← research Decision 3). Reuses
     `agent/tools.py`'s own draft -> `CharacterCreateRequest` mapping
@@ -361,7 +366,37 @@ def creation_progress(draft: dict[str, Any]) -> CreationProgress:
     helper `build_sheet` itself calls, with no free bonus picked yet --
     `_request_from_draft` never draws one from the draft either) renders
     the same final scores the sheet will end up with. Only with no race
-    chosen yet is there no bonus to apply, so the raw draft scores show."""
+    chosen yet is there no bonus to apply, so the raw draft scores show.
+
+    `draft["ready_made"]` (← research Decision 4, `agent/tools.py`'s
+    `show_sheet(ready_made=True)`) short-circuits straight to `review` with
+    the seed's own facts once no race has since been chosen -- a player who
+    goes on to build their own falls back to the branch below with no
+    extra bookkeeping, since a chosen race is what ends this branch."""
+    if draft.get("ready_made") and not draft.get("race") and seed is not None:
+        return CreationProgress(
+            sheet=SheetSoFar.model_validate(
+                {
+                    "name": seed.name,
+                    "race": seed.race,
+                    "character_class": seed.character_class,
+                    "level": 1,
+                    "alignment": None,
+                    "abilities": seed.abilities.model_dump(),
+                    "max_hp": seed.max_hp,
+                    "armour_class": seed.armour_class,
+                    "speed": None,
+                    "skills": [],
+                    "equipment": seed_items or [],
+                    "appearance": seed.appearance,
+                    "backstory": seed.background,
+                }
+            ),
+            step="review",
+            step_number=7,
+            can_save=True,
+        )
+
     from app.modules.character import builder
     from app.modules.character.agent import tools as creation_tools
 
@@ -449,8 +484,10 @@ def _reply_for(
     saved: bool,
     error: bool,
     ready_made_name: str,
+    seed: SeedCharacter | None = None,
+    seed_items: list[str] | None = None,
 ) -> CreationReply:
-    progress = creation_progress(draft)
+    progress = creation_progress(draft, seed=seed, seed_items=seed_items)
     return CreationReply(
         conversation_id=conversation_id,
         reply=turn_reply,
@@ -479,8 +516,7 @@ async def start_creation(
     if overview.unavailable:
         raise CampaignRunNotFoundError(run_id)
     if any(
-        member.user_id == user_id and member.character_name is not None
-        for member in overview.members
+        member.user_id == user_id and member.character is not None for member in overview.members
     ):
         raise CharacterExistsError(run_id)
 
@@ -495,7 +531,14 @@ async def start_creation(
 
     greeting = render_greeting(overview.campaign_title or overview.campaign_id, seed)
     return _reply_for(
-        conversation_id, greeting, draft={}, saved=False, error=False, ready_made_name=seed.name
+        conversation_id,
+        greeting,
+        draft={},
+        saved=False,
+        error=False,
+        ready_made_name=seed.name,
+        seed=seed,
+        seed_items=ready_made_items,
     )
 
 
@@ -539,6 +582,8 @@ async def send_creation_message(
             saved=False,
             error=True,
             ready_made_name=conversation.seed.name,
+            seed=conversation.seed,
+            seed_items=conversation.ready_made_items,
         )
 
     conversation.draft = result.draft
@@ -549,4 +594,6 @@ async def send_creation_message(
         saved=result.saved,
         error=False,
         ready_made_name=conversation.seed.name,
+        seed=conversation.seed,
+        seed_items=conversation.ready_made_items,
     )
