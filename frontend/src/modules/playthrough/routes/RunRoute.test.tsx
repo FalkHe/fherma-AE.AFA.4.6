@@ -30,8 +30,24 @@ function stubAuthenticated() {
   mockRoute("GET", "/api/v1/users/me", { status: 200, body: USER, headers: { "X-CSRF-Token": "csrf-token-value" } });
 }
 
-const READY_MEMBER = { userId: "u1", username: "thorin", role: "owner", ready: true, characterName: "Doon" };
-const UNREADY_MEMBER = { userId: "u1", username: "thorin", role: "owner", ready: false, characterName: null };
+const READY_MEMBER = {
+  userId: "u1",
+  username: "thorin",
+  role: "owner",
+  ready: true,
+  character: {
+    id: "char-1",
+    name: "Doon",
+    race: "Dwarf",
+    characterClass: "Fighter",
+    level: 1,
+    currentHp: 12,
+    maxHp: 12,
+    armourClass: 16,
+    appearance: "Stout and scarred.",
+  },
+};
+const UNREADY_MEMBER = { userId: "u1", username: "thorin", role: "owner", ready: false, character: null };
 
 function adventure(id: string, title: string, status: "done" | "active" | "unplayed") {
   return { id, title, introExcerpt: `${title} teaser`, status };
