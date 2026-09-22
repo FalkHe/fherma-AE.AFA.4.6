@@ -40,7 +40,7 @@ export function HomeRoute() {
           {tAuth("signOut.error")}
         </Alert>
       )}
-      <Typography variant="h5" component="h1" tabIndex={-1} ref={greetingRef}>
+      <Typography variant="h2" component="h1" tabIndex={-1} ref={greetingRef}>
         {t("greeting", { username: user?.username ?? "" })}
       </Typography>
     </AppShell>

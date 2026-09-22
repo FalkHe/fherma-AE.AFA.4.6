@@ -1,0 +1,68 @@
+:root{
+  /* --- Base ramps -------------------------------------------------- */
+  /* Loam: the deep green-black of the pub interior */
+  --loam-950:#0B0E09; --loam-900:#12160F; --loam-850:#171C13; --loam-800:#1E2418;
+  --loam-700:#283022; --loam-600:#36402C; --loam-500:#4A5539; --loam-400:#5F6B4A;
+  /* Bark: warm brown timber and leather */
+  --bark-900:#241A11; --bark-800:#33261A; --bark-700:#463320; --bark-600:#5C4429;
+  --bark-500:#7A5C36; --bark-400:#9A7749;
+  /* Moss: living green, the goblin accent */
+  --moss-700:#3F5A28; --moss-600:#527334; --moss-500:#6E9142; --moss-400:#8FB25C;
+  --moss-300:#B4D083; --moss-200:#D3E5B0;
+  /* Lantern: candle + amber ale, the primary call to action */
+  --lantern-700:#8A5410; --lantern-600:#B0731C; --lantern-500:#D08C2A; --lantern-400:#E8A94A;
+  --lantern-300:#F3C87C; --lantern-200:#F9E0B4;
+  /* Ember: danger, damage, crit fail */
+  --ember-600:#9C3B26; --ember-500:#C2543A; --ember-400:#DC7458;
+  /* Fen: cold arcane blue-green, used sparingly for magic + info */
+  --fen-600:#2E6360; --fen-500:#3E8480; --fen-400:#5FA9A3;
+  /* Parchment: ink on dark */
+  --parchment-100:#F2ECDE; --parchment-200:#E3DACA; --parchment-300:#C6BCA6;
+  --parchment-400:#9E947F; --parchment-500:#7B7263;
+
+  /* --- Semantic aliases --------------------------------------------- */
+  --surface-app:var(--loam-950);
+  --surface-sunken:var(--loam-900);
+  --surface-card:var(--loam-850);
+  --surface-raised:var(--loam-800);
+  --surface-overlay:#151A11;
+  --surface-timber:var(--bark-800);
+  --surface-inset:#0E120C;
+  --scrim:rgba(8,10,7,.72);
+
+  --text-primary:var(--parchment-100);
+  --text-secondary:var(--parchment-300);
+  --text-muted:var(--parchment-400);
+  --text-faint:var(--parchment-500);
+  --text-on-accent:var(--loam-950);
+  --text-link:var(--lantern-300);
+  --text-link-hover:var(--lantern-200);
+
+  --border-hairline:rgba(226,214,186,.08);
+  --border-soft:rgba(226,214,186,.14);
+  --border-strong:rgba(226,214,186,.24);
+  --border-timber:var(--bark-700);
+
+  --accent:var(--lantern-400);
+  --accent-hover:var(--lantern-300);
+  --accent-press:var(--lantern-500);
+  --accent-quiet:rgba(232,169,74,.14);
+  --accent-secondary:var(--moss-400);
+  --accent-secondary-quiet:rgba(143,178,92,.14);
+
+  --success:var(--moss-400);
+  --success-quiet:rgba(143,178,92,.16);
+  --danger:var(--ember-500);
+  --danger-quiet:rgba(194,84,58,.16);
+  --warning:var(--lantern-400);
+  --warning-quiet:rgba(232,169,74,.16);
+  --info:var(--fen-400);
+  --info-quiet:rgba(95,169,163,.16);
+  --magic:var(--fen-400);
+
+  --focus-ring:var(--lantern-300);
+
+  /* Roles on the party sheet */
+  --hp-full:var(--moss-400); --hp-low:var(--lantern-400); --hp-crit:var(--ember-500);
+  --xp-fill:var(--fen-400);
+}

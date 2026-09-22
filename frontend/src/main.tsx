@@ -21,7 +21,7 @@ const queryClient = createQueryClient();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ThemeProvider theme={theme} noSsr>
+    <ThemeProvider theme={theme} noSsr defaultMode="dark">
       <CssBaseline />
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>

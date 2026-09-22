@@ -12,7 +12,7 @@ import { deferredResponse, mockRoute } from "../../../test/network";
 const USER = { id: "01ARZ3NDEKTSV4RRFFQ69G5FAV", username: "thorin", createdAt: "2026-09-08T12:34:56.789012+00:00" };
 
 const copy = {
-  appTitle: "AI Dungeon Master",
+  appTitle: "The Goblin's Tavern",
   greeting: "Welcome, thorin.",
   sessionExpired: "Your session ended. Please sign in again.",
   signOutError: "Could not sign you out. Please try again.",
