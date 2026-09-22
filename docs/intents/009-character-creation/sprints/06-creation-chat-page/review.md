@@ -22,7 +22,9 @@ url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/61
 - Reloading the page starts a fresh conversation, by decision.
 - The review screen and the saved character card are sprint 07; on this page the conversation ends with the Keeper's save question.
 - The reply now also carries the ready-made hero's name so the offer can be a button.
+- On the local development stack the opening greeting is printed twice (React strict mode runs the start effect twice); the built app shows it once.
 
 Brief: docs/intents/009-character-creation/sprints/06-creation-chat-page/brief.md
 
 ## Verdict
+Round 1: approve — players open creation as its own page, talk to the Tavern Keeper, watch race, class and scores appear in the sheet beside the chat, and leave only after confirming; a failed turn is answered in the tavern's voice with a retry that keeps the conversation. Dev-stack only: the greeting prints twice.
