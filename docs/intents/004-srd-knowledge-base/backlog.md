@@ -17,7 +17,7 @@ Sprint outcomes, dependency-ordered. Status: `open | running | done`.
 | 04 | Running `app srd ingest` a second time replaces the corpus wholesale — the row count is the same, nothing is duplicated, and a run that fails part-way leaves the previous corpus intact | 03 | #11 | done |
 | 05 | `app srd search "<query>"` answers a rules question with SRD passages, best first, each carrying the heading path that cites the rule it came from | 03 | #12 | done |
 | 06 | `app srd search "<query>"` returns nothing and says so for a question the SRD does not cover, while still answering one it does — the relevance floor is pinned to a measured value | 05 | #13 | done |
-| 07 | Every rule is cited under its real heading: a heading's siblings are no longer filed under the first sibling (481 of 1,750 passages today), the corpus is re-loaded and the relevance cut-off re-checked | 05, 06 | #41 | open |
+| 07 | Every rule is cited under its real heading: a heading's siblings are no longer filed under the first sibling (481 of 1,750 passages today), the corpus is re-loaded and the relevance cut-off re-checked | 05, 06 | #41 | done |
 
 ## Notes
 
