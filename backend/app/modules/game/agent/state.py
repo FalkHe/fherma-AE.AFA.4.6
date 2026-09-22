@@ -27,6 +27,8 @@ DROP_TOOL = "drop"
 GIVE_TOOL = "give"
 USE_ITEM_TOOL = "use_item"
 USE_EXIT_TOOL = "use_exit"
+ATTACK_TOOL = "attack"
+DAMAGE_TOOL = "damage"
 
 
 @dataclass

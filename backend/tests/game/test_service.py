@@ -546,6 +546,12 @@ def test_the_model_cannot_supply_session_or_user_id():
     use_exit_schema = tools.use_exit.tool_call_schema.model_json_schema()
     assert set(use_exit_schema["properties"]) == {"exit_id", "actor_id"}
 
+    attack_schema = tools.attack.tool_call_schema.model_json_schema()
+    assert set(attack_schema["properties"]) == {"target_id", "roll_id", "actor_id", "item_id"}
+
+    damage_schema = tools.damage.tool_call_schema.model_json_schema()
+    assert set(damage_schema["properties"]) == {"target_id", "roll_id", "hit_id"}
+
 
 def test_ask_player_tool_interrupts_and_resumes_with_answer(prompt, monkeypatch):
     ask_calls = []
@@ -1287,6 +1293,134 @@ def test_action_tool_refusal_is_caught_and_narrated(prompt, monkeypatch):
 
     res = _turn(agent, "I grab the sword.")
     assert res.reply == "The sword is out of reach on a high shelf."
+
+
+def test_combat_tools_delegate_to_playthrough_service(prompt, monkeypatch):
+    calls = []
+
+    async def fake_attack(db, *, user_id, actor_id, target_id, roll_id, item_id=None, turn_id=None):
+        calls.append(
+            {
+                "tool": "attack",
+                "user_id": user_id,
+                "actor_id": actor_id,
+                "target_id": target_id,
+                "roll_id": roll_id,
+                "item_id": item_id,
+                "turn_id": turn_id,
+            }
+        )
+        return "hit"
+
+    async def fake_damage(db, *, user_id, target_id, roll_id, hit_id, turn_id=None):
+        calls.append(
+            {
+                "tool": "damage",
+                "user_id": user_id,
+                "target_id": target_id,
+                "roll_id": roll_id,
+                "hit_id": hit_id,
+                "turn_id": turn_id,
+            }
+        )
+        return 7
+
+    monkeypatch.setattr(tools.playthrough_service, "attack", fake_attack)
+    monkeypatch.setattr(tools.playthrough_service, "damage", fake_damage)
+
+    # 1. Test attack
+    call_attack = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "c-att",
+                "name": "attack",
+                "args": {
+                    "target_id": "goblin-1",
+                    "roll_id": "roll-att-1",
+                    "item_id": "sword-1",
+                    "actor_id": "actor-1",
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([call_attack, AIMessage(content="You strike the goblin!")])
+    )
+    res = _turn(agent, "I attack the goblin.")
+    assert res.reply == "You strike the goblin!"
+    assert calls[-1] == {
+        "tool": "attack",
+        "user_id": "user-1",
+        "actor_id": "actor-1",
+        "target_id": "goblin-1",
+        "roll_id": "roll-att-1",
+        "item_id": "sword-1",
+        "turn_id": "turn-1",
+    }
+
+    # 2. Test damage
+    call_damage = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "c-dam",
+                "name": "damage",
+                "args": {
+                    "target_id": "goblin-1",
+                    "roll_id": "roll-dam-1",
+                    "hit_id": "hit-event-1",
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([call_damage, AIMessage(content="The goblin takes 7 damage.")])
+    )
+    res = _turn(agent, "Apply damage.")
+    assert res.reply == "The goblin takes 7 damage."
+    assert calls[-1] == {
+        "tool": "damage",
+        "user_id": "user-1",
+        "target_id": "goblin-1",
+        "roll_id": "roll-dam-1",
+        "hit_id": "hit-event-1",
+        "turn_id": "turn-1",
+    }
+
+
+def test_combat_tool_refusal_is_caught_and_narrated(prompt, monkeypatch):
+    from app.modules.playthrough.service import HitNotUsableError
+
+    async def refusing_damage(*args, **kwargs):
+        raise HitNotUsableError("hit-invalid")
+
+    monkeypatch.setattr(tools.playthrough_service, "damage", refusing_damage)
+
+    call_dam = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "c-dam-fail",
+                "name": "damage",
+                "args": {
+                    "target_id": "goblin-1",
+                    "roll_id": "roll-1",
+                    "hit_id": "hit-invalid",
+                },
+            }
+        ],
+    )
+    scripted = _scripted_model(
+        [
+            call_dam,
+            AIMessage(content="The attack did not land, so no damage could be applied."),
+        ]
+    )
+    agent = service.build_agent(model=scripted)
+
+    res = _turn(agent, "Apply damage.")
+    assert res.reply == "The attack did not land, so no damage could be applied."
 
 
 class _FakeSessionmaker:

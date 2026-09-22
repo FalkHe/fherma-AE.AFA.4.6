@@ -16,6 +16,8 @@ from sqlalchemy import select
 from app.modules.content import service as content_service
 from app.modules.game.agent.state import (
     ASK_PLAYER_TOOL,
+    ATTACK_TOOL,
+    DAMAGE_TOOL,
     DROP_TOOL,
     GET_CAMPAIGN_TOOL,
     GET_OBJECT_TOOL,
@@ -567,6 +569,89 @@ async def use_exit(
     }
 
 
+## Combat Tools
+@tool(ATTACK_TOOL)
+async def attack(
+    target_id: str,
+    roll_id: str,
+    runtime: ToolRuntime[DmContext],
+    actor_id: str | None = None,
+    item_id: str | None = None,
+) -> dict[str, Any]:
+    """Resolve an attack roll against a target creature's armour class.
+    `target_id` is the creature being attacked.
+    `roll_id` is the ID of an attack roll (kind='attack') consumed by this attack.
+    `actor_id` is the attacking character/creature (defaults to current actor).
+    `item_id` is the weapon/item being used (optional)."""
+    ctx = runtime.context
+    target_actor_id = actor_id or ctx.actor_id
+    if not target_actor_id:
+        raise ValueError("actor_id is required for attack when no default actor is set in context.")
+
+    outcome = await playthrough_service.attack(
+        ctx.db,
+        user_id=ctx.user_id,
+        actor_id=target_actor_id,
+        target_id=target_id,
+        item_id=item_id,
+        roll_id=roll_id,
+        turn_id=ctx.turn_id,
+    )
+
+    hit_id = None
+    if outcome in ("hit", "crit"):
+        stmt = (
+            select(playthrough_models.Event.id)
+            .where(
+                playthrough_models.Event.type == "tool_call",
+                playthrough_models.Event.turn_id == ctx.turn_id,
+            )
+            .order_by(playthrough_models.Event.id.desc())
+            .limit(1)
+        )
+        result = await ctx.db.execute(stmt)
+        hit_id = result.scalar_one_or_none()
+
+    return {
+        "status": "ok",
+        "outcome": outcome,
+        "actor_id": target_actor_id,
+        "target_id": target_id,
+        "item_id": item_id,
+        "roll_id": roll_id,
+        "hit_id": hit_id,
+    }
+
+
+@tool(DAMAGE_TOOL)
+async def damage(
+    target_id: str,
+    roll_id: str,
+    hit_id: str,
+    runtime: ToolRuntime[DmContext],
+) -> dict[str, Any]:
+    """Apply damage from a landed attack hit (hit_id) to the target creature.
+    `target_id` is the wounded target creature.
+    `roll_id` is the ID of a damage roll (kind='damage') consumed by this damage call.
+    `hit_id` is the event ID of the landed attack tool_call."""
+    ctx = runtime.context
+    applied = await playthrough_service.damage(
+        ctx.db,
+        user_id=ctx.user_id,
+        target_id=target_id,
+        roll_id=roll_id,
+        hit_id=hit_id,
+        turn_id=ctx.turn_id,
+    )
+    return {
+        "status": "ok",
+        "target_id": target_id,
+        "roll_id": roll_id,
+        "hit_id": hit_id,
+        "applied": applied,
+    }
+
+
 ## Tool registry
 TOOLS = [
     roll_dice,
@@ -582,6 +667,8 @@ TOOLS = [
     give,
     use_item,
     use_exit,
+    attack,
+    damage,
     get_scene,
     get_object,
     get_campaign,
