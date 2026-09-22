@@ -6,10 +6,13 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.core.db import DbSession
-from app.core.errors import ApiError
+from app.core.errors import ApiError, ErrorCode
 from app.core.schemas import ErrorEnvelope
 from app.core.settings import get_settings
 from app.modules.auth.dependencies import CsrfAuth, CurrentAuth
+from app.modules.character import service as character_service
+from app.modules.character.errors import CharacterBuildError
+from app.modules.character.schemas import CharacterCreateRequest
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import PlaythroughError
 from app.modules.playthrough.schemas import (
@@ -98,11 +101,27 @@ async def get_campaign_run(run_id: str, auth: CurrentAuth, db: DbSession) -> Cam
         403: {"model": ErrorEnvelope},
         404: {"model": ErrorEnvelope},
         409: {"model": ErrorEnvelope},
+        422: {"model": ErrorEnvelope},
     },
 )
-async def create_character(run_id: str, auth: CsrfAuth, db: DbSession) -> CharacterRead:
+async def create_character(
+    run_id: str, auth: CsrfAuth, db: DbSession, payload: CharacterCreateRequest | None = None
+) -> CharacterRead:
+    """`payload` omitted -- the campaign's seed hero (today's behaviour);
+    given -- built through `character_service.build_sheet` first (sprint
+    009-02, WI2, AC6). An illegal spread or an unknown equipment pick
+    (`CharacterBuildError`) reaches the wire as `VALIDATION_ERROR` with
+    every message `build_sheet` found, not just the first."""
+    sheet = None
+    if payload is not None:
+        try:
+            sheet = character_service.build_sheet(payload)
+        except CharacterBuildError as exc:
+            raise ApiError(ErrorCode.VALIDATION_ERROR, details={"messages": exc.messages}) from exc
     try:
-        character = await service.create_character(db, user_id=auth.user.id, run_id=run_id)
+        character = await service.create_character(
+            db, user_id=auth.user.id, run_id=run_id, sheet=sheet
+        )
     except PlaythroughError as exc:
         raise ApiError(exc.code) from exc
     return CharacterRead.model_validate(character)
