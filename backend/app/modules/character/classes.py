@@ -386,7 +386,7 @@ CLASSES: list[CharacterClass] = [
         saving_throws=["strength", "dexterity"],
         skill_choices=2,
         skill_options=["Acrobatics", "Athletics", "History", "Insight", "Religion", "Stealth"],
-        armour_proficiencies=["none"],
+        armour_proficiencies=[],
         weapon_proficiencies=["simple weapons", "shortswords"],
         equipment=[
             EquipmentChoice(
@@ -648,7 +648,7 @@ CLASSES: list[CharacterClass] = [
         saving_throws=["constitution", "charisma"],
         skill_choices=2,
         skill_options=["Arcana", "Deception", "Insight", "Intimidation", "Persuasion", "Religion"],
-        armour_proficiencies=["none"],
+        armour_proficiencies=[],
         weapon_proficiencies=["daggers", "darts", "slings", "quarterstaffs", "light crossbows"],
         equipment=[
             EquipmentChoice(
@@ -776,7 +776,7 @@ CLASSES: list[CharacterClass] = [
         saving_throws=["intelligence", "wisdom"],
         skill_choices=2,
         skill_options=["Arcana", "History", "Insight", "Investigation", "Medicine", "Religion"],
-        armour_proficiencies=["none"],
+        armour_proficiencies=[],
         weapon_proficiencies=["daggers", "darts", "slings", "quarterstaffs", "light crossbows"],
         equipment=[
             EquipmentChoice(
