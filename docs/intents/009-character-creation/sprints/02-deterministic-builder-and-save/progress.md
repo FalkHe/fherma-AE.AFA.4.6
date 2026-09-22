@@ -9,8 +9,8 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
-| 2 | running | |
+| 1 | done | builder + schemas, 3 tests; resolve_equipment takes scores too |
+| 2 | done | save + attack lookup + route body + client; 1071 unit, 154 db; two stale state-key tests updated |
 
 Status: `open | running | done | failed`
 
