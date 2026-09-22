@@ -63,6 +63,28 @@ def test_oversized_section_splits_into_ordinals_each_within_the_limit(tmp_path, 
         assert current_words[0] in previous_words[-3:]
 
 
+def test_skipped_heading_levels_still_yield_siblings(tmp_path):
+    markdown = "# A\n\n## B\n\n#### C\n\nBody C.\n\n#### D\n\nBody D.\n"
+    path = tmp_path / "srd.md"
+    path.write_text(markdown)
+
+    chunks = service.chunk_source(path)
+
+    headings = [chunk.heading_path for chunk in chunks]
+    assert headings == ["A › B › C", "A › B › D"]
+
+
+def test_deeper_then_shallower_heading_closes_the_stack_by_level(tmp_path):
+    markdown = "# A\n\n#### C\n\nBody C.\n\n### E\n\nBody E.\n\n#### F\n\nBody F.\n"
+    path = tmp_path / "srd.md"
+    path.write_text(markdown)
+
+    chunks = service.chunk_source(path)
+
+    headings = [chunk.heading_path for chunk in chunks]
+    assert headings == ["A › C", "A › E", "A › E › F"]
+
+
 def test_empty_file_raises_srd_source_error(tmp_path):
     path = tmp_path / "srd.md"
     path.write_text("")

@@ -152,10 +152,14 @@ def _clean_heading_title(raw: str) -> str:
 
 def _parse_sections(markdown: str) -> list[tuple[str, str]]:
     """Walk `#`..`####` headings in document order with an open heading
-    stack. Returns one `(heading_path, body)` pair per heading, where body
-    is the raw text between that heading and the next heading of any level
-    (not yet stripped of surrounding whitespace)."""
-    stack: list[str] = []
+    stack. The stack closes by heading level -- pushing a heading pops every
+    open entry at or below its level first -- so a source that skips levels
+    (e.g. `##` followed directly by `####`) still yields siblings instead of
+    nesting later siblings under the first one. Returns one
+    `(heading_path, body)` pair per heading, where body is the raw text
+    between that heading and the next heading of any level (not yet
+    stripped of surrounding whitespace)."""
+    stack: list[tuple[int, str]] = []
     sections: list[tuple[str, list[str]]] = []
 
     for line in markdown.splitlines():
@@ -167,9 +171,10 @@ def _parse_sections(markdown: str) -> list[tuple[str, str]]:
 
         level = len(match.group(1))
         title = _clean_heading_title(match.group(2))
-        stack = stack[: level - 1]
-        stack.append(title)
-        sections.append((" › ".join(stack), []))
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        stack.append((level, title))
+        sections.append((" › ".join(t for _, t in stack), []))
 
     return [(heading_path, "\n".join(body_lines)) for heading_path, body_lines in sections]
 
