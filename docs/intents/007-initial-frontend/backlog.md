@@ -3,7 +3,7 @@ author: fhit:architect
 owner: human
 created: 2026-09-22
 updated: 2026-09-22
-stage: draft
+stage: approved
 ---
 # Backlog
 
@@ -11,7 +11,7 @@ Dependency-ordered. 01 and 02 have no screen and are checked through the interac
 
 | # | Task | Depends on | Issue | Status |
 |---|---|---|---|---|
-| 01 | The product can list the campaigns a player may choose from, with title, teaser and number of adventures | – | – | open |
+| 01 | The product can list the campaigns a player may choose from, with title, teaser and number of adventures | – | – | running |
 | 02 | A player's runs can be read with everything the screens show: campaign, progress, who is at the table, which adventures lie ahead | – | – | open |
 | 03 | The whole product wears the delivered dark "Goblin Pub" look and is named The Goblin's Tavern | – | – | open |
 | 04 | Every page sits behind sign-in under one shared header with an account menu; a signed-out visitor is sent to sign-in and then back to the page they asked for | 03 | – | open |
