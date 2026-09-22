@@ -26,3 +26,4 @@ Brief: docs/intents/009-character-creation/sprints/03-tavern-keeper-terminal-cha
 
 ## Verdict
 Round 1: changes requested — asking the Tavern Keeper for two things in one sentence ends the conversation with a technical error and loses everything said so far; before saving, the player never actually sees the sheet, the Keeper only describes the character in words; taking the ready-made hero saves after a bare "Confirm?" without showing who is being taken.
+Round 2: approve — creation in the terminal works end to end: the Keeper offers the ready-made hero by name or turns free words into a race and class, prints the finished sheet with hit points, armour class and abilities before asking to save, and only then writes the character; quitting keeps nothing and asking for two things at once no longer breaks the conversation. Blemish for later: the ready-made hero's gear is listed by internal item ids.
