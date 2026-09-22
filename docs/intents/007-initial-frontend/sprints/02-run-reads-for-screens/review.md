@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/41
 ---
 # Review: Sprint 02 — a player's runs can be read with everything the screens show
 
@@ -29,3 +29,10 @@ ready, and the campaign's adventures in order with what has been played. Both ar
 Brief: docs/intents/007-initial-frontend/sprints/02-run-reads-for-screens/brief.md
 
 ## Verdict
+Round 1: approve — a player's runs can now be read the way the coming screens need them: each run named by its
+campaign with progress, players and created date, and a single run opening with who is at the table, whose
+character is ready, and the adventures in order with what has been played. Checked live against a real run,
+including one pointed at content that no longer exists, which stays listed and flagged instead of breaking.
+Progress reading "0 of 1" is right for the one adventure currently shipped, and keeping an unavailable run
+readable is what lets the dashboard later explain why it cannot be opened — the screens must still refuse to
+open it.

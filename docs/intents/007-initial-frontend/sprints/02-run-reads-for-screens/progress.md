@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: draft
+stage: done
 ---
 # Progress: Sprint 02
 
@@ -23,3 +23,4 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: approve, no failed criteria.
