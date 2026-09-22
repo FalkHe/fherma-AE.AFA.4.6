@@ -23,6 +23,8 @@ function stubUnauthenticated() {
 
 function stubAuthenticated() {
   mockRoute("GET", "/api/v1/users/me", { status: 200, body: USER, headers: { "X-CSRF-Token": "t" } });
+  // The dashboard now lives at `/` (sprint 007/07 WI1) and makes this read.
+  mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
 }
 
 describe("product name (AC4)", () => {

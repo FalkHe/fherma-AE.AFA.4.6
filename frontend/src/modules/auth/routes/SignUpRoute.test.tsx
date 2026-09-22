@@ -121,6 +121,8 @@ describe("SignUpRoute (UI-13 … UI-20)", () => {
 
   it("UI-20 / 34: on success lands on / via replace, already signed in, greeting shows the server's lower-cased username", async () => {
     stubRegisterSuccess("aragorn"); // server-normalised form of "Aragorn"
+    // The dashboard now lives at `/` (sprint 007/07 WI1) and makes this read.
+    mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
     const app = renderApp(["/signup"]);
     const { username, password } = await waitFor(() => getFields());
     const user = userEvent.setup();
@@ -131,7 +133,7 @@ describe("SignUpRoute (UI-13 … UI-20)", () => {
 
     await waitFor(() => expect(app.getPathname()).toBe("/"));
     expect(screen.queryByText(/account created/i)).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome, aragorn.");
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome back, aragorn.");
 
     app.goBack();
     await waitFor(() => expect(app.getPathname()).toBe("/"));

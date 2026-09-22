@@ -22,27 +22,7 @@ import { useTranslation } from "react-i18next";
 import { useRunOverview } from "../hooks/useRunOverview";
 import { PartySection } from "../components/PartySection";
 import { AdventuresSection } from "../components/AdventuresSection";
-
-// D11's dashboard vocabulary, reused here so both screens speak of a run the
-// same way (decision handed down for this work item): `setup` reads "New";
-// `ready`/`active` read "In progress"; `archived`/`finished` read
-// "Archived". `status` comes off the wire as a plain `string` (schema.d.ts),
-// not a literal union, so an unrecognised value falls back to "New" rather
-// than rendering nothing.
-type StatusKey = "run.status.new" | "run.status.inProgress" | "run.status.archived";
-
-function statusKey(status: string): StatusKey {
-  switch (status) {
-    case "ready":
-    case "active":
-      return "run.status.inProgress";
-    case "archived":
-    case "finished":
-      return "run.status.archived";
-    default:
-      return "run.status.new";
-  }
-}
+import { runStatusKey } from "../runStatus";
 
 export function RunRoute() {
   // `useParams`'s value type is `string | undefined` regardless of the key
@@ -89,7 +69,7 @@ export function RunRoute() {
       {!isPending && !isError && !notFound && overview && (
         <>
           <Stack spacing={2} sx={{ alignItems: "flex-start" }}>
-            <Chip label={t(statusKey(overview.status))} size="small" />
+            <Chip label={t(runStatusKey(overview.status))} size="small" />
             <Typography variant="h2" component="h1">
               {overview.campaignTitle}
             </Typography>

@@ -1,9 +1,24 @@
 # playthrough
 
-The run screens: opening one run's campaign, its party and its adventures.
+The signed-in landing dashboard and the run screens: choosing a campaign run,
+then its party and its adventures.
 
 ## Owns
 
+- `DashboardRoute`, the `/` screen — the greeting, one card per run
+  (cover-art placeholder, title, status badge, teaser, the "Adventure n of m
+  · k players · Created <relative date>" line, a Begin/Resume action) newest
+  first, the empty-state invitation card, and the always-inert "Start a new
+  campaign" card. Replaces the retired `modules/home`'s `HomeRoute` (sprint
+  007/07 WI1).
+- `useRunSummaries()`, the dashboard's one read —
+  `GET /api/v1/playthrough/runs`. Server order is rendered as received and
+  never re-sorted in the browser.
+- `runStatus.ts` — `runStatusKey`/`runActionKey`, the run-status vocabulary
+  shared by `RunRoute` and the dashboard (`run.status.new/.inProgress/.archived`,
+  `dashboard.card.begin/.resume`).
+- `relativeDate.ts` — `formatRelativeDate`, an `Intl.RelativeTimeFormat`
+  wrapper for the card's "Created …" line (no date library).
 - `RunRoute`, the `/runs/:runId` screen — back link, status badge, campaign
   title and description, loading / retryable-error / not-found states
   (sprint 007/05 WI1).
@@ -25,17 +40,24 @@ The run screens: opening one run's campaign, its party and its adventures.
 
 ## Surface
 
-- `RunOverview`/`RunMember` (re-exported off the generated `components["schemas"]`
-  types) and `useRunOverview` are this module's one interface outward; no
-  other module imports from `playthrough` yet.
+- `RunOverview`/`RunMember`/`RunSummary` (re-exported off the generated
+  `components["schemas"]` types) and `useRunOverview`/`useRunSummaries` are
+  this module's interface outward; no other module imports from
+  `playthrough` yet. `DashboardRoute` imports `useCurrentUser` from `auth` —
+  the one permitted cross-module edge (structure.test.ts criterion 42(c)).
 
 ## Notes
 
 - Translation keys are disjoint per work item in one
   `core/i18n/locales/en/playthrough.json`: sprint 05 WI1 owns `run.*`, WI2
-  owns `party.*`; sprint 06 WI1 owns `adventures.*`.
+  owns `party.*`; sprint 06 WI1 owns `adventures.*`; sprint 07 WI1 owns
+  `dashboard.*`.
 - The status badge reuses the dashboard's own wording (`run.status.new` /
   `.inProgress` / `.archived`), not the raw `setup|ready|active|archived|finished`
-  status, so the run screen and the dashboard (sprint 07) read as one voice.
-- The back link goes to `/` — today's landing route, becoming the dashboard
-  of runs in sprint 07 ("the campaigns page" the brief refers to).
+  status, so the run screen and the dashboard read as one voice — both pull
+  it from the shared `runStatus.ts`.
+- An unavailable run's dashboard card renders muted with no open action; its
+  "why" trigger reveals a plain inline explanation on click rather than
+  reusing `InDevelopmentDialog`, whose copy doesn't fit this reason
+  (decision, sprint brief).
+- The back link on `RunRoute` goes to `/`, the dashboard.

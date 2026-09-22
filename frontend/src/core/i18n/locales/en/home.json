@@ -1,6 +1,0 @@
-{
-  "greeting": "Welcome, {{username}}.",
-  "dashboard": {
-    "title": "Dashboard"
-  }
-}
