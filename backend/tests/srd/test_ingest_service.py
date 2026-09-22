@@ -102,6 +102,38 @@ def test_ingest_embeds_every_chunk_and_writes_one_row_each(matching_width, monke
     assert report.cost_complete is True
 
 
+def test_ingest_embeds_the_heading_trail_joined_to_the_body_but_stores_the_body_alone(
+    matching_width, monkeypatch, tmp_path
+):
+    # A spell's name lives only in `heading_path` (e.g. "... › Fire Bolt"),
+    # never in its body text -- embedding the body alone makes every spell
+    # interchangeable. `ingest` must embed `heading_path + body` while
+    # `SrdRule.text`/`token_count` keep reporting the body only.
+    dest_path = _stub_source(
+        monkeypatch, tmp_path, source_bytes=b"# Fire Bolt\n\nRanged spell attack."
+    )
+
+    captured_texts: list[str] = []
+
+    def fake_embed_texts(texts, *, model=None):
+        captured_texts.extend(texts)
+        return EmbeddingResult(
+            vectors=[[0.1] * EMBEDDING_WIDTH for _ in texts],
+            usage=Usage(prompt_tokens=1, completion_tokens=0, total_tokens=1, cost_usd=0.01),
+        )
+
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", fake_embed_texts)
+    db = FakeWriteSession()
+
+    asyncio.run(srd_service.ingest(db))
+
+    chunks = srd_service.chunk_source(dest_path)
+    assert captured_texts == [f"{chunk.heading_path}\n\n{chunk.text}" for chunk in chunks]
+    for row, chunk in zip(db.added, chunks, strict=True):
+        assert row.text == chunk.text
+        assert row.token_count == chunk.token_count
+
+
 def test_ingest_on_embedding_failure_adds_and_commits_nothing_and_restores_the_source(
     matching_width, monkeypatch, tmp_path
 ):

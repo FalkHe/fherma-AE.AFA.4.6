@@ -31,8 +31,8 @@ import typer
 from app.core.db import get_sessionmaker
 from app.core.llm.errors import LlmError
 from app.modules.srd import service as srd_service
-from app.modules.srd.errors import SrdSourceError, SrdVectorWidthError
-from app.modules.srd.schemas import CorpusStatus, IngestReport
+from app.modules.srd.errors import SrdCorpusEmptyError, SrdSourceError, SrdVectorWidthError
+from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleMatch
 
 srd_app = typer.Typer()
 
@@ -112,3 +112,40 @@ def ingest(
     typer.echo(f"chunks: {report.chunk_count}")
     typer.echo(f"tokens: {report.token_count}")
     typer.echo(f"cost usd: {cost}")
+
+
+async def _search_rules(query: str, limit: int) -> list[RuleMatch]:
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as db:
+        return await srd_service.search_rules(db, query, limit=limit)
+
+
+def _print_match(position: int, match: RuleMatch) -> None:
+    typer.echo(f"{position}. {match.heading_path} #{match.ordinal} (distance {match.score:.3f})")
+    for line in match.text.splitlines() or [""]:
+        typer.echo(f"   {line}")
+    typer.echo("")
+
+
+@srd_app.command("search")
+def search(
+    query: str = typer.Argument(..., help="The rules question to search for."),
+    limit: int = typer.Option(
+        srd_service.DEFAULT_LIMIT, "--limit", help="How many passages to return, best first."
+    ),
+) -> None:
+    if limit < 1:
+        typer.echo(f"--limit must be a positive integer, got {limit}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        matches = asyncio.run(_search_rules(query, limit))
+    except SrdCorpusEmptyError:
+        typer.echo(EMPTY_CORPUS_MESSAGE, err=True)
+        raise typer.Exit(code=1) from None
+    except (SrdVectorWidthError, LlmError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    for position, match in enumerate(matches, start=1):
+        _print_match(position, match)
