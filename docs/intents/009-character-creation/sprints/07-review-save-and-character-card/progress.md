@@ -9,8 +9,8 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 0 | running | |
-| 1 | running | |
+| 0 | done | overview carries the character; ready-made preview is a saveable review; client regenerated |
+| 1 | done | ReviewPanel, save→invalidate→navigate, CharacterCard, 6 tests |
 
 Status: `open | running | done | failed`
 
