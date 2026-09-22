@@ -23,33 +23,10 @@ import { useTranslation } from "react-i18next";
 import type { RunSummary } from "../hooks/useRunSummaries";
 import { runActionKey, runStatusKey } from "../runStatus";
 import { formatRelativeDate } from "../relativeDate";
+import { CoverArt } from "./CoverArt";
 
 export interface CampaignCardProps {
   run: RunSummary;
-}
-
-function CoverArt(): ReactElement {
-  const { t } = useTranslation("playthrough");
-
-  return (
-    <Box
-      aria-hidden
-      sx={(theme) => ({
-        width: { xs: "100%", sm: 170 },
-        height: { xs: 120, sm: 112 },
-        flex: "0 0 auto",
-        borderRadius: theme.shape.borderRadiusOrganicSoft,
-        display: "grid",
-        placeItems: "center",
-        border: "1px solid var(--border-soft)",
-        background: "linear-gradient(155deg, var(--loam-700), var(--bark-900) 60%, var(--loam-900))",
-      })}
-    >
-      <Typography variant="overline" sx={{ color: "var(--text-faint)" }}>
-        {t("dashboard.card.coverArtPlaceholder")}
-      </Typography>
-    </Box>
-  );
 }
 
 function UnavailableCard(): ReactElement {
