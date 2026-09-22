@@ -19,6 +19,7 @@ The rules text now lives in the repository: one command downloads the freely lic
 
 ## Heads-up
 - Tests are deliberately few, as requested; the live dry-run during development is the main proof.
+- An earlier, never-reviewed attempt at sprints 02 to 06 from 16 September still sits on the server as unmerged branches, built on a much older state of the product. This sprint was done fresh against the current product; you may want to discard or mine those old branches.
 - The stored file comes out owned by root when written from the container, so committing it needed a permissions fix by hand. Proposed as a backlog item.
 
 Brief: docs/intents/004-srd-knowledge-base/sprints/02-fetch-and-chunk/brief.md
