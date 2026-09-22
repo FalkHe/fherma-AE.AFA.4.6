@@ -740,7 +740,10 @@ def _synthetic_three_adventure_campaign() -> LoadedCampaign:
         campaign=campaign,
         version="v1",
         adventures=adventures,
-        scenes={a.entry_scene: Scene(id=a.entry_scene, title="Scene", truth=["t"]) for a in adventures.values()},
+        scenes={
+            a.entry_scene: Scene(id=a.entry_scene, title="Scene", truth=["t"])
+            for a in adventures.values()
+        },
         object_templates={"npc": campaign.object_templates[0]},
     )
 

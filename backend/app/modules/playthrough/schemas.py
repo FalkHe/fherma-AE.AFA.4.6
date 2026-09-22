@@ -45,6 +45,55 @@ class CampaignRunSummaryRead(CamelModel):
     unavailable: bool
 
 
+class CampaignRunMemberRead(CamelModel):
+    """One seat in `GET /runs/{runId}/overview` (WI2, AC3) -- `userId,
+    username, role, ready, characterName`. `ready` is `characterName is not
+    None`; a non-player creature never counts, since only a member's own
+    character carries `objects.member_id`."""
+
+    user_id: str
+    username: str
+    role: str
+    ready: bool
+    character_name: str | None
+
+
+class CampaignRunAdventureRead(CamelModel):
+    """One of the campaign's adventures, in the campaign's own order
+    (WI2, AC3) -- `id, title, introExcerpt, status`. `id` is the campaign's
+    adventure id, never the `adventure_runs` row id. `status` is
+    `done`/`active`/`unplayed`, mapped from the matching `adventure_runs`
+    row's own `status` (`completed`/`active`) or its absence."""
+
+    id: str
+    title: str
+    intro_excerpt: str
+    status: str
+
+
+class CampaignRunOverviewRead(CamelModel):
+    """`GET /runs/{runId}/overview`'s whole answer (WI2, AC3): the run
+    itself, its members and its adventures, together -- so an overview
+    screen never has to make three calls where one now does. Mirrors
+    `CampaignRunSummaryRead`'s unavailable-content contract (AC2): a run
+    whose pinned campaign or version no longer loads answers with
+    `campaignTitle`/`campaignSummary` `None`, `unavailable` `True` and
+    `adventures` empty; `members` is unaffected, since it never reads
+    content."""
+
+    id: str
+    campaign_id: str
+    content_version: str
+    title: str | None
+    status: str
+    created_at: datetime
+    campaign_title: str | None
+    campaign_summary: str | None
+    unavailable: bool
+    members: list[CampaignRunMemberRead]
+    adventures: list[CampaignRunAdventureRead]
+
+
 class RenameCampaignRunRequest(CamelModel):
     title: str = Field(min_length=1, max_length=120)
 

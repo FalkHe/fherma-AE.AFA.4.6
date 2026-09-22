@@ -57,6 +57,9 @@ from app.modules.playthrough.models import (
 )
 from app.modules.playthrough.schemas import (
     EVENT_PAYLOADS,
+    CampaignRunAdventureRead,
+    CampaignRunMemberRead,
+    CampaignRunOverviewRead,
     CampaignRunSummaryRead,
     CharacterState,
     NarrationRead,
@@ -65,6 +68,7 @@ from app.modules.playthrough.schemas import (
     RunCost,
     TurnCost,
 )
+from app.modules.users.models import User
 
 logger = structlog.get_logger()
 
@@ -349,6 +353,104 @@ async def get_campaign_run(db: AsyncSession, *, user_id: str, run_id: str) -> Ca
     """
     await _require_member(db, run_id=run_id, user_id=user_id)
     return await _get_run(db, run_id)
+
+
+def _excerpt(text: str, limit: int = 200) -> str:
+    """`text` unchanged when it already fits `limit`; otherwise cut at
+    `limit`, dropped back to the last space so the cut never lands
+    mid-word (kept as-is when there is no space to drop back to),
+    `rstrip()`ped and closed with `"…"` (WI2, I2)."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    last_space = cut.rfind(" ")
+    if last_space != -1:
+        cut = cut[:last_space]
+    return cut.rstrip() + "…"
+
+
+async def get_run_overview(
+    db: AsyncSession, *, user_id: str, run_id: str
+) -> CampaignRunOverviewRead:
+    """One aggregate overview for a run screen (WI2, AC3): the run itself,
+    every member with username, role, a `ready` flag and the character's
+    name when one exists, and the campaign's adventures in the campaign's
+    own order with a clipped intro and a done/active/unplayed status.
+
+    Gated by membership exactly like every other read (`_require_member`
+    then `_get_run`). Members come from one query joining
+    `campaign_run_members` to `users` and outer-joining `objects` on
+    `member_id == member.id AND kind == 'creature'` -- a non-player
+    creature's `member_id` is always `None`, so it can never supply a
+    `character_name` (← research). Adventures come from `_load_pinned(run)`
+    (`None` means unavailable, AC2's twin) paired with this run's own
+    `adventure_runs` rows. Reads only: no commit, no status change, no
+    event.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    run = await _get_run(db, run_id)
+
+    member_stmt = (
+        select(CampaignRunMember, User.username, GameObject.name)
+        .join(User, User.id == CampaignRunMember.user_id)
+        .outerjoin(
+            GameObject,
+            (GameObject.member_id == CampaignRunMember.id) & (GameObject.kind == "creature"),
+        )
+        .where(CampaignRunMember.campaign_run_id == run_id)
+        .order_by(CampaignRunMember.id)
+    )
+    member_result = await db.execute(member_stmt)
+    members = [
+        CampaignRunMemberRead(
+            user_id=member.user_id,
+            username=username,
+            role=member.role,
+            ready=character_name is not None,
+            character_name=character_name,
+        )
+        for member, username, character_name in member_result.all()
+    ]
+
+    adventure_run_stmt = select(AdventureRun).where(AdventureRun.campaign_run_id == run_id)
+    adventure_run_result = await db.execute(adventure_run_stmt)
+    status_by_adventure_id = {
+        row.adventure_id: row.status for row in adventure_run_result.scalars().all()
+    }
+
+    loaded = _load_pinned(run)
+    adventures: list[CampaignRunAdventureRead] = []
+    if loaded is not None:
+        for adventure_id, adventure in loaded.adventures.items():
+            row_status = status_by_adventure_id.get(adventure_id)
+            if row_status == "completed":
+                status = "done"
+            elif row_status == "active":
+                status = "active"
+            else:
+                status = "unplayed"
+            adventures.append(
+                CampaignRunAdventureRead(
+                    id=adventure.id,
+                    title=adventure.title,
+                    intro_excerpt=_excerpt(adventure.intro),
+                    status=status,
+                )
+            )
+
+    return CampaignRunOverviewRead(
+        id=run.id,
+        campaign_id=run.campaign_id,
+        content_version=run.content_version,
+        title=run.title,
+        status=run.status,
+        created_at=run.created_at,
+        campaign_title=loaded.campaign.title if loaded is not None else None,
+        campaign_summary=loaded.campaign.summary if loaded is not None else None,
+        unavailable=loaded is None,
+        members=members,
+        adventures=adventures,
+    )
 
 
 async def create_character(

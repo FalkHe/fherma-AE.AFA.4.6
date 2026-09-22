@@ -89,7 +89,7 @@ Owns a player's playthrough of a campaign and who may act in it.
 
 ## Surface
 
-Ten endpoints, in two path families under `/api/v1/playthrough`, all
+Eleven endpoints, in two path families under `/api/v1/playthrough`, all
 requiring an authenticated caller (`POST` and `PATCH` are also
 CSRF-guarded). Cost and rolling both have no endpoint at all — see the CLI
 commands and the notes below the service list.
@@ -102,6 +102,15 @@ commands and the notes below the service list.
   longer loads still lists, with `unavailable: true` and no campaign copy;
   nothing raises. A sibling literal to `/campaign` (not
   `/campaign/{runId}`, which the path parameter would shadow).
+- `GET /api/v1/playthrough/runs/{runId}/overview` — one run read as a full
+  overview screen (WI2, AC3): the run itself, every member with username,
+  role, a `ready` flag and the character's name when one exists, and the
+  campaign's adventures in the campaign's own order with a clipped intro
+  and a `done`/`active`/`unplayed` status — `CampaignRunOverviewRead`. A
+  run whose pinned campaign or version no longer loads still answers `200`
+  with `unavailable: true`, no campaign copy and an empty adventure list
+  (AC2's twin); `members` is unaffected. A non-member and an unknown id
+  are refused alike, exactly like every other read in this module.
 - `POST /api/v1/playthrough/campaign` with `{"campaignId": …}` — starts a
   campaign run, answering `201` and the run.
 - `GET /api/v1/playthrough/campaign` — the caller's runs, newest first,
@@ -152,6 +161,21 @@ else — `campaignTitle`/`campaignSummary`/`adventuresTotal` are `null` and
 `adventuresCompleted` and `playerCount` are always counted, from this
 run's own rows rather than from content.
 
+A run overview (`GET /runs/{runId}/overview`, `CampaignRunOverviewRead`)
+reads as `id, campaignId, contentVersion, title, status, createdAt,
+campaignTitle, campaignSummary, unavailable, members, adventures` and
+nothing else. A member (`CampaignRunMemberRead`) reads as `userId,
+username, role, ready, characterName` — `ready` is `characterName is not
+null`; a non-player creature never flips it, since only a member's own
+character carries `objects.memberId`. An adventure
+(`CampaignRunAdventureRead`) reads as `id, title, introExcerpt, status` —
+`id` is the campaign's adventure id, not the `adventure_runs` row id, and
+`introExcerpt` is the intro clipped to 200 characters at a word boundary
+with a trailing `…` when it was cut. `campaignTitle`/`campaignSummary` are
+`null`, `unavailable` is `true` and `adventures` is empty exactly when the
+pinned content no longer loads; `members` reads the same either way, since
+it never touches content.
+
 Service functions (`service.py`), called as `service.f(...)`:
 
 - `list_run_summaries` — `list_campaign_runs`'s own rows and order,
@@ -172,6 +196,17 @@ Service functions (`service.py`), called as `service.f(...)`:
   `objects.instance_key` rather than by an explicit check.
 - `list_campaign_runs` — the caller's runs, newest first.
 - `get_campaign_run` — one run by id.
+- `get_run_overview` — one run's aggregate overview (WI2, AC3): members
+  from one query joining `campaign_run_members` to `users` and
+  outer-joining `objects` on `member_id == member.id AND kind ==
+  'creature'`, adventures from `_load_pinned(run)` paired with this run's
+  own `adventure_runs` rows, in the campaign's own order. `None` from
+  `_load_pinned` means `unavailable`, no campaign copy and no adventures —
+  `members` is unaffected. Reads only: no commit, no status change, no
+  event.
+- `_excerpt` — clips text to 200 characters at the last word boundary
+  before the cut, `rstrip()`ped and closed with `…`; unchanged when it
+  already fits.
 - `create_character` — builds the run's one player character (`GameObject`
   with no `template_id`, owned by the caller's membership) from a
   `SeedCharacter`-shaped sheet, defaulting to the pinned campaign's own seed
