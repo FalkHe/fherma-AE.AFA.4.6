@@ -5,18 +5,29 @@ then its party and its adventures.
 
 ## Owns
 
-- `DashboardRoute`, the `/` screen — the greeting, one card per run
+- `DashboardRoute`, the `/` screen — the greeting, a tag row (`In progress` /
+  `New` / `Archived`) that filters the run list to one group at a time (the
+  chosen tag lives in component state only, never persisted), each card
   (cover-art placeholder, title, status badge, teaser, the "Adventure n of m
   · k players · Created <relative date>" line, a Begin/Resume action) newest
-  first, the empty-state invitation card, and the always-inert "Start a new
-  campaign" card. Replaces the retired `modules/home`'s `HomeRoute` (sprint
-  007/07 WI1).
+  first within its group, the empty-state invitation card, and the
+  always-inert "Start a new campaign" card. The dashboard opens on In
+  progress, falls back to New when nothing is in progress, and shows only
+  the invitation with no tags at all when there are no runs; a tag with no
+  runs in it shows a short "nothing here" line instead of an empty list. An
+  archived card renders muted with no action block at all — it cannot be
+  opened — under a note above the list saying archived runs are kept as they
+  are and are view-only. Replaces the retired `modules/home`'s `HomeRoute`.
 - `useRunSummaries()`, the dashboard's one read —
   `GET /api/v1/playthrough/runs`. Server order is rendered as received and
-  never re-sorted in the browser.
+  never re-sorted in the browser; the tag filter is applied client-side only,
+  there is no server-side filter parameter.
 - `runStatus.ts` — `runStatusKey`/`runActionKey`, the run-status vocabulary
   shared by `RunRoute` and the dashboard (`run.status.new/.inProgress/.archived`,
-  `dashboard.card.begin/.resume`).
+  `dashboard.card.begin/.resume`). `runStatusKey`'s three values are also the
+  dashboard's tag set, so a card's badge and the tag it files under can never
+  disagree. `runActionKey` returns `null` for an archived or finished run —
+  the dashboard renders no action block for it.
 - `relativeDate.ts` — `formatRelativeDate`, an `Intl.RelativeTimeFormat`
   wrapper for the card's "Created …" line (no date library).
 - `RunRoute`, the `/runs/:runId` screen — back link, status badge, campaign
@@ -51,13 +62,17 @@ then its party and its adventures.
 - Translation keys are disjoint per work item in one
   `core/i18n/locales/en/playthrough.json`: sprint 05 WI1 owns `run.*`, WI2
   owns `party.*`; sprint 06 WI1 owns `adventures.*`; sprint 07 WI1 owns
-  `dashboard.*`.
+  `dashboard.*` and sprint 08 WI1 owns `dashboard.tags.*` within it.
 - The status badge reuses the dashboard's own wording (`run.status.new` /
   `.inProgress` / `.archived`), not the raw `setup|ready|active|archived|finished`
   status, so the run screen and the dashboard read as one voice — both pull
   it from the shared `runStatus.ts`.
-- An unavailable run's dashboard card renders muted with no open action; its
-  "why" trigger reveals a plain inline explanation on click rather than
-  reusing `InDevelopmentDialog`, whose copy doesn't fit this reason
-  (decision, sprint brief).
+- Two different things mute a dashboard card, checked in this order —
+  availability first, status second: an *unavailable* run (its pinned
+  campaign content is gone) renders with no open action and a "why" trigger
+  that reveals a plain inline explanation on click, rather than reusing
+  `InDevelopmentDialog`, whose copy doesn't fit this reason (decision, sprint
+  brief), regardless of its status; only once a run is available does an
+  *archived* status mute the card with no action block and no trigger at
+  all — nothing can explain or undo it, so there is nothing to click.
 - The back link on `RunRoute` goes to `/`, the dashboard.

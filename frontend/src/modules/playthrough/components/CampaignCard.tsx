@@ -117,10 +117,18 @@ export function CampaignCard({ run }: CampaignCardProps): ReactElement {
   // it never actually falls back in practice.
   const adventuresTotal = run.adventuresTotal ?? 0;
   const currentAdventure = Math.min(run.adventuresCompleted + 1, adventuresTotal);
+  const statusKey = runStatusKey(run.status);
+  const isArchived = statusKey === "run.status.archived";
   const actionKey = runActionKey(run.status);
 
   return (
-    <Card variant="outlined" sx={(theme) => ({ borderRadius: theme.shape.borderRadiusOrganic })}>
+    <Card
+      variant="outlined"
+      sx={(theme) => ({
+        borderRadius: theme.shape.borderRadiusOrganic,
+        ...(isArchived && { opacity: 0.6, backgroundColor: "var(--surface-inset)" }),
+      })}
+    >
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={4}
@@ -132,7 +140,7 @@ export function CampaignCard({ run }: CampaignCardProps): ReactElement {
             <Typography sx={{ fontFamily: "var(--font-display)", fontWeight: "var(--weight-bold)", fontSize: "1.1875rem" }}>
               {run.campaignTitle}
             </Typography>
-            <Chip label={t(runStatusKey(run.status))} size="small" />
+            <Chip label={t(statusKey)} size="small" />
           </Stack>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
             {run.campaignSummary}
@@ -146,22 +154,24 @@ export function CampaignCard({ run }: CampaignCardProps): ReactElement {
             })}
           </Typography>
         </Box>
-        <Box
-          sx={{
-            flex: { xs: "1 1 100%", sm: "0 0 auto" },
-            display: "flex",
-            justifyContent: { xs: "flex-start", sm: "flex-end" },
-          }}
-        >
-          <Button
-            component={RouterLink}
-            to={`/runs/${run.id}`}
-            variant={actionKey === "dashboard.card.begin" ? "outlined" : "contained"}
-            size="small"
+        {actionKey !== null && (
+          <Box
+            sx={{
+              flex: { xs: "1 1 100%", sm: "0 0 auto" },
+              display: "flex",
+              justifyContent: { xs: "flex-start", sm: "flex-end" },
+            }}
           >
-            {t(actionKey)}
-          </Button>
-        </Box>
+            <Button
+              component={RouterLink}
+              to={`/runs/${run.id}`}
+              variant={actionKey === "dashboard.card.begin" ? "outlined" : "contained"}
+              size="small"
+            >
+              {t(actionKey)}
+            </Button>
+          </Box>
+        )}
       </Stack>
     </Card>
   );
