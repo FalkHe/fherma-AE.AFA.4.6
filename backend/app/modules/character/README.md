@@ -40,6 +40,18 @@ same "content lives in git" approach as the `content` module.
   in-voice line as a refusal and keeps the session running, never a
   traceback. No Postgres checkpointer — the thread, and any unsaved
   draft, dies with the process.
+- `POST /api/v1/character/runs/{runId}/creation` (sprint 009-05) — starts
+  a creation conversation for a run: 201 with the deterministic greeting,
+  409 `CHARACTER_EXISTS` if the caller already has one. `POST
+  /api/v1/character/creation/{conversationId}/messages` — sends one
+  player message, answers `CreationReply` (the reply, the sheet so far,
+  the step reached 1-7, `canSave`, `saved`, `error`). Both routes keep
+  their state only on `app.state` — one lazily built agent and a dict of
+  live conversations, nothing persisted (a restart starts over, ← D12).
+  `character/service.creation_progress(draft)` renders the sheet-so-far
+  and the step purely from the draft; a turn that raises answers 200 with
+  the in-voice `MODEL_ERROR_REPLY` line and `error: true` rather than a
+  raw failure.
 - The chat (sprint 009-04) walks: ready-made offer → race/class (a yes
   before writing) → ability scores, offered three ways — "suggest a set
   for my class" (`suggest_scores`), "roll for me" (`roll_scores`, the
