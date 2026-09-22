@@ -23,3 +23,4 @@ The Tavern Keeper conversation can now be held over the network, one message at 
 Brief: docs/intents/009-character-creation/sprints/05-creation-chat-api/brief.md
 
 ## Verdict
+Round 1: changes requested — the ability scores in the running sheet leave out the race's bonus, so a halfling rogue reads dexterity 15 while the armour class beside it, the Keeper's own review and the saved character all say 17; everything else checked out over the network.
