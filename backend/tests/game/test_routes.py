@@ -173,9 +173,7 @@ def test_run_turn_rejects_text_over_2000_characters(
     assert_error_envelope(response, status=422, code="VALIDATION_ERROR")
 
 
-def test_run_turn_without_session_cookie_returns_401_and_never_calls_service(
-    client, monkeypatch
-):
+def test_run_turn_without_session_cookie_returns_401_and_never_calls_service(client, monkeypatch):
     calls = []
 
     async def fake_run_turn(db, *, user_id, run_id, text):

@@ -40,9 +40,7 @@ router = APIRouter()
 )
 async def run_turn(run_id: str, payload: TurnRequest, auth: CsrfAuth, db: DbSession) -> TurnRead:
     try:
-        outcome = await service.run_turn(
-            db, user_id=auth.user.id, run_id=run_id, text=payload.text
-        )
+        outcome = await service.run_turn(db, user_id=auth.user.id, run_id=run_id, text=payload.text)
     except (PlaythroughError, GameError) as exc:
         details: dict[str, Any] | None = getattr(exc, "details", None)
         raise ApiError(exc.code, details=details) from exc

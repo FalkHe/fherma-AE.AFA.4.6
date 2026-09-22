@@ -11,6 +11,18 @@ or writes an event.
 - `service.py` — the public surface: `build_agent()` compiles the graph over
   the core chat model and the resolved system prompt; `turn()` runs one
   player message on a thread and returns the reply plus the rolls made.
+  `run_turn(db, *, user_id, run_id, text)` (sprint 010/03) is the one entry
+  point the HTTP route calls: it decides which of five kinds
+  (`action`/`answer`/`roll`/`retry`/`opening`) a turn is from the run's own
+  thread state and transcript, never from what the caller claims, and
+  returns a `TurnOutcome(turn_id, kind, awaiting)`.
+- `errors.py` — `GameError`, the base every failure `run_turn` raises
+  directly carries (`code`, `details`); a `PlaythroughError` raised inside
+  `playthrough.service` propagates through unchanged instead.
+- `schemas.py` — the turn route's wire shapes: `TurnRequest` (`text` only,
+  `extra="forbid"`) and `TurnRead` (`turnId`, `kind`, `awaiting`).
+- `routes.py` — `POST /runs/{run_id}/turn`, behind `CsrfAuth`, mapping
+  `PlaythroughError`/`GameError` onto the one error envelope.
 - `agent/graph.py` — the `StateGraph`: `load_context -> record_action -> guard -> narrate -> (tools -> narrate)* -> record_narration -> END`.
 - `agent/nodes.py` — node factories, context hydration, and routing functions.
 - `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id —
@@ -33,7 +45,9 @@ or writes an event.
 
 ## Surface
 
-- CLI only. No HTTP route yet.
+- `POST /api/v1/game/runs/{runId}/turn` (sprint 010/03) — the network call
+  that runs a turn; wired in `app/api/v1/router.py` under `/game`. Plus the
+  CLI below.
 
 ## Tools
 
