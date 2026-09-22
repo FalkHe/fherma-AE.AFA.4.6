@@ -12,7 +12,7 @@ stage: approved
 | # | Task | Depends on | Issue | Status |
 |---|---|---|---|---|
 | 01 | The terminal game knows which hero acts, resumes a run where it was left, and marks it under way | – | #55 | done |
-| 02 | Each turn's cost is recorded; a momentary model failure is retried quietly, not fatal | 01 | #56 | open |
+| 02 | Each turn's cost is recorded; a momentary model failure is retried quietly, not fatal | 01 | #56 | done |
 | 03 | An action, answer, roll, retry or the opening of a new adventure can be sent to the game over the network | 01 | #57 | open |
 | 04 | Rule lookups and changes in the world become short lines the player can see | 01 | #58 | open |
 | 05 | One read gives the play screen its adventure, scene and each hero's hit points, armour class and sheet | 01 | #59 | open |

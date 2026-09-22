@@ -28,7 +28,16 @@ round-trip, including `classify()`'s real dispatch table, is qa's own
 `test_embeddings.py`), so this file's embedding tests are the seam's own
 control flow only - empty-input / blank-key short-circuits, the malformed
 and width-mismatch checks, index-based reordering, and the usage mapping.
+
+Sprint 010-02 WI1 adds `ainvoke_chat()`'s own unit coverage at the bottom:
+a `_StubRunnable` fakes the already-built runnable it takes instead of a
+`BaseChatModel`, driven with `asyncio.run()` the way this repo's other
+async tests are (no `pytest-asyncio` dependency). `retry._asleep` is
+monkeypatched alongside `retry._sleep` so its retries never really sleep
+either.
 """
+
+import asyncio
 
 import openrouter
 import pytest
@@ -42,6 +51,7 @@ from openrouter.operations import (
 from app.core.llm import retry as llm_retry
 from app.core.llm import service as llm_service
 from app.core.llm.errors import (
+    LlmAuthError,
     LlmBadRequestError,
     LlmConfigurationError,
     LlmMalformedError,
@@ -387,3 +397,129 @@ def test_embed_texts_reraises_an_unclassified_exception_unchanged(monkeypatch):
 
     with pytest.raises(_ForeignError):
         llm_service.embed_texts(["hello"])
+
+
+# --- sprint 010-02 WI1: `ainvoke_chat()` -----------------------------------
+#
+# `ainvoke_chat()` never calls `chat_model()` - it takes an already-built
+# runnable - so these tests hand it a `_StubRunnable` directly rather than
+# monkeypatching `service.chat_model` the way the `chat()` tests above do.
+# `retry._asleep` is monkeypatched (not `retry._sleep`, which `chat()`'s own
+# sync path uses) so the async retry loop underneath never really sleeps.
+
+
+class _StubRunnable:
+    """Fakes an already-built, already-tool-bound `Runnable` - what a
+    caller like the game agent would hand `ainvoke_chat()`, never a raw
+    `BaseChatModel`."""
+
+    def __init__(self, *, results=None, error=None):
+        self._results = list(results or [])
+        self._error = error
+        self.calls: list[object] = []
+
+    async def ainvoke(self, prompt, config=None):
+        self.calls.append(prompt)
+        if self._results:
+            next_result = self._results.pop(0)
+            if isinstance(next_result, BaseException):
+                raise next_result
+            return next_result
+        if self._error is not None:
+            raise self._error
+        raise AssertionError("_StubRunnable.ainvoke called with nothing scripted")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_asleep(monkeypatch):
+    monkeypatch.setattr(llm_retry, "_asleep", _noop_asleep)
+
+
+async def _noop_asleep(seconds):
+    return None
+
+
+def test_ainvoke_chat_retries_a_retryable_failure_once_then_returns_the_reply():
+    # ← behaviour: a retryable error fails once and the call then succeeds
+    # quietly, returning the reply.
+    reply = AIMessage(content="fine", response_metadata={"finish_reason": "stop"})
+    model = _StubRunnable(results=[LlmUnavailableError("502"), reply])
+
+    result = asyncio.run(llm_service.ainvoke_chat(model, "hello"))
+
+    assert result is reply
+    assert len(model.calls) == 2
+
+
+def test_ainvoke_chat_raises_a_non_retryable_failure_at_once():
+    # ← behaviour: a non-retryable error is raised at once with no second
+    # attempt.
+    model = _StubRunnable(error=LlmAuthError("bad key"))
+
+    with pytest.raises(LlmAuthError):
+        asyncio.run(llm_service.ainvoke_chat(model, "hello"))
+
+    assert len(model.calls) == 1
+
+
+def test_ainvoke_chat_refuses_at_once_for_a_content_filter_finish_reason():
+    # ← the other `raise_for_finish_reason` outcome: a refusal is
+    # non-retryable, attempted once, same as any other non-retryable class.
+    refusal = AIMessage(content="", response_metadata={"finish_reason": "content_filter"})
+    model = _StubRunnable(results=[refusal])
+
+    with pytest.raises(LlmRefusedError):
+        asyncio.run(llm_service.ainvoke_chat(model, "hello"))
+
+    assert len(model.calls) == 1
+
+
+def test_ainvoke_chat_caps_a_malformed_reply_at_two_attempts():
+    # ← behaviour: a malformed reply is capped at two attempts, not the
+    # full configured budget - same `MALFORMED_MAX_ATTEMPTS` cap `chat()`
+    # already retries under.
+    model = _StubRunnable(error=LlmMalformedError("truncated"))
+
+    with pytest.raises(LlmMalformedError):
+        asyncio.run(llm_service.ainvoke_chat(model, "hello"))
+
+    assert len(model.calls) == llm_retry.MALFORMED_MAX_ATTEMPTS
+
+
+def test_ainvoke_chat_translates_a_recognised_provider_exception(monkeypatch):
+    provider_exc = _ForeignError("502 from the provider")
+    classified = LlmUnavailableError("502 from the provider")
+    monkeypatch.setattr(
+        llm_service, "classify", lambda exc: classified if exc is provider_exc else None
+    )
+    model = _StubRunnable(error=provider_exc)
+
+    with pytest.raises(LlmUnavailableError) as excinfo:
+        asyncio.run(llm_service.ainvoke_chat(model, "hello"))
+
+    assert excinfo.value is classified
+    assert excinfo.value.__cause__ is provider_exc
+
+
+def test_ainvoke_chat_reraises_an_unclassified_exception_unchanged(monkeypatch):
+    provider_exc = _ForeignError("not ours")
+    monkeypatch.setattr(llm_service, "classify", lambda exc: None)
+    model = _StubRunnable(error=provider_exc)
+
+    with pytest.raises(_ForeignError):
+        asyncio.run(llm_service.ainvoke_chat(model, "hello"))
+
+
+def test_ainvoke_chat_never_calls_chat_model(monkeypatch):
+    # ← contract: unlike `chat()`, `ainvoke_chat()` must not build its own
+    # model - `LlmConfigurationError` stays a `build_agent()`-time failure.
+    def _explode(**_):
+        raise AssertionError("ainvoke_chat must not call chat_model()")
+
+    monkeypatch.setattr(llm_service, "chat_model", _explode)
+    reply = AIMessage(content="fine", response_metadata={"finish_reason": "stop"})
+    model = _StubRunnable(results=[reply])
+
+    result = asyncio.run(llm_service.ainvoke_chat(model, "hello"))
+
+    assert result is reply

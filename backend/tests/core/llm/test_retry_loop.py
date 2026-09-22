@@ -12,8 +12,14 @@ Not one of the qa-owned filenames (`test_retry.py` / `test_errors.py` /
 `test_service.py` / `test_commands.py`) - qa drives the loop black-box,
 through the real CLI and a scripted `httpx.MockTransport`; this file drives
 `retry.py` directly.
+
+Sprint 010-02 WI1 adds `TestAcallWithRetry` below, covering `acall_with_retry()`
+- the async twin driven via `asyncio.run()` (no `pytest-asyncio` dependency,
+matching this repo's other async tests) - with `retry._asleep` monkeypatched
+so it never really sleeps either.
 """
 
+import asyncio
 import re
 
 import pytest
@@ -200,6 +206,80 @@ def test_call_with_retry_logs_each_attempt_and_the_exhaustion(stub_settings, cap
         assert "chat" in line
         assert "LLM_UNAVAILABLE" in line
     assert output.count("llm_retry_exhausted") == 1
+
+
+def _aoperation(*, fail_times, error_factory):
+    """Async twin of `_operation()`: an awaitable zero-arg callable that
+    raises `error_factory()` for the first `fail_times` calls, then returns
+    the call count."""
+    calls = {"count": 0}
+
+    async def _call():
+        calls["count"] += 1
+        if calls["count"] <= fail_times:
+            raise error_factory()
+        return calls["count"]
+
+    _call.calls = calls
+    return _call
+
+
+class TestAcallWithRetry:
+    """`acall_with_retry()` - the async twin of `call_with_retry()` (sprint
+    010-02 WI1) - shares `_decide_retry()`'s budget/backoff/logging, so this
+    covers only the behaviours specific to the async path; the formula
+    itself is already proved above."""
+
+    @pytest.fixture(autouse=True)
+    def _no_asleep(self, monkeypatch):
+        monkeypatch.setattr(llm_retry, "_asleep", self._record_asleep)
+        self.asleep_calls: list[float] = []
+
+    async def _record_asleep(self, seconds):
+        self.asleep_calls.append(seconds)
+
+    def test_a_retryable_error_fails_once_then_succeeds_quietly(self, stub_settings):
+        stub_settings(attempts=3)
+        op = _aoperation(fail_times=1, error_factory=LlmUnavailableError)
+
+        result = asyncio.run(llm_retry.acall_with_retry(op, label="chat_async"))
+
+        assert result == 2
+        assert op.calls["count"] == 2
+        assert len(self.asleep_calls) == 1
+
+    def test_a_non_retryable_error_is_raised_at_once_with_no_second_attempt(self, stub_settings):
+        stub_settings(attempts=5)
+        op = _aoperation(fail_times=99, error_factory=LlmAuthError)
+
+        with pytest.raises(LlmAuthError):
+            asyncio.run(llm_retry.acall_with_retry(op, label="chat_async"))
+
+        assert op.calls["count"] == 1
+        assert self.asleep_calls == []
+
+    def test_a_malformed_reply_is_capped_at_two_attempts(self, stub_settings):
+        stub_settings(attempts=5)
+        op = _aoperation(fail_times=99, error_factory=LlmMalformedError)
+
+        with pytest.raises(LlmMalformedError):
+            asyncio.run(llm_retry.acall_with_retry(op, label="chat_async"))
+
+        assert op.calls["count"] == llm_retry.MALFORMED_MAX_ATTEMPTS
+
+    def test_reraises_the_last_error_unchanged_once_the_budget_is_spent(self, stub_settings):
+        stub_settings(attempts=2)
+        errors = [LlmUnavailableError("first"), LlmUnavailableError("second")]
+
+        def _factory():
+            return errors[min(len(errors) - 1, op.calls["count"])]
+
+        op = _aoperation(fail_times=99, error_factory=_factory)
+
+        with pytest.raises(LlmUnavailableError) as excinfo:
+            asyncio.run(llm_retry.acall_with_retry(op, label="chat_async"))
+
+        assert excinfo.value is errors[1]
 
 
 def test_stream_with_retry_retries_only_before_the_first_item(stub_settings):

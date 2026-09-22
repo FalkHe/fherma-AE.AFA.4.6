@@ -18,11 +18,19 @@ counts *total* attempts including the first.
 leaves `code`/`retryable` as bare annotations with no default (← sprint 02's
 `errors.py`), so a future subclass that forgets to set one must degrade to
 "not retryable" here rather than crash the loop with `AttributeError`.
+
+`acall_with_retry()` (sprint 010-02) is the async twin of `call_with_retry()`
+for callers that must await the model (`service.ainvoke_chat()`). Both share
+one decision function, `_decide_retry()`, for budget, backoff and logging -
+only the actual wait differs: `call_with_retry()` blocks on `_sleep()`,
+`acall_with_retry()` awaits `_asleep()`. Neither `stream_with_retry()` nor
+its streaming shape gets an async twin - nothing here needed one.
 """
 
+import asyncio
 import random
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 
 import structlog
 
@@ -37,9 +45,15 @@ MAX_RETRY_AFTER_SECONDS = 30.0
 
 
 def _sleep(seconds: float) -> None:
-    """Wraps `time.sleep` - the only AC5 injection point; tests monkeypatch
+    """Wraps `time.sleep` - the sync AC5 injection point; tests monkeypatch
     `retry._sleep` so the suite never actually sleeps."""
     time.sleep(seconds)
+
+
+async def _asleep(seconds: float) -> None:
+    """Wraps `asyncio.sleep` - the async AC5 injection point; tests
+    monkeypatch `retry._asleep` so the async suite never actually sleeps."""
+    await asyncio.sleep(seconds)
 
 
 def _random() -> float:
@@ -74,9 +88,16 @@ def _delay_before_next(err: LlmError, attempt: int, *, backoff_base: float) -> f
     return min(computed, MAX_RETRY_AFTER_SECONDS)
 
 
-def _log_attempt_and_should_retry(err: LlmError, *, label: str, attempt: int) -> bool:
+def _decide_retry(err: LlmError, *, label: str, attempt: int) -> float | None:
     """Logs `llm_retry_attempt` (and `llm_retry_exhausted` when the budget is
-    spent) for one failed attempt. Returns whether the caller should retry."""
+    spent) for one failed attempt. Returns the delay to wait before the next
+    attempt, or `None` when the budget is spent and the caller should stop.
+
+    Single-sourced between the sync and async retry loops: neither one
+    computes budget/backoff or logs on its own, so the two paths can never
+    drift apart. Waiting out the returned delay (`_sleep()` vs. `_asleep()`)
+    is the only thing left to the caller.
+    """
     settings = get_settings()
     max_attempts = _budget_of(err, configured_attempts=settings.llm_retry_attempts)
     retrying = attempt < max_attempts
@@ -104,9 +125,27 @@ def _log_attempt_and_should_retry(err: LlmError, *, label: str, attempt: int) ->
             max_attempts=max_attempts,
             code=_code_of(err),
         )
-        return False
 
+    return delay
+
+
+def _log_attempt_and_should_retry(err: LlmError, *, label: str, attempt: int) -> bool:
+    """Sync wrapper over `_decide_retry()`: sleeps out the delay via
+    `_sleep()` and returns whether the caller should retry."""
+    delay = _decide_retry(err, label=label, attempt=attempt)
+    if delay is None:
+        return False
     _sleep(delay)
+    return True
+
+
+async def _adecide_and_wait(err: LlmError, *, label: str, attempt: int) -> bool:
+    """Async wrapper over `_decide_retry()`: awaits `_asleep()` for the
+    delay and returns whether the caller should retry."""
+    delay = _decide_retry(err, label=label, attempt=attempt)
+    if delay is None:
+        return False
+    await _asleep(delay)
     return True
 
 
@@ -125,6 +164,23 @@ def call_with_retry[T](operation: Callable[[], T], *, label: str) -> T:
             return operation()
         except LlmError as err:
             if not _log_attempt_and_should_retry(err, label=label, attempt=attempt):
+                raise
+
+
+async def acall_with_retry[T](operation: Callable[[], Awaitable[T]], *, label: str) -> T:
+    """Async twin of `call_with_retry()`, for a caller that must await the
+    model (`service.ainvoke_chat()`). Same budget, backoff, clamp and log
+    events - see `_decide_retry()`, the function both share - awaiting
+    `_asleep()` instead of blocking on `_sleep()`. The last `LlmError`
+    re-raises unchanged once the budget is spent.
+    """
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return await operation()
+        except LlmError as err:
+            if not await _adecide_and_wait(err, label=label, attempt=attempt):
                 raise
 
 
