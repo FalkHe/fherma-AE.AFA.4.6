@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: draft
+stage: done
 ---
 # Progress: Sprint 04
 
@@ -28,3 +28,6 @@ Status: `open | running | done | failed`
 - The sign-out fix clears the remembered address with a corrective navigation queued on a zero-delay timer, winning by running last. It works and is regression-tested, but it is timing-based; ordering the cache write and the navigation inside one transition would remove the timer. Worth hardening when the auth flow is next touched.
 
 ## Verify
+Round 1: approve, no failed criteria. All five checked in the browser. The sign-out defect was re-attacked
+four ways and held. The merge request could not be approved by button — the reviewing account authored it,
+so GitLab refuses self-approval; the verdict is posted as a note (note_487). Human approval still outstanding.

@@ -28,3 +28,8 @@ page, and opening a page while signed out sends you to sign-in, then back to tha
 Brief: docs/intents/007-initial-frontend/sprints/04-guarded-app-shell/brief.md
 
 ## Verdict
+Round 1: approve — Every signed-in page now sits under one shared header with the tavern wordmark and an
+account menu carrying the player's name and sign out. Opening the dashboard while signed out sends you to
+sign-in and, after signing in, back to that exact address with its query and fragment intact, while coming
+to sign-in of your own accord still lands you on the welcome page — including right after signing out of a
+deep page. Signing out returns to sign-in, and Back does not restore the page you left.
