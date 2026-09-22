@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-stage: draft
+stage: done
 ---
 # Progress: Sprint 01
 
@@ -21,3 +21,4 @@ The terminal history test had to be re-stubbed once after the two game work item
 ## Backlog proposals
 
 ## Verify
+Round 1: approve, no failed criteria.

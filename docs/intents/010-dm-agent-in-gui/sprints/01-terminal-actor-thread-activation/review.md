@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/60
 ---
 # Review: Sprint 01 — The terminal game knows which hero acts, resumes a run where it was left, and marks it under way
 
@@ -28,3 +28,4 @@ adventure cannot fail. The debugging overrides for actor and memory thread still
 Brief: docs/intents/010-dm-agent-in-gui/sprints/01-terminal-actor-thread-activation/brief.md
 
 ## Verdict
+Round 1: approve — playing a run in the terminal now works without naming a hero, quitting while the Dungeon Master waits leaves that same question waiting when the run is picked up again and the answer continues that turn, and a run reads as in progress from its first narration while one nobody has played still reads as ready.
