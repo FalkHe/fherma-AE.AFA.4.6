@@ -14,7 +14,7 @@ Sprint outcomes, dependency-ordered. Status: `open | running | done`.
 | 01 | `app srd status` on a migrated, never-ingested database reports an empty corpus and exits non-zero, and a vector width that disagrees with `EMBEDDING_DIMENSIONS` fails the same way instead of being accepted | – | #8 | done |
 | 02 | `app srd ingest --dry-run` fetches SRD 5.1 from the CC-BY source into `backend/content/srd/v1/`, reports how many citable chunks it would embed, and a changed upstream shows up as a git diff | – | #9 | done |
 | 03 | `app srd ingest` embeds the stored source and the corpus goes from empty to populated: the run prints chunk count, tokens and USD cost, and `app srd status` then reports rows, model and ingest time | 01, 02 | #10 | done |
-| 04 | Running `app srd ingest` a second time replaces the corpus wholesale — the row count is the same, nothing is duplicated, and a run that fails part-way leaves the previous corpus intact | 03 | #11 | open |
+| 04 | Running `app srd ingest` a second time replaces the corpus wholesale — the row count is the same, nothing is duplicated, and a run that fails part-way leaves the previous corpus intact | 03 | #11 | running |
 | 05 | `app srd search "<query>"` answers a rules question with SRD passages, best first, each carrying the heading path that cites the rule it came from | 03 | #12 | open |
 | 06 | `app srd search "<query>"` returns nothing and says so for a question the SRD does not cover, while still answering one it does — the relevance floor is pinned to a measured value | 05 | #13 | open |
 
