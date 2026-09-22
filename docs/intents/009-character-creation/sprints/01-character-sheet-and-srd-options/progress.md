@@ -9,9 +9,9 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
+| 1 | done | schemas + options: 9 races, 18 skills, 9 alignments, 13 armours, 37 weapons, 16 gear; Net modelled with damage die "0" |
+| 2 | done | twelve classes; Rogue last bullet has no (b) in the SRD, kept as one option; armour "None" fix requested |
+| 3 | done | 5 tests, service + `app character options` + README |
 
 Status: `open | running | done | failed`
 
