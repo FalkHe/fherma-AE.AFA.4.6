@@ -19,6 +19,10 @@ from types import SimpleNamespace
 from app.core.ids import generate_id
 from app.core.settings import get_settings
 from app.modules.auth import service as auth_service
+from app.modules.character import service as character_service
+from app.modules.character.errors import CharacterBuildError
+from app.modules.character.schemas import CharacterSheet
+from app.modules.content.schemas import Abilities
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import (
     AdventureActiveError,
@@ -585,6 +589,143 @@ def test_create_character_translates_run_archived_error_to_envelope(
     )
 
     assert_error_envelope(response, status=409, code="RUN_ARCHIVED")
+
+
+def test_create_character_ac6_no_body_seeds_a_body_builds_first_and_run_reads_ready(
+    client, monkeypatch, session_cookie_header
+):
+    # <- AC6
+    _stub_auth(monkeypatch)
+
+    calls = []
+
+    async def fake_create_character(db, *, user_id, run_id, sheet=None):
+        calls.append(sheet)
+        if sheet is None:
+            return _make_character(name="Rosalind Thorn")
+        return _make_character(name=sheet.name)
+
+    monkeypatch.setattr(playthrough_service, "create_character", fake_create_character)
+
+    # No body -> today's seed hero, no `build_sheet` call.
+    response = client.post(
+        "/api/v1/playthrough/campaign/some-run-id/character",
+        headers=_auth_headers(session_cookie_header),
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["name"] == "Rosalind Thorn"
+    assert calls == [None]
+
+    # With a body -> `build_sheet` runs first, and its sheet is what
+    # `create_character` receives.
+    built_sheet = CharacterSheet(
+        name="Mira Thistlewood",
+        race="Human",
+        character_class="Ranger",
+        alignment="Chaotic Good",
+        abilities=Abilities(
+            strength=12, dexterity=16, constitution=14, intelligence=10, wisdom=13, charisma=8
+        ),
+        max_hp=11,
+        armour_class=14,
+        speed=30,
+        saving_throws=["strength", "dexterity"],
+        skills=["Survival"],
+        equipment=[],
+        appearance="Lean and travel-worn.",
+        backstory="Grew up tracking game through the Greenhollow.",
+    )
+    build_calls = []
+
+    def fake_build_sheet(request):
+        build_calls.append(request)
+        return built_sheet
+
+    monkeypatch.setattr(character_service, "build_sheet", fake_build_sheet)
+
+    body = {
+        "name": "Mira Thistlewood",
+        "race": "Human",
+        "characterClass": "Ranger",
+        "alignment": "Chaotic Good",
+        "abilities": {
+            "strength": 12,
+            "dexterity": 16,
+            "constitution": 14,
+            "intelligence": 10,
+            "wisdom": 13,
+            "charisma": 8,
+        },
+        "skills": ["Survival"],
+        "appearance": "Lean and travel-worn.",
+        "backstory": "Grew up tracking game through the Greenhollow.",
+    }
+    response = client.post(
+        "/api/v1/playthrough/campaign/some-run-id/character",
+        json=body,
+        headers=_auth_headers(session_cookie_header),
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["name"] == "Mira Thistlewood"
+    assert len(build_calls) == 1
+    assert calls[-1] is built_sheet
+
+    # The run now reads `ready`, exactly as the seed-hero path already did.
+    ready_run = _make_run(id="some-run-id", status="ready")
+
+    async def fake_get_ready(db, *, user_id, run_id):
+        return ready_run
+
+    monkeypatch.setattr(playthrough_service, "get_campaign_run", fake_get_ready)
+
+    run_response = client.get(
+        "/api/v1/playthrough/campaign/some-run-id", headers=session_cookie_header("a-valid-cookie")
+    )
+    assert run_response.status_code == 200, run_response.text
+    assert run_response.json()["status"] == "ready"
+
+
+def test_create_character_ac6_translates_a_character_build_error_to_a_validation_envelope(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    # <- AC6
+    _stub_auth(monkeypatch)
+
+    calls = []
+
+    async def fake_create_character(db, *, user_id, run_id, sheet=None):
+        calls.append(sheet)
+        return _make_character()
+
+    def fake_build_sheet(request):
+        raise CharacterBuildError(["constitution 17 is above 15"])
+
+    monkeypatch.setattr(playthrough_service, "create_character", fake_create_character)
+    monkeypatch.setattr(character_service, "build_sheet", fake_build_sheet)
+
+    body = {
+        "name": "Mira Thistlewood",
+        "race": "Human",
+        "characterClass": "Ranger",
+        "alignment": "Chaotic Good",
+        "abilities": {
+            "strength": 12,
+            "dexterity": 16,
+            "constitution": 17,
+            "intelligence": 10,
+            "wisdom": 13,
+            "charisma": 8,
+        },
+    }
+    response = client.post(
+        "/api/v1/playthrough/campaign/some-run-id/character",
+        json=body,
+        headers=_auth_headers(session_cookie_header),
+    )
+
+    assert_error_envelope(response, status=422, code="VALIDATION_ERROR")
+    assert response.json()["error"]["details"] == {"messages": ["constitution 17 is above 15"]}
+    assert calls == []
 
 
 def test_rename_campaign_run_response_has_exactly_the_camelcase_field_set(

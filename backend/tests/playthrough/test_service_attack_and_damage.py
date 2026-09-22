@@ -33,6 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.errors import ErrorCode
 from app.core.ids import generate_id
+from app.modules.character.schemas import CharacterSheet, SheetItem
+from app.modules.content.schemas import Abilities, Attack
 from app.modules.playthrough import dice as playthrough_dice
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import (
@@ -46,6 +48,51 @@ from app.modules.playthrough.models import GameObject
 CAMPAIGN_ID = "greenhollow"
 KNIFE_TEMPLATE = "shepherds-knife"
 GOBLIN_TEMPLATE = "goblin"
+
+
+def _sheet_born_sheet(*, name: str = "Mira Thistlewood") -> CharacterSheet:
+    """A hand-built level-1 sheet (sprint 009-02, WI2, AC4/AC5) carrying
+    one weapon whose to-hit/damage is already resolved into its own
+    state, the way `character_service.build_sheet` would leave it."""
+    return CharacterSheet(
+        name=name,
+        race="Human",
+        character_class="Ranger",
+        alignment="Chaotic Good",
+        abilities=Abilities(
+            strength=12, dexterity=16, constitution=14, intelligence=10, wisdom=13, charisma=8
+        ),
+        max_hp=11,
+        armour_class=14,
+        speed=30,
+        saving_throws=["strength", "dexterity"],
+        skills=["Survival", "Stealth"],
+        equipment=[
+            SheetItem(
+                kind="weapon",
+                id="shortsword",
+                quantity=1,
+                name="Sheet-Born Shortsword",
+                attacks=[Attack(name="Sheet-Born Shortsword", to_hit=5, damage="1d6+3")],
+            )
+        ],
+        proficiency_bonus=2,
+        appearance="Lean and travel-worn.",
+        backstory="Grew up tracking game through the Greenhollow.",
+    )
+
+
+async def _reach_lair_maw_with_sheet(db: AsyncSession, *, username: str, sheet: CharacterSheet):
+    user_id = generate_id()
+    await _insert_user(db, user_id, username=username)
+    await db.commit()
+
+    run = await service.start_campaign_run(db, user_id=user_id, campaign_id=CAMPAIGN_ID)
+    character = await service.create_character(db, user_id=user_id, run_id=run.id, sheet=sheet)
+    await service.enter_adventure(db, user_id=user_id, run_id=run.id)
+    await service.use_exit(db, user_id=user_id, actor_id=character.id, exit_id="to-thornway")
+    await service.use_exit(db, user_id=user_id, actor_id=character.id, exit_id="to-lair-maw")
+    return user_id, run, character
 
 
 class _ScriptedRandom(random_module.Random):
@@ -121,6 +168,20 @@ async def _owned_object_id(db: AsyncSession, *, owner_id: str, template_id: str)
                 "AND template_id = :template_id LIMIT 1"
             ),
             {"owner_id": owner_id, "template_id": template_id},
+        )
+    ).scalar_one()
+
+
+async def _owned_object_id_by_name(db: AsyncSession, *, owner_id: str, name: str) -> str:
+    """A carried row with no template of its own (sprint 009-02, WI2, AC5)
+    -- found by name, since there is no `template_id` to look it up by."""
+    return (
+        await db.execute(
+            text(
+                "SELECT id FROM objects WHERE owner_object_id = :owner_id "
+                "AND template_id IS NULL AND name = :name LIMIT 1"
+            ),
+            {"owner_id": owner_id, "name": name},
         )
     ).scalar_one()
 
@@ -1020,5 +1081,158 @@ def test_damage_refuses_a_roll_of_the_wrong_kind(playthrough_db):
         async with _second_connection() as reader:
             refused = await _tool_calls(reader, run.id, result="refused", name="damage")
             assert len(refused) == 1
+
+    asyncio.run(_scenario())
+
+
+# --- sprint 009-02, WI2: a built sheet's full state and its own gear -----
+
+
+@pytest.mark.database
+def test_ac4_a_sheet_born_characters_full_state_survives_a_damage_write_back(playthrough_db):
+    async def _scenario():
+        sheet = _sheet_born_sheet()
+        user_id, run, character = await _reach_lair_maw_with_sheet(
+            playthrough_db, username="sheet-state", sheet=sheet
+        )
+        goblin_id = (await _goblin_ids(playthrough_db, run_id=run.id))[0]
+        turn_id = generate_id()
+
+        # The goblin's own Rusty Shortsword (+4/1d6+2) brings the sheet's
+        # 11 hp to exactly 0: face 15 (total 19) hits the sheet's AC 14;
+        # face 9 (total 11) applies all 11 remaining hit points.
+        hit_id = await _hit(
+            playthrough_db,
+            user_id=user_id,
+            run_id=run.id,
+            actor_id=goblin_id,
+            target_id=character.id,
+            item_id=None,
+            face=15,
+            turn_id=turn_id,
+        )
+        damage_roll = await _rolled(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=goblin_id,
+            kind="damage",
+            context={"attack": "Rusty Shortsword"},
+            face=9,
+            turn_id=turn_id,
+        )
+
+        applied = await service.damage(
+            playthrough_db,
+            user_id=user_id,
+            target_id=character.id,
+            roll_id=damage_roll.id,
+            hit_id=hit_id,
+            turn_id=turn_id,
+        )
+        assert applied == 11
+
+        row = await _object_row(playthrough_db, character.id)
+        assert row.current_hp == 0
+        assert row.is_alive is True
+
+        state = row.state
+        assert state["down"] is True
+        assert state["level"] == 1
+        assert state["alignment"] == "Chaotic Good"
+        assert state["speed"] == 30
+        assert state["proficiency_bonus"] == 2
+        assert state["saving_throws"] == ["strength", "dexterity"]
+        assert state["skills"] == ["Survival", "Stealth"]
+        assert state["background"] == sheet.backstory
+        assert len(state["equipment"]) == 1
+        assert state["equipment"][0]["name"] == "Sheet-Born Shortsword"
+        assert state["equipment"][0]["attacks"][0]["to_hit"] == 5
+
+    asyncio.run(_scenario())
+
+
+@pytest.mark.database
+def test_ac5_attack_resolves_from_a_carried_rows_own_state_and_a_template_item_still_works(
+    playthrough_db,
+):
+    async def _scenario():
+        # A sheet-born weapon row: to-hit/damage read from its own carried
+        # state, never a content template (there is none).
+        sheet = _sheet_born_sheet()
+        user_id, run, character = await _reach_lair_maw_with_sheet(
+            playthrough_db, username="sheet-attack", sheet=sheet
+        )
+        goblin_id = (await _goblin_ids(playthrough_db, run_id=run.id))[0]
+        weapon_id = await _owned_object_id_by_name(
+            playthrough_db, owner_id=character.id, name="Sheet-Born Shortsword"
+        )
+        turn_id = generate_id()
+
+        # goblin AC 13; item's own to_hit +5, face 10 -> total 15, a hit.
+        attack_roll = await _rolled(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            kind="attack",
+            context={"item_id": weapon_id},
+            face=10,
+            turn_id=turn_id,
+        )
+        assert attack_roll.payload["formula"] == "1d20+5"
+
+        outcome = await service.attack(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            target_id=goblin_id,
+            item_id=weapon_id,
+            roll_id=attack_roll.id,
+            turn_id=turn_id,
+        )
+        assert outcome == "hit"
+
+        damage_roll = await _rolled(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            kind="damage",
+            context={"item_id": weapon_id},
+            face=4,
+            turn_id=turn_id,
+        )
+        assert damage_roll.payload["formula"] == "1d6+3"
+
+        # The seed hero's `shepherds-knife` -- a real content template --
+        # still resolves through the unchanged path.
+        seed_user_id, seed_run, seed_character = await _reach_lair_maw(
+            playthrough_db, username="seed-still-works"
+        )
+        seed_goblin_id = (await _goblin_ids(playthrough_db, run_id=seed_run.id))[0]
+        knife_id = await _owned_object_id(
+            playthrough_db, owner_id=seed_character.id, template_id=KNIFE_TEMPLATE
+        )
+        seed_turn_id = generate_id()
+
+        seed_attack_roll = await _rolled(
+            playthrough_db,
+            user_id=seed_user_id,
+            actor_id=seed_character.id,
+            kind="attack",
+            context={"item_id": KNIFE_TEMPLATE},
+            face=15,
+            turn_id=seed_turn_id,
+        )
+        assert seed_attack_roll.payload["formula"] == "1d20+4"
+
+        seed_outcome = await service.attack(
+            playthrough_db,
+            user_id=seed_user_id,
+            actor_id=seed_character.id,
+            target_id=seed_goblin_id,
+            item_id=knife_id,
+            roll_id=seed_attack_roll.id,
+            turn_id=seed_turn_id,
+        )
+        assert seed_outcome == "hit"
 
     asyncio.run(_scenario())
