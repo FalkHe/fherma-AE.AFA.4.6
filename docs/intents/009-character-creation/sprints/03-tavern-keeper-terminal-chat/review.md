@@ -24,3 +24,4 @@ A player can now create their character in a terminal conversation with the Tave
 Brief: docs/intents/009-character-creation/sprints/03-tavern-keeper-terminal-chat/brief.md
 
 ## Verdict
+Round 1: changes requested — asking the Tavern Keeper for two things in one sentence ends the conversation with a technical error and loses everything said so far; before saving, the player never actually sees the sheet, the Keeper only describes the character in words; taking the ready-made hero saves after a bare "Confirm?" without showing who is being taken.

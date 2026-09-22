@@ -9,7 +9,7 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | done | two-node graph, six tools, prompt character/system/creator |
+| 1 | running | two-node graph, six tools, prompt character/system/creator |
 | 2 | done | `app character create` + six scenario tests |
 
 Status: `open | running | done | failed`
@@ -22,3 +22,4 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: changes requested — AC1 (ready-made review missing), AC4 (sheet never printed), AC6 (crash on two draft updates in one step prints a traceback); AC3/AC4 tests asserted on text the test itself supplied.
