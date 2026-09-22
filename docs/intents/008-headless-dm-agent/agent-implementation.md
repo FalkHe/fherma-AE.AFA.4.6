@@ -19,7 +19,7 @@ Ordered list
 10. [x] ~~Progression tools: enter_adventure, activate_campaign_run~~ (Out of scope for DM agent: lifecycle transitions and adventure entry are triggered via API/UI).
 11. [x] Memory tool recall.
 12. [x] guard node. Last, because it needs the full set of tools and state to know what counts as out-of-band.
-13. [ ] lookup_rule, once SRD search exists.
+13. [x] lookup_rule, once SRD search exists.
 
 Working around the missing UI
 

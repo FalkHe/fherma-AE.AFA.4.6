@@ -30,6 +30,7 @@ USE_EXIT_TOOL = "use_exit"
 ATTACK_TOOL = "attack"
 DAMAGE_TOOL = "damage"
 RECALL_TOOL = "recall"
+LOOKUP_RULE_TOOL = "lookup_rule"
 
 
 @dataclass

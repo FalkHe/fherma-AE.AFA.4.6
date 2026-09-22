@@ -24,6 +24,7 @@ from app.modules.game.agent.state import (
     GET_SCENE_TOOL,
     GIVE_TOOL,
     INTERACT_TOOL,
+    LOOKUP_RULE_TOOL,
     PASSIVE_CHECK_TOOL,
     RECALL_TOOL,
     REQUEST_PLAYER_ROLL_TOOL,
@@ -39,6 +40,8 @@ from app.modules.game.agent.state import (
 from app.modules.playthrough import models as playthrough_models
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.schemas import RollKind
+from app.modules.srd import service as srd_service
+from app.modules.srd.errors import SrdCorpusEmptyError
 
 
 async def _resolve_campaign_and_version(
@@ -677,6 +680,35 @@ async def recall(
     }
 
 
+## Rules Tools
+@tool(LOOKUP_RULE_TOOL)
+async def lookup_rule(
+    query: str,
+    runtime: ToolRuntime[DmContext],
+    limit: int = 5,
+) -> dict[str, Any]:
+    """Search official D&D 5e SRD rules, spells, combat mechanics, and conditions.
+    `query` is the rules question or keyword (e.g. 'grappling', 'fireball').
+    `limit` is the maximum number of matching rule passages to return (default 5)."""
+    ctx = runtime.context
+    try:
+        matches = await srd_service.search_rules(ctx.db, query=query, limit=limit)
+    except SrdCorpusEmptyError:
+        return {"status": "ok", "query": query, "rules": []}
+
+    return {
+        "status": "ok",
+        "query": query,
+        "rules": [
+            {
+                "heading": " > ".join(m.heading_path),
+                "text": m.text,
+            }
+            for m in matches
+        ],
+    }
+
+
 ## Tool registry
 TOOLS = [
     roll_dice,
@@ -695,6 +727,7 @@ TOOLS = [
     attack,
     damage,
     recall,
+    lookup_rule,
     get_scene,
     get_object,
     get_campaign,

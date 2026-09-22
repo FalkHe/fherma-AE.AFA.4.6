@@ -556,6 +556,9 @@ def test_the_model_cannot_supply_session_or_user_id():
     recall_schema = tools.recall.tool_call_schema.model_json_schema()
     assert set(recall_schema["properties"]) == {"query", "k"}
 
+    lookup_rule_schema = tools.lookup_rule.tool_call_schema.model_json_schema()
+    assert set(lookup_rule_schema["properties"]) == {"query", "limit"}
+
 
 def test_ask_player_tool_interrupts_and_resumes_with_answer(prompt, monkeypatch):
     ask_calls = []
@@ -1520,6 +1523,86 @@ def test_recall_tool_delegates_to_playthrough_service(prompt, monkeypatch):
             "k": 3,
         }
     ]
+
+
+def test_lookup_rule_tool_delegates_to_srd_service(prompt, monkeypatch):
+    from app.modules.srd.schemas import RuleMatch
+
+    calls = []
+
+    async def fake_search_rules(db, query, *, limit=5):
+        calls.append({"query": query, "limit": limit})
+        return [
+            RuleMatch(
+                heading_path=["Combat", "Actions in Combat", "Grappling"],
+                ordinal=12,
+                text="When you want to grab a creature, use the Attack action to grapple.",
+                score=0.45,
+            )
+        ]
+
+    monkeypatch.setattr(tools.srd_service, "search_rules", fake_search_rules)
+
+    call_lookup = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "c-srd-1",
+                "name": "lookup_rule",
+                "args": {
+                    "query": "grappling rules",
+                    "limit": 2,
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model(
+            [
+                call_lookup,
+                AIMessage(
+                    content="Grappling is a special melee attack made using the Attack action."
+                ),
+            ]
+        )
+    )
+
+    res = _turn(agent, "How do I grapple an enemy?")
+    assert res.reply == "Grappling is a special melee attack made using the Attack action."
+    assert calls == [{"query": "grappling rules", "limit": 2}]
+
+
+def test_lookup_rule_handles_empty_corpus_gracefully(prompt, monkeypatch):
+    from app.modules.srd.errors import SrdCorpusEmptyError
+
+    async def empty_search_rules(db, query, *, limit=5):
+        raise SrdCorpusEmptyError("the SRD corpus holds no rules")
+
+    monkeypatch.setattr(tools.srd_service, "search_rules", empty_search_rules)
+
+    call_lookup = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "c-srd-2",
+                "name": "lookup_rule",
+                "args": {
+                    "query": "cover rules",
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model(
+            [
+                call_lookup,
+                AIMessage(content="Half cover grants a +2 bonus to AC and Dex saving throws."),
+            ]
+        )
+    )
+
+    res = _turn(agent, "What bonus does half cover give?")
+    assert res.reply == "Half cover grants a +2 bonus to AC and Dex saving throws."
 
 
 def test_guard_node_blocks_prompt_injection_without_calling_model(prompt):

@@ -37,8 +37,8 @@ or writes an event.
 | `interact`, `take`, `drop`, `give`, `use_item`, `use_exit` | done |
 | `attack`, `damage` | done |
 | `recall` | done |
+| `lookup_rule` | done |
 | `get_scene`, `get_object`, `get_campaign` | done |
-| `lookup_rule`, `update_object` | not yet |
 
 ## Quirks
 
