@@ -161,9 +161,11 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
       "i18n/i18n.d.ts",
       "i18n/locales/en/common.json",
       "i18n/locales/en/auth.json",
-      "i18n/locales/en/home.json",
       // Sprint 007/05 WI1: the `/runs/:runId` screen's namespace — `run.*`
-      // here (this work item), `party.*` added by WI2 in the same file.
+      // here (this work item), `party.*` added by WI2 in the same file;
+      // sprint 007/07 WI1 added `dashboard.*` for the `/` screen once it
+      // moved into this module too (the `home` module and its own
+      // `home.json` are gone — see criterion 42(c) below).
       "i18n/locales/en/playthrough.json",
       "queryClient.ts",
       // Sprint 007/03: the theme grew from a single `theme.ts` (removed)
@@ -261,28 +263,32 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
     }
   });
 
-  it("criterion 42(c): the one permitted cross-module import is home -> auth's useCurrentUser, never the reverse", () => {
-    // Scoped to actual `import … from "…/auth/…"` / `"…/home/…"` declaration
-    // lines, not every line containing the substring "auth/" or "home/" —
+  it("criterion 42(c): the one permitted cross-module import is playthrough -> auth's useCurrentUser, never the reverse", () => {
+    // Retargeted from `home` to `playthrough` (sprint 007/07 WI1, AC6): the
+    // `home` module is gone entirely, and its one cross-module edge —
+    // reading `useCurrentUser` for the greeting — moved with `HomeRoute`'s
+    // replacement, `DashboardRoute`, into `playthrough`. Scoped to actual
+    // `import … from "…/auth/…"` / `"…/playthrough/…"` declaration lines,
+    // not every line containing the substring "auth/" or "playthrough/" —
     // that substring also occurs in API route path literals
-    // (`"/api/v1/auth/sign-out"`) and in this suite's own cross-referencing
-    // comments (`// modules/auth/csrf.test.tsx, next to …`), neither of which
-    // is a module import and both of which are false positives for this
-    // criterion under the wider scan.
+    // (`"/api/v1/auth/sign-out"`, `"/api/v1/playthrough/runs"`) and in this
+    // suite's own cross-referencing comments, neither of which is a module
+    // import and both of which are false positives for this criterion under
+    // the wider scan.
     //
-    // `SignOutButton` and `useSignOut` dropped off the allow-list this
-    // sprint: sign-out moved entirely into `auth`'s own `AccountMenu`, which
-    // owns `useSignOut` itself, so `home` no longer has any reason to reach
-    // for either — keeping them allowed would hide a real regression if
-    // `home` ever imported sign-out machinery again instead of just the
-    // current user it actually needs for the greeting.
+    // `SignOutButton` and `useSignOut` stay off the allow-list: sign-out
+    // lives entirely in `auth`'s own `AccountMenu`, which owns `useSignOut`
+    // itself, so `playthrough` has no reason to reach for either — keeping
+    // them allowed would hide a real regression if it ever imported
+    // sign-out machinery instead of just the current user it needs for the
+    // greeting.
     const allowedNames = ["useCurrentUser"];
-    const homeDir = path.join(srcDir, "modules", "home");
+    const playthroughDir = path.join(srcDir, "modules", "playthrough");
     const authDir = path.join(srcDir, "modules", "auth");
     const importFromAuth = /^\s*import\b.*["'][^"']*auth\/[^"']*["']/;
-    const importFromHome = /^\s*import\b.*["'][^"']*home\/[^"']*["']/;
+    const importFromPlaythrough = /^\s*import\b.*["'][^"']*playthrough\/[^"']*["']/;
 
-    for (const file of listFilesRecursively(homeDir)) {
+    for (const file of listFilesRecursively(playthroughDir)) {
       if (!/\.(ts|tsx)$/.test(file)) continue;
       const lines = fs.readFileSync(file, "utf8").split("\n");
       for (const line of lines) {
@@ -298,19 +304,17 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
       if (!/\.(ts|tsx)$/.test(file)) continue;
       const lines = fs.readFileSync(file, "utf8").split("\n");
       for (const line of lines) {
-        expect(importFromHome.test(line), `${file}: "${line.trim()}" must not import from modules/home`).toBe(false);
+        expect(importFromPlaythrough.test(line), `${file}: "${line.trim()}" must not import from modules/playthrough`).toBe(
+          false,
+        );
       }
     }
 
     expect(fs.existsSync(path.join(authDir, "api.ts"))).toBe(false);
-
-    // The two files this sprint deleted must stay deleted: `AppShell` moved
-    // out of `home` entirely (see criterion 42(b) above), and `SignOutButton`
-    // was folded into `AccountMenu`. Either quietly returning would put a
-    // component back exactly where the rest of this suite now assumes it
-    // is gone from, without any other check here noticing.
-    expect(fs.existsSync(path.join(homeDir, "components", "AppShell.tsx"))).toBe(false);
     expect(fs.existsSync(path.join(authDir, "components", "SignOutButton.tsx"))).toBe(false);
+
+    // AC6: the old landing module is gone outright, not just unregistered.
+    expect(fs.existsSync(path.join(srcDir, "modules", "home"))).toBe(false);
   });
 
   it("UI-15's JSON half: the rule numbers never appear literally in auth.json — only {{min}}/{{max}} placeholders do", () => {

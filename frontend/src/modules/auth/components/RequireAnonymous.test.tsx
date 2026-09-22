@@ -1,6 +1,6 @@
 // UI-30, UI-39 (ui-spec.md §6.4). RequireAuth's own pending/error/redirect
-// states are exercised where they matter to the user — the home screen — in
-// modules/home/routes/HomeRoute.test.tsx.
+// states are exercised where they matter to the user — the dashboard — in
+// modules/playthrough/routes/DashboardRoute.test.tsx.
 import { describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 
@@ -34,10 +34,12 @@ describe.each(["/signin", "/signup"] as const)("RequireAnonymous guard on %s", (
 
   it("UI-30: an authenticated visitor is redirected to / with no message", async () => {
     stubAuthenticatedSession();
+    // The dashboard now lives at `/` (sprint 007/07 WI1) and makes this read.
+    mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
     const app = renderApp([path]);
 
     await waitFor(() => expect(app.getPathname()).toBe("/"));
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome, thorin.");
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome back, thorin.");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

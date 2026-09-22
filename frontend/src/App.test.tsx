@@ -18,6 +18,9 @@ function stubUnauthenticated() {
 
 function stubAuthenticated() {
   mockRoute("GET", "/api/v1/users/me", { status: 200, body: USER, headers: { "X-CSRF-Token": "t" } });
+  // The dashboard now lives at `/` (sprint 007/07 WI1) — every authenticated
+  // render of it makes this read.
+  mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
 }
 
 describe("App routing (criterion 46, UI-38)", () => {
@@ -64,6 +67,6 @@ describe("App routing (criterion 46, UI-38)", () => {
     stubAuthenticated();
     const app = renderApp(["/does-not-exist"]);
     await waitFor(() => expect(app.getPathname()).toBe("/"));
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome, thorin.");
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Welcome back, thorin.");
   });
 });
