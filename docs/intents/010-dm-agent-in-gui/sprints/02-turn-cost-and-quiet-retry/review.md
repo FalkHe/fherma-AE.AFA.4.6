@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/62
 ---
 # Review: Sprint 02 — Each turn's cost is recorded; a momentary model failure is retried quietly, not fatal
 
@@ -30,3 +30,4 @@ exact, only the per-turn split is not.
 Brief: docs/intents/010-dm-agent-in-gui/sprints/02-turn-cost-and-quiet-retry/brief.md
 
 ## Verdict
+Round 1: approve — every turn now records what its model calls cost and a run's total is exactly those turns added up; a Dungeon Master call that stumbles once is retried quietly so the player still gets their narration, while one that fails for good ends the turn with a named error and leaves everything already rolled or recorded in place.
