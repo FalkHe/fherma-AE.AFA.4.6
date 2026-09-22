@@ -168,7 +168,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Character */
+        /**
+         * Create Character
+         * @description `payload` omitted -- the campaign's seed hero (today's behaviour);
+         *     given -- built through `character_service.build_sheet` first (sprint
+         *     009-02, WI2, AC6). An illegal spread or an unknown equipment pick
+         *     (`CharacterBuildError`) reaches the wire as `VALIDATION_ERROR` with
+         *     every message `build_sheet` found, not just the first.
+         */
         post: operations["create_character_api_v1_playthrough_campaign__run_id__character_post"];
         delete?: never;
         options?: never;
@@ -276,6 +283,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Abilities */
+        Abilities: {
+            /** Strength */
+            strength: number;
+            /** Dexterity */
+            dexterity: number;
+            /** Constitution */
+            constitution: number;
+            /** Intelligence */
+            intelligence: number;
+            /** Wisdom */
+            wisdom: number;
+            /** Charisma */
+            charisma: number;
+        };
         /**
          * AdventureRunRead
          * @description One adventure run, on the wire -- `id, adventureId, status,
@@ -437,6 +459,57 @@ export interface components {
             summary: string;
             /** Adventurecount */
             adventureCount: number;
+        };
+        /**
+         * CharacterCreateRequest
+         * @description What a player submits to build a level-1 character; `builder.py`
+         *     turns this into a `CharacterSheet` (validating and deriving everything
+         *     the caller must not hand in directly).
+         */
+        CharacterCreateRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Race
+             * @enum {string}
+             */
+            race: "Dragonborn" | "Dwarf" | "Elf" | "Gnome" | "Half-Elf" | "Half-Orc" | "Halfling" | "Human" | "Tiefling";
+            /**
+             * Characterclass
+             * @enum {string}
+             */
+            characterClass: "Barbarian" | "Bard" | "Cleric" | "Druid" | "Fighter" | "Monk" | "Paladin" | "Ranger" | "Rogue" | "Sorcerer" | "Warlock" | "Wizard";
+            /**
+             * Alignment
+             * @enum {string}
+             */
+            alignment: "Lawful Good" | "Neutral Good" | "Chaotic Good" | "Lawful Neutral" | "Neutral" | "Chaotic Neutral" | "Lawful Evil" | "Neutral Evil" | "Chaotic Evil";
+            abilities: components["schemas"]["Abilities"];
+            /**
+             * Freeabilitybonuses
+             * @default []
+             */
+            freeAbilityBonuses: ("strength" | "dexterity" | "constitution" | "intelligence" | "wisdom" | "charisma")[];
+            /**
+             * Skills
+             * @default []
+             */
+            skills: ("Acrobatics" | "Animal Handling" | "Arcana" | "Athletics" | "Deception" | "History" | "Insight" | "Intimidation" | "Investigation" | "Medicine" | "Nature" | "Perception" | "Performance" | "Persuasion" | "Religion" | "Sleight of Hand" | "Stealth" | "Survival")[];
+            /**
+             * Equipmentpicks
+             * @default []
+             */
+            equipmentPicks: number[];
+            /**
+             * Appearance
+             * @default
+             */
+            appearance: string;
+            /**
+             * Backstory
+             * @default
+             */
+            backstory: string;
         };
         /**
          * CharacterRead
@@ -1042,7 +1115,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CharacterCreateRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {
@@ -1089,13 +1166,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Unprocessable Entity */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
