@@ -23,3 +23,4 @@ The rulebook is now loaded for real: one command fetches the stored SRD 5.1, emb
 Brief: docs/intents/004-srd-knowledge-base/sprints/03-corpus-ingested/brief.md
 
 ## Verdict
+Round 1: Approve. The rulebook is now really loaded: one command imports all 1750 SRD passages with their citations and reports the source version, size, passage and token counts and what the run cost, and the status command afterwards confirms the corpus, the embedding model and the time it was loaded. A failed import writes nothing and leaves the previous state and stored source untouched, and the rules stay reachable from the command line only — no screen or endpoint touches them.

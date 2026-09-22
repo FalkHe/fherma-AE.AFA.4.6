@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: running
+stage: done
 ---
 # Progress: Sprint 03 — corpus ingested
 
@@ -20,9 +20,11 @@ Status: `open | running | done | failed`
 - `glab` is signed in as `f4lkh3`; MR assignee is set to `st3ll4` explicitly.
 
 ## Backlog proposals
+- A prior sprint's acceptance test pinned the migration head to `0008`; the port relaxed it to `is not None`, which is vacuous — it could assert the chain still contains `0008` instead.
 - Sprint 04's core (wholesale delete-and-insert in one transaction, previous corpus kept on failure) is already in this port; sprint 04 may reduce to a verification-only pass.
 
 ## Gates
 Lint (backend + frontend), backend suite (1008 passed), database-marked suite (148 passed) and frontend suite (54) all pass. The implementer was cut off by a session limit after committing; the sprint lead re-ran the gates and the live checks.
 
 ## Verify
+Round 1: approve — AC1–AC5 and D1/D2/D3 pass; live corpus checked (1750 rows, all vectors 1536 wide, no nulls). Approval was posted with the human's glab token, as in sprint 02.
