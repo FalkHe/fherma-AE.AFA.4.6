@@ -34,6 +34,7 @@ from app.modules.playthrough.errors import (
     CampaignRunExistsError,
     CampaignRunNotFoundError,
     CharacterExistsError,
+    CharacterNotFoundError,
     ExitNotAvailableError,
     GameObjectNotFoundError,
     HitNotUsableError,
@@ -581,6 +582,32 @@ async def create_character(
     run.status = "ready"
     await db.commit()
     await db.refresh(character)
+    return character
+
+
+async def get_member_character(db: AsyncSession, *, user_id: str, run_id: str) -> GameObject:
+    """The caller's own character on this run.
+
+    Gated by membership exactly like every other read (`_require_member`
+    first) -- a foreign or unknown run raises `CampaignRunNotFoundError`
+    before this ever looks at `objects`. The one `objects` row with
+    `member_id == member.id AND kind == 'creature'` is this member's
+    character (`create_character` never lets a second one exist -- ←
+    `CharacterExistsError`); no row yet raises `CharacterNotFoundError`.
+    Reads only: no commit, no event, no status change.
+    """
+    member = await _require_member(db, run_id=run_id, user_id=user_id)
+
+    result = await db.execute(
+        select(GameObject).where(
+            GameObject.campaign_run_id == run_id,
+            GameObject.kind == "creature",
+            GameObject.member_id == member.id,
+        )
+    )
+    character = result.scalar_one_or_none()
+    if character is None:
+        raise CharacterNotFoundError(run_id)
     return character
 
 
