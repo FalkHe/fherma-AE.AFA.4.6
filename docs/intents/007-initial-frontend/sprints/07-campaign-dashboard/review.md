@@ -39,3 +39,7 @@ Brief: docs/intents/007-initial-frontend/sprints/07-campaign-dashboard/brief.md
 Round 1: changes requested — when the old landing page was removed, the checks that a player whose session has
 expired is told so, and that an unreachable server offers a retry instead of dumping them at sign-in, were deleted
 with it. Both still behaved correctly, but nothing guarded them any more.
+Round 2: approve — a player whose session has expired is again guaranteed to be told so when they land on sign-in,
+and one whose connection drops is again guaranteed a retry instead of being dumped at sign-in. Both checks were put
+back word for word and confirmed to actually catch the failures they claim to, so the dashboard ships with the same
+safety net the old landing page had.

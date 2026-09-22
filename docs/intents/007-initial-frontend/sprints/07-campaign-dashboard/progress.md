@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: running
+stage: done
 ---
 # Progress: Sprint 07
 
@@ -20,5 +20,11 @@ Status: `open | running | done | failed`
 - `/dashboard` as a second guarded address is retired with the old module; `/runs/<id>` already proves the guard covers more than one address, and the two acceptance tests that deep-linked it now deep-link there.
 
 ## Backlog proposals
+- The empty-state invitation reuses the populated dashboard's footer copy word for word and never says "your first" — D8 asks for a distinct welcome.
+- An archived run would still show a "Resume" button, against D11's "archived cards have no button". Not reachable today (no archive UI); carry into sprint 08.
+- The greeting draws a visible focus outline on every arrival — inherited from the retired landing page, never in the design, and visible to everyone rather than only keyboard users.
+- The revealed explanation on an unavailable card has no `aria-expanded` or live region, so a screen-reader user is not told it appeared.
 
 ## Verify
+Round 1: changes requested — deleting the old landing page took two auth-guard regression tests with it (session expired, server unreachable); no acceptance criterion failed.
+Round 2: approve — the two cases were restored verbatim in `modules/auth/components/RequireAuth.test.tsx` and confirmed non-vacuous by deliberately regressing the guard four ways.
