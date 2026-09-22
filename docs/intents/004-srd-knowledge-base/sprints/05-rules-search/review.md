@@ -25,3 +25,4 @@ A rules question can now be asked from the command line and answered from the in
 Brief: docs/intents/004-srd-knowledge-base/sprints/05-rules-search/brief.md
 
 ## Verdict
+Round 1: Approve. A rules question now gets a straight answer from the rulebook on the command line: the best passages come back first, each naming the chapter it was taken from, so we can always point at the rule we acted on. Checked live with a cover question, a condition and a spell, including the cap on how many passages come back and the refusal to search an empty rulebook. The only rough edges are the known missing relevance floor and the odd-reading chapter paths, both already carried forward.

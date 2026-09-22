@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: running
+stage: done
 ---
 # Progress: Sprint 05 — rules search
 
@@ -28,3 +28,4 @@ Status: `open | running | done | failed`
 Lint, backend suite (1021 passed), database-marked suite (151 passed) and frontend suite (65) pass.
 
 ## Verify
+Round 1: approve — AC1–AC6 and D1/D2/D4 pass on the verifier's own live queries. Nit carried: README's search paragraph says "any other SrdError" while the command catches `SrdVectorWidthError` specifically. Approval posted with the human's glab token, as before.
