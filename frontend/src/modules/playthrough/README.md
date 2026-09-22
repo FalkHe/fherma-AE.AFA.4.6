@@ -62,7 +62,17 @@ then its party and its adventures.
   `PartySection` alone owns (WI2). The card's "Create character" button is a
   link to `character`'s own creation-chat page (`/runs/:runId/create-character`,
   sprint 009/06 WI1) — `PartySection` takes `runId` to build that address and
-  passes it to `PlayerCard` as `createHref`.
+  passes it to `PlayerCard` as `createHref`. The readout counts `member.ready`,
+  unaffected by whether a character is rendered as a card or a plain row.
+- `PlayerCard` renders `CharacterCard` in place of the ready/not-ready row
+  and the "Create character" link once `member.character` is set (sprint
+  009/07, WI1, AC4) — a saved character has no edit affordance (D14 §1.15),
+  so the link has nothing left to do.
+- `CharacterCard` — the finished character on the run screen (D14 §3): name,
+  `{race} {class} · Level {n}`, hit points, armour class, a "Ready" badge,
+  and the looks clamped to three lines. Takes the widened `CharacterRead`
+  WI0 ships this sprint (`race`, `characterClass`, `level`, `appearance`
+  alongside the existing `name`/`maxHp`/`armourClass`).
 - `AdventuresSection` — one numbered row per adventure in campaign order;
   the first unplayed one reads "Next up"/"Waiting on party" from whether
   every seated member is ready, later rows read "Locked", finished ones
@@ -88,7 +98,8 @@ then its party and its adventures.
   `core/i18n/locales/en/playthrough.json`: sprint 05 WI1 owns `run.*`, WI2
   owns `party.*`; sprint 06 WI1 owns `adventures.*`; sprint 07 WI1 owns
   `dashboard.*` and sprint 08 WI1 owns `dashboard.tags.*` within it; sprint
-  09 WI1 owns `dashboard.select.*` within it.
+  09 WI1 owns `dashboard.select.*` within it; intent 009 sprint 07 WI1 adds
+  `party.card.{ready,raceClass,hp,ac}` within `party.*`.
 - The status badge reuses the dashboard's own wording (`run.status.new` /
   `.inProgress` / `.archived`), not the raw `setup|ready|active|archived|finished`
   status, so the run screen and the dashboard read as one voice — both pull
