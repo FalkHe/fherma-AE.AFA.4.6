@@ -110,13 +110,13 @@ def character_class(name: ClassName) -> CharacterClass:
     return _CLASSES_BY_NAME[name]
 
 
-def build_sheet(request: CharacterCreateRequest) -> CharacterSheet:
+def build_sheet(request: CharacterCreateRequest, *, point_buy: bool = True) -> CharacterSheet:
     # Function-local: `builder` imports this module for its own lookups
     # (`race`, `character_class`), so a module-scope import here would be
     # a cycle.
     from app.modules.character import builder
 
-    return builder.build_sheet(request)
+    return builder.build_sheet(request, point_buy=point_buy)
 
 
 def _modifier(score: int) -> int:
@@ -160,9 +160,13 @@ def render_sheet(sheet: CharacterSheet) -> str:
     return "\n".join(lines)
 
 
-def render_seed(seed: SeedCharacter) -> str:
+def render_seed(seed: SeedCharacter, item_names: list[str] | None = None) -> str:
     """Deterministic review text for the campaign's ready-made hero, the
-    same shape as `render_sheet` over `SeedCharacter`'s narrower fields."""
+    same shape as `render_sheet` over `SeedCharacter`'s narrower fields.
+    `item_names` prints in place of `seed.inventory`'s bare content ids
+    when given (the campaign's own object template names); falls back to
+    the ids when not."""
+    equipment = ", ".join(item_names) if item_names else ", ".join(seed.inventory)
     lines = [
         seed.name,
         f"{seed.race} {seed.character_class}",
@@ -170,7 +174,7 @@ def render_seed(seed: SeedCharacter) -> str:
         f"Hit points {seed.max_hp}   Armour class {seed.armour_class}",
         "",
         f"Abilities: {_ability_line(seed.abilities.model_dump())}",
-        f"Equipment: {', '.join(seed.inventory) or 'none yet'}",
+        f"Equipment: {equipment or 'none yet'}",
         "",
         f"Looks: {seed.appearance}",
         f"Background: {seed.background}",

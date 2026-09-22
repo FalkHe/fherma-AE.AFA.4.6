@@ -4,7 +4,7 @@ and the model must never be able to supply. It reaches a tool through
 (same seam as `game.agent.state.DmContext`).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated, Any, NotRequired
 
 from langgraph.graph import MessagesState
@@ -19,6 +19,7 @@ class CreationContext:
     user_id: str
     run_id: str
     ready_made: SeedCharacter | None = None
+    ready_made_items: list[str] = field(default_factory=list)
 
 
 def _merge_draft(current: dict[str, Any] | None, update: dict[str, Any]) -> dict[str, Any]:

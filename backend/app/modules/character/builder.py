@@ -210,20 +210,31 @@ def resolve_equipment(cls: CharacterClass, scores: Abilities, picks: list[int]) 
     return items
 
 
-def build_sheet(request: CharacterCreateRequest) -> CharacterSheet:
+def build_sheet(request: CharacterCreateRequest, *, point_buy: bool = True) -> CharacterSheet:
     """The one entry: validate the point-buy spread, apply the race, derive
     everything else, and assemble the finished sheet. Raises
     `CharacterBuildError` on an illegal spread or an unknown equipment pick
-    -- never on anything a caller could not have avoided."""
-    messages = validate_point_buy(request.abilities)
-    if messages:
-        raise CharacterBuildError(messages)
+    -- never on anything a caller could not have avoided.
+
+    `point_buy=False` skips the spread validation for scores the game
+    itself rolled (← D5, research Decision 1) -- a rolled 7 or 16 is legal,
+    a hand-spent one is not."""
+    if point_buy:
+        messages = validate_point_buy(request.abilities)
+        if messages:
+            raise CharacterBuildError(messages)
 
     race = service.race(request.race)
     character_class = service.character_class(request.character_class)
 
     scores = apply_race(request.abilities, race, request.free_ability_bonuses)
     equipment = resolve_equipment(character_class, scores, request.equipment_picks)
+    skills = (
+        request.skills
+        + [skill for skill in character_class.skill_options if skill not in request.skills][
+            : character_class.skill_choices
+        ]
+    )
 
     shield = any(item.kind == "armour" and item.id == "shield" for item in equipment)
     worn = next((item for item in equipment if item.kind == "armour" and item.id != "shield"), None)
@@ -242,7 +253,7 @@ def build_sheet(request: CharacterCreateRequest) -> CharacterSheet:
         armour_class=derive_ac(dex_mod, armour, shield),
         speed=race.speed,
         saving_throws=derive_saves(character_class),
-        skills=request.skills,
+        skills=skills,
         equipment=equipment,
         appearance=request.appearance,
         backstory=request.backstory,
