@@ -2,17 +2,22 @@ import contextlib
 import os
 import re
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
+import structlog
 import tiktoken
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.llm import service as llm_service
 from app.core.settings import get_settings
 from app.modules.srd.errors import SrdCorpusEmptyError, SrdSourceError, SrdVectorWidthError
 from app.modules.srd.models import EMBEDDING_WIDTH, SrdRule
-from app.modules.srd.schemas import CorpusStatus, RuleChunk
+from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleChunk
+
+logger = structlog.get_logger()
 
 # `content/srd/` sits alongside `content/campaigns/` (see
 # `modules/content/service.py`'s `CONTENT_ROOT`), one level up from
@@ -254,3 +259,139 @@ def chunk_source(path: Path) -> list[RuleChunk]:
                 )
             )
     return chunks
+
+
+def _restore_previous_source(dest_path: Path, previous_bytes: bytes | None) -> None:
+    """Puts the stored SRD source back to how it was before this `ingest`
+    call's `fetch_source` replaced it: byte-for-byte when there was a
+    previous file, removed entirely when there was not. A failure here is
+    logged and swallowed, never raised -- the caller is already unwinding a
+    real failure (a fetch/embed/db error) and a second, unrelated
+    filesystem error must not replace or hide that original one."""
+    try:
+        if previous_bytes is None:
+            dest_path.unlink(missing_ok=True)
+            return
+
+        dest_dir = dest_path.parent
+        fd, tmp_name = tempfile.mkstemp(
+            dir=dest_dir, prefix=f".{dest_path.name}.", suffix=".restore.tmp"
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "wb") as tmp_file:
+                tmp_file.write(previous_bytes)
+            os.replace(tmp_path, dest_path)
+        except OSError:
+            tmp_path.unlink(missing_ok=True)
+            raise
+    except OSError:
+        logger.error("srd_source_restore_failed", dest_path=str(dest_path), exc_info=True)
+
+
+# The gateway's own per-request cap is 300,000 tokens; a chunk caps at
+# `MAX_CHUNK_TOKENS` (1000), so 256 * 1000 = 256,000 stays comfortably
+# under it.
+EMBED_BATCH_SIZE = 256
+
+
+async def ingest(
+    db: AsyncSession,
+    *,
+    version: str = SOURCE_VERSION,
+    on_batch: Callable[[int, int], None] | None = None,
+) -> IngestReport:
+    """Fetches, stores, chunks, embeds and stores the SRD corpus, replacing
+    it wholesale.
+
+    Checks the embedding width first (AC3), before `fetch_source` spends a
+    gateway request. Every chunk is embedded, in `EMBED_BATCH_SIZE`-sized
+    batches, before any row is written -- `llm_service.embed_texts` is
+    called attribute-style so tests can monkeypatch it, and its `LlmError`
+    travels out unwrapped, so the write never runs when a batch fails.
+    `on_batch(chunks_done, chunks_total)` fires after each batch, for a
+    caller that wants progress; this function itself never prints.
+
+    The write is one short transaction: delete every existing row, insert
+    the newly embedded ones, commit -- never opened until every vector is
+    in hand, so it is never held across a gateway call. A failure during
+    the write rolls back before the exception is re-raised.
+
+    `cost_usd` sums every batch's reported cost; `cost_complete` is `False`
+    when the gateway priced only some of the batches (a known lower bound,
+    not the true total). `cost_usd` is `None` only when no batch reported a
+    cost at all.
+
+    `fetch_source` already leaves an existing stored copy untouched on its
+    own failure; the window this function still has to guard is the one
+    *after* that store succeeds -- a failure in chunking, embedding or the
+    write below restores the file back to what it held before this call,
+    byte-for-byte (no file at all when there was none), before the
+    exception is re-raised. Caught as `BaseException`, not `Exception`: an
+    operator's `KeyboardInterrupt` partway through a minute-long embed run
+    must restore the file exactly like any other failure here.
+    """
+    check_vector_width()
+
+    dest_path = SRD_ROOT / version / SOURCE_FILENAME
+    previous_source_bytes = dest_path.read_bytes() if dest_path.exists() else None
+
+    path = fetch_source(version=version)
+
+    try:
+        chunks = chunk_source(path)
+
+        embedding_model = get_settings().embedding_model
+        total = len(chunks)
+
+        vectors: list[list[float]] = []
+        cost_total = 0.0
+        any_batch_priced = False
+        any_batch_unpriced = False
+
+        for start in range(0, total, EMBED_BATCH_SIZE):
+            batch = chunks[start : start + EMBED_BATCH_SIZE]
+            result = llm_service.embed_texts([chunk.text for chunk in batch], model=embedding_model)
+            vectors.extend(result.vectors)
+            if result.usage.cost_usd is None:
+                any_batch_unpriced = True
+            else:
+                cost_total += result.usage.cost_usd
+                any_batch_priced = True
+            if on_batch is not None:
+                on_batch(len(vectors), total)
+
+        cost_complete = not (any_batch_priced and any_batch_unpriced)
+
+        rows = [
+            SrdRule(
+                source_version=version,
+                heading_path=chunk.heading_path,
+                ordinal=chunk.ordinal,
+                text=chunk.text,
+                token_count=chunk.token_count,
+                embedding_model=embedding_model,
+                embedding=vector,
+            )
+            for chunk, vector in zip(chunks, vectors, strict=True)
+        ]
+
+        try:
+            await db.execute(delete(SrdRule))
+            db.add_all(rows)
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
+    except BaseException:
+        _restore_previous_source(dest_path, previous_source_bytes)
+        raise
+
+    return IngestReport(
+        source_version=version,
+        source_bytes=path.stat().st_size,
+        chunk_count=total,
+        token_count=sum(chunk.token_count for chunk in chunks),
+        cost_usd=cost_total if any_batch_priced else None,
+        cost_complete=cost_complete,
+    )

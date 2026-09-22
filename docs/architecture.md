@@ -11,7 +11,7 @@ skeletons and username/password authentication exist. The game agent does not.
 ## Tech stack
 
 - Python 3.12 · FastAPI · Typer (`app` CLI) · SQLAlchemy 2 (async) · Alembic · Pydantic 2 · structlog
-- PostgreSQL (pgvector) → application state; SRD rule chunks for RAG once ingest lands
+- PostgreSQL (pgvector) → application state; SRD rule chunks and embeddings for RAG, loaded by `app srd ingest`
 - OpenRouter → every LLM call, through the `core/llm/` seam; LangChain carries chat, images go direct through the OpenRouter SDK, LangGraph provides the checkpointer that persists agent state
 - TypeScript · React 19 · Material UI 9 · Vite · TanStack Query · React Router · react-i18next
 - Tooling: `uv` + ruff + pytest (backend), `pnpm` + ESLint + `tsc` + Vitest (frontend)

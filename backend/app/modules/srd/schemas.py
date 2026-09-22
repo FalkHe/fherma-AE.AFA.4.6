@@ -23,3 +23,16 @@ class CorpusStatus(CamelModel):
     source_version: str | None
     embedding_model: str | None
     ingested_at: datetime | None
+
+
+class IngestReport(CamelModel):
+    """What `service.ingest` did. `cost_usd` is `None` when no batch
+    reported a cost; `cost_complete` is `False` when only some batches did
+    (a known lower bound, not the true total)."""
+
+    source_version: str
+    source_bytes: int
+    chunk_count: int
+    token_count: int
+    cost_usd: float | None
+    cost_complete: bool = True
