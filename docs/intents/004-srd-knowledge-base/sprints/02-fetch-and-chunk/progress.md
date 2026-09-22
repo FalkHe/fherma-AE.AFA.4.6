@@ -9,7 +9,7 @@ stage: running
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
+| 1 | done | fetch, chunk, `ingest --dry-run`, LICENSE + README attribution, deps; 4 commits; live dry-run: 1 878 072 bytes, 1750 chunks, 507 719 tokens, largest chunk 1000 tokens, second run leaves the tree clean |
 
 Status: `open | running | done | failed`
 
@@ -19,5 +19,10 @@ Status: `open | running | done | failed`
 - The human asked for a quick sprint with minimal tests: one implementer, no qa agent, the live dry-run is the acceptance proof.
 
 ## Backlog proposals
+- The CLI container runs as root, so a live ingest leaves the stored SRD file root-owned on the host and the implementer had to fix permissions by hand; a non-root user in the Dockerfile would remove that step for every future ingest.
+- The chunk sample the dry-run prints is the first five heading paths, so it always shows the legal notice and racial traits; a spread sample would be more telling.
+
+## Gates
+Lint (backend + frontend), backend suite (980 passed, 147 database-marked deselected) and frontend suite (53) all pass.
 
 ## Verify
