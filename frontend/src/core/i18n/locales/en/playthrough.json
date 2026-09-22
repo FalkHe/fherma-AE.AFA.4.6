@@ -63,6 +63,7 @@
     "select": {
       "title": "Select a campaign",
       "intro": "Choose the story your party will play.",
+      "close": "Close",
       "adventureCount_one": "{{count}} adventure",
       "adventureCount_other": "{{count}} adventures",
       "rollingUp": "Rolling up \"{{title}}\" — taking you to the table."

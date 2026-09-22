@@ -198,6 +198,24 @@ describe("SelectCampaignDialog (AC1-AC6)", () => {
     expect(getRequests({ method: "POST", path: "/api/v1/playthrough/campaign" })).toHaveLength(0);
   });
 
+  it("AC5: the header's close button dismisses the dialog and creates nothing", async () => {
+    stubAuthenticated();
+    mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
+    mockRoute("GET", "/api/v1/content/campaigns", { status: 200, body: [CAMPAIGN_A] });
+
+    const user = userEvent.setup();
+    const app = renderApp(["/"]);
+    await openDialog(user);
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Select a campaign" })).not.toBeInTheDocument(),
+    );
+    expect(app.getPathname()).toBe("/");
+    expect(getRequests({ method: "POST", path: "/api/v1/playthrough/campaign" })).toHaveLength(0);
+  });
+
   it("AC6: the intro line reads 'Choose the story your party will play.' with no promise about renaming", async () => {
     stubAuthenticated();
     mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });

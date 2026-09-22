@@ -8,6 +8,14 @@
 // again" replaces that row on failure without closing the dialog (AC4), and
 // `onClose` resets the mutation so a stale error never survives into the
 // next open (AC5).
+//
+// The header's `×` close button (design bundle's `IconButton` recipe,
+// `_ds_bundle.js:711-716`, used by this same picker at Dashboard.dc.html:
+// 100) follows MUI's own "customized dialog" pattern: an `IconButton`
+// positioned inside `DialogTitle` rather than a footer action, since this
+// dialog has no action row of its own (unlike `InDevelopmentDialog`'s
+// footer "Close" button). It calls the same `handleClose` as Escape/backdrop
+// dismissal, so all three paths behave identically.
 import { useState, type ReactElement } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
@@ -17,8 +25,10 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useCampaignCatalogue, type CampaignSummary } from "../hooks/useCampaignCatalogue";
@@ -64,7 +74,17 @@ export function SelectCampaignDialog({ open, onClose }: SelectCampaignDialogProp
 
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
-      <DialogTitle>{t("dashboard.select.title")}</DialogTitle>
+      <DialogTitle sx={{ pr: 7 }}>
+        {t("dashboard.select.title")}
+        <IconButton
+          aria-label={t("dashboard.select.close")}
+          onClick={handleClose}
+          size="small"
+          sx={{ position: "absolute", right: 12, top: 12, color: "text.secondary" }}
+        >
+          <X size={18} aria-hidden />
+        </IconButton>
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={4}>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>

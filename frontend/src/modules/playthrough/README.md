@@ -35,10 +35,10 @@ then its party and its adventures.
   run's screen and invalidates `["runSummaries"]` in the background so the
   dashboard is current by the time the player returns. A failed start shows
   a retryable error inline without closing the dialog; dismissing the dialog
-  (`Escape`, backdrop, or the close affordance) issues no request at all and
-  resets the mutation. Starting the same campaign twice is unrestricted by
-  design — the uniqueness constraint behind the endpoint is per-run, not
-  per-campaign-per-player — so it simply creates a second run.
+  (`Escape`, a backdrop click, or the header's `×` close button) issues no
+  request at all and resets the mutation. Starting the same campaign twice is
+  unrestricted by design — the uniqueness constraint behind the endpoint is
+  per-run, not per-campaign-per-player — so it simply creates a second run.
 - `runStatus.ts` — `runStatusKey`/`runActionKey`, the run-status vocabulary
   shared by `RunRoute` and the dashboard (`run.status.new/.inProgress/.archived`,
   `dashboard.card.begin/.resume`). `runStatusKey`'s three values are also the
