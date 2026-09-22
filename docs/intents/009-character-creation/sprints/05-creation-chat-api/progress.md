@@ -9,7 +9,7 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | routes, fixture, 5 route tests, client regenerated via app-cli export |
+| 1 | done | routes, fixture, 5 route tests, client regenerated via app-cli export |
 | qa | done | 3 acceptance tests over the HTTP app |
 
 Status: `open | running | done | failed`
@@ -23,3 +23,4 @@ Status: `open | running | done | failed`
 
 ## Verify
 Round 1: changes requested — AC3: `sheet.abilities` shows pre-racial draft scores while HP/AC/review/saved character use the final ones.
+Round 1 fix: panel abilities come from the built sheet or `apply_race`; AC3 test asserts Halfling 15→17.

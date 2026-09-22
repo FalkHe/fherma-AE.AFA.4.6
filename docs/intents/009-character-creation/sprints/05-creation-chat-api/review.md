@@ -12,7 +12,7 @@ The Tavern Keeper conversation can now be held over the network, one message at 
 
 ## How to check it
 - On the interactive API page, signed in, start a conversation for a fresh run: the reply names Rosalind Thorn and the step reads race and class.
-- Send "a sneaky halfling burglar", then "yes": the reply carries the Keeper's words, the sheet shows Halfling and Rogue, the step moves to scores.
+- Send "a sneaky halfling burglar", then "yes": the reply carries the Keeper's words, the sheet shows Halfling and Rogue, the step moves to scores; once scores are set the sheet's dexterity already includes the halfling's +2.
 - Start a conversation on a run that already has a character: refused with the character-exists error.
 - Signed out, the same call is refused; a message on a made-up conversation id is not found.
 
