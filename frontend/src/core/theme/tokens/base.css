@@ -1,0 +1,8 @@
+html{color-scheme:dark}
+body{margin:0;background:var(--surface-app);color:var(--text-primary);font-family:var(--font-body);font-size:var(--text-body);line-height:var(--lh-body);-webkit-font-smoothing:antialiased;text-wrap:pretty}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:var(--weight-bold);margin:0;color:var(--text-primary)}
+a{color:var(--text-link);text-decoration-color:rgba(243,200,124,.4);text-underline-offset:3px}
+a:hover{color:var(--text-link-hover);text-decoration-color:currentColor}
+::selection{background:rgba(232,169,74,.28)}
+:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px;border-radius:var(--radius-xs)}
+code,kbd{font-family:var(--font-mono);font-size:var(--text-mono)}

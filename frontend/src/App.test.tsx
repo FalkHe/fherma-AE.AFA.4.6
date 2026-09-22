@@ -50,7 +50,7 @@ describe("App routing (criterion 46, UI-38)", () => {
     stubAuthenticated();
     renderApp(["/"]);
     await screen.findByRole("heading", { level: 1 });
-    await waitFor(() => expect(document.title).toContain("AI Dungeon Master"));
+    await waitFor(() => expect(document.title).toContain("The Goblin's Tavern"));
     expect(document.title).not.toBe("Vite + React");
   });
 

@@ -1,0 +1,26 @@
+:root{
+  --sp-0:0; /* @kind spacing */
+  --sp-1:2px;
+  --sp-2:4px;
+  --sp-3:8px;
+  --sp-4:12px;
+  --sp-5:16px;
+  --sp-6:20px;
+  --sp-7:24px;
+  --sp-8:32px;
+  --sp-9:40px;
+  --sp-10:56px;
+  --sp-11:72px;
+  --sp-12:96px;
+  --gutter:var(--sp-7);
+  --page-pad:var(--sp-8);
+  --stack-tight:var(--sp-3);
+  --stack:var(--sp-5);
+  --stack-loose:var(--sp-8);
+  --width-prose:64ch; /* @kind spacing */
+  --width-chat:760px; /* @kind spacing */
+  --width-rail:296px; /* @kind spacing */
+  --control-h-sm:32px; /* @kind spacing */
+  --control-h-md:40px; /* @kind spacing */
+  --control-h-lg:48px; /* @kind spacing */
+}

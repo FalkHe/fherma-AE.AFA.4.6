@@ -18,9 +18,35 @@ export interface AppShellProps {
 export function AppShell({ title, action, children }: AppShellProps) {
   return (
     <>
-      <AppBar position="static">
+      <AppBar
+        position="static"
+        elevation={0}
+        // Dark mode already keeps `color` off the default "primary" fill
+        // (Material Design guidance MUI follows unless `enableColorOnDark`
+        // is set), so the bar reads as a neutral raised surface rather than
+        // a flood of the lantern accent — no override needed here. The
+        // hairline + shadow + uneven bottom edge are this system's own
+        // panel treatment (design readme.md "Cards" / "Corners").
+        sx={(theme) => ({
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          borderRadius: theme.shape.borderRadiusOrganicSoft,
+          boxShadow: theme.shadows[2],
+        })}
+      >
         <Toolbar>
-          <Typography variant="h6" component="p" noWrap sx={{ flexGrow: 1 }}>
+          <Typography
+            variant="h6"
+            component="p"
+            noWrap
+            sx={{
+              flexGrow: 1,
+              // The brand name is set in the small-caps face wherever a
+              // mark would go — there is no logo (design readme.md
+              // "Iconography").
+              fontFamily: "var(--font-smallcaps)",
+              letterSpacing: "var(--ls-label)",
+            }}
+          >
             {title}
           </Typography>
           {action}

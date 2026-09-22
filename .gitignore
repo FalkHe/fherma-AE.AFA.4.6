@@ -20,3 +20,5 @@ __pycache__/
 
 # AC Report
 /ac-report.*
+# Playwright MCP session artefacts (screenshots, snapshots, console logs)
+.playwright-mcp/
