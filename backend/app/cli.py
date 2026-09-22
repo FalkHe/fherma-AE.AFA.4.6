@@ -8,6 +8,7 @@ from app.core.logging import configure_logging
 from app.core.prompts.commands import prompt_app
 from app.core.tracing import service as tracing
 from app.main import create_app
+from app.modules.character.commands import character_app
 from app.modules.content.commands import content_app
 from app.modules.game.commands import game_app
 from app.modules.playthrough.commands import playthrough_app
@@ -34,6 +35,7 @@ def export() -> None:
     print(json.dumps(create_app().openapi(), indent=2))
 
 
+cli.add_typer(character_app, name="character")
 cli.add_typer(content_app, name="content")
 cli.add_typer(game_app, name="game")
 cli.add_typer(checkpoint_app, name="checkpoint")

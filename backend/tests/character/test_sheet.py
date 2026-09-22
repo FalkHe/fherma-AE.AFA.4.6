@@ -25,7 +25,7 @@ def _sheet(**overrides) -> dict:
         "armour_class": 12,
         "speed": 30,
         "saving_throws": ["intelligence", "wisdom"],
-        "skills": ["arcana", "investigation"],
+        "skills": ["Arcana", "Investigation"],
         "equipment": [GearRef(kind="gear", id="spellbook")],
         "appearance": "Tall, silver-haired",
         "backstory": "A scholar of the arcane.",
