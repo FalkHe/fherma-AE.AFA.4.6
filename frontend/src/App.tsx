@@ -11,8 +11,7 @@ import { RequireAuth } from "./modules/auth/components/RequireAuth";
 import { SignInRoute } from "./modules/auth/routes/SignInRoute";
 import { SignUpRoute } from "./modules/auth/routes/SignUpRoute";
 import { AppShell } from "./core/layout/AppShell";
-import { DashboardRoute } from "./modules/home/routes/DashboardRoute";
-import { HomeRoute } from "./modules/home/routes/HomeRoute";
+import { DashboardRoute } from "./modules/playthrough/routes/DashboardRoute";
 import { RunRoute } from "./modules/playthrough/routes/RunRoute";
 
 export default function App() {
@@ -27,8 +26,7 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route path="/" element={<HomeRoute />} />
-        <Route path="/dashboard" element={<DashboardRoute />} />
+        <Route path="/" element={<DashboardRoute />} />
         <Route path="/runs/:runId" element={<RunRoute />} />
       </Route>
       <Route element={<RequireAnonymous><Outlet /></RequireAnonymous>}>
