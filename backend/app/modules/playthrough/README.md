@@ -430,6 +430,23 @@ Service functions (`service.py`), called as `service.f(...)`:
   Checks membership like every other read. Called only from the `app
   playthrough cost` CLI command below — no route calls it, and none is
   meant to.
+- `recap` — a run's `n` most recent `narration` events (default 5), oldest
+  first, no question asked. An operator read gated on the run's existence
+  alone, not membership: `_get_run` first, no `user_id`. Picks the newest
+  `n` by `id DESC LIMIT n`, then flips to chronological order in Python —
+  no `embedding IS NOT NULL` filter and no call to the embedding seam at
+  all. A run with no narration returns `[]`. Reads into `NarrationRead`
+  (`id, createdAt, text`) — deliberately not `EventRead`.
+- `recall` — the `k` (default 5) `narration` events from anywhere in the
+  run whose meaning is closest to a `query`, closest first, no relevance
+  floor. Same operator gate as `recap` (`_get_run`, no `user_id`). Embeds
+  `query` exactly once through `llm_service.embed_texts`, off the event
+  loop; any seam failure propagates unchanged, unlike a write. Orders
+  `narration` rows with `embedding IS NOT NULL` by
+  `Event.embedding.cosine_distance` — the same predicates and operator
+  the `ix_events_embedding_narration` partial index serves, so a row that
+  failed to be encoded is never a candidate. A run with no narration
+  returns `[]`. Reads into `NarrationRead` like `recap`.
 
 Cost has **no HTTP route anywhere in this module, on purpose**: it is a
 developer's number, not a player's, meant for a developer drawer the
@@ -467,6 +484,19 @@ writer — commits, and prints `event: <id>`. A refusal from `append_event`
 fails exactly like `cost` and `roll` do: `f"{exc.code}: {exc}"` to stderr
 and exit `1`. An unknown run id is not caught here — `append_event` does
 no run lookup — and surfaces as the database's own error instead.
+
+`app playthrough recall <run-id> "<query>" [--k]` and `app playthrough
+recap <run-id> [--n]` (Typer, `commands.py`) are the CLI reads over the
+run's remembered narration: `recall` finds entries by *meaning* — it
+searches with an embedding of `<query>` and returns the `k` (default 5)
+closest — while `recap` is recency alone — the `n` (default 5) most
+recent entries, oldest first, no query. Both are operator commands with
+no membership gate, like `narrate`: no `--user`. Each prints one line per
+entry — `<id> <time> <text>` — and nothing else; no matches or no
+narration yet prints nothing and exits `0`. An unknown run fails exactly
+like every other command here: `f"{exc.code}: {exc}"` to stderr and exit
+`1` (`NOT_FOUND`) — the lookup lives in `recall`/`recap` themselves, not
+in the command.
 
 **Interacting, taking, dropping, giving, using an item, attacking and
 dealing damage all have no HTTP route either, for the same reason**:

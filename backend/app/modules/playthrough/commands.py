@@ -53,6 +53,21 @@ this sprint. A refusal that *is* a `PlaythroughError` -- an unrecognised
 event type or visibility, neither reachable through this command's fixed
 arguments today -- fails exactly like `cost` and `roll`: `f"{exc.code}:
 {exc}"` to stderr plus `typer.Exit(code=1)`.
+
+`app playthrough recall` and `app playthrough recap` -- sprint 006/02 WI3,
+binding interface in
+`docs/intents/006-journal-memory/sprints/02-recall-by-meaning-and-recap/
+plan.md` (I3), command half of AC5.
+
+Both are operator commands with no membership gate, exactly like `narrate`:
+no `--user`. Each opens its session the same way, calls the like-named
+`playthrough_service` function -- `recall(db, run_id=..., query=...,
+k=...)` or `recap(db, run_id=..., n=...)` -- and prints one line per
+returned item: `f"{item.id} {item.created_at.isoformat()} {item.text}"`,
+nothing else. An empty result prints nothing and exits `0`. The run lookup
+lives in the service, not here, so a foreign or unknown run surfaces as
+`CampaignRunNotFoundError` and fails exactly like every other command in
+this module: `f"{exc.code}: {exc}"` to stderr plus `typer.Exit(code=1)`.
 """
 
 import asyncio
@@ -187,3 +202,48 @@ def narrate(
         raise typer.Exit(code=1) from exc
 
     typer.echo(f"event: {event.id}")
+
+
+async def _recall(*, run_id: str, query: str, k: int) -> list[Any]:
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as db:
+        return await playthrough_service.recall(db, run_id=run_id, query=query, k=k)
+
+
+@playthrough_app.command("recall")
+def recall(
+    run_id: str = typer.Argument(..., help="The campaign run id."),
+    query: str = typer.Argument(
+        ..., help="Free-form text to find remembered narration by meaning."
+    ),
+    k: int = typer.Option(5, "--k", help="Maximum number of remembered entries to return."),
+) -> None:
+    try:
+        items = asyncio.run(_recall(run_id=run_id, query=query, k=k))
+    except PlaythroughError as exc:
+        typer.echo(f"{exc.code}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    for item in items:
+        typer.echo(f"{item.id} {item.created_at.isoformat()} {item.text}")
+
+
+async def _recap(*, run_id: str, n: int) -> list[Any]:
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as db:
+        return await playthrough_service.recap(db, run_id=run_id, n=n)
+
+
+@playthrough_app.command("recap")
+def recap(
+    run_id: str = typer.Argument(..., help="The campaign run id."),
+    n: int = typer.Option(5, "--n", help="Number of most recent remembered entries to return."),
+) -> None:
+    try:
+        items = asyncio.run(_recap(run_id=run_id, n=n))
+    except PlaythroughError as exc:
+        typer.echo(f"{exc.code}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    for item in items:
+        typer.echo(f"{item.id} {item.created_at.isoformat()} {item.text}")

@@ -10,7 +10,7 @@ activity, not an entity: **no table is called `playthrough`**, and no row is "a
 playthrough".
 
 Today the module ships its five tables and their migrations, plus a service
-of twenty-nine functions behind nine authenticated endpoints and two
+of twenty-nine functions behind nine authenticated endpoints and three
 commands run by hand rather than an endpoint. Together they carry a whole
 game: starting a campaign run and giving it its character, renaming it and
 reading it back, entering its next adventure and moving whoever is acting
@@ -22,8 +22,11 @@ for (§16, §17); an item changing hands three ways, and the placeholder
 standing where using one will work once one can be written as consumable
 (§18, §19); and a fight — striking a blow, wounding whoever it landed on,
 and rolling to see who acts first — built from those same ordinary
-mechanics rather than a state of its own (§20–§22). A tool layer letting
-the Dungeon Master reach any of this belongs to a separate, later phase;
+mechanics rather than a state of its own (§20–§22). A narration is also
+given a vector of its own meaning as it is written, stored on the entry
+beside the text it came from — recorded now, searched by nobody yet (§7,
+§8). A tool layer letting the Dungeon Master reach any of this belongs to
+a separate, later phase;
 nothing in this document describes one, because none exists yet.
 
 ## 1. What the module owns, and what it does not
@@ -231,11 +234,17 @@ Append-only: written once, never edited, never deleted.
 | `prompt_tokens`, `completion_tokens` | `Integer` | yes | `NULL` | Model usage for this event |
 | `cost_usd` | `NUMERIC(12,6)` | yes | `NULL` | Exact decimal, never a float |
 | `created_at` | timestamptz | no | `now()` | The only timestamp — there is no `updated_at` |
+| `embedding` | `VECTOR(1536)` | yes | `NULL` | The entry's own meaning as a vector — written on `narration` rows only, and only when the embedding succeeded |
+| `embedding_model` | `String` | yes | `NULL` | Which model produced that vector — written with it, `NULL` whenever it is |
 
 - **Checks** on `type` and `visibility`. Indexed on
   `(campaign_run_id, visibility, id)` — the player's transcript, in order —
-  and on `(campaign_run_id, turn_id)`. **No unique constraint**: two identical
-  narrations are two events.
+  and on `(campaign_run_id, turn_id)`. A third index,
+  `ix_events_embedding_narration`, is an HNSW index over `embedding` under
+  cosine distance and is **partial** — restricted to
+  `type = 'narration' AND embedding IS NOT NULL` — so only the rows that
+  actually carry a vector are ever in it. **No unique constraint**: two
+  identical narrations are two events.
 - **`visibility` splits what the player may read from DM-only bookkeeping**,
   so hidden rolls and tool calls can be recorded in the same stream they
   happened in rather than in a second table.
@@ -245,6 +254,17 @@ Append-only: written once, never edited, never deleted.
   phase; this phase builds no combat state. The column is carried now so that
   events written before the turn concept exists can still be grouped by it,
   and it is a bare column precisely because there is no table to point at.
+- **`embedding` and `embedding_model` belong to narration alone.** Added by
+  `0008_event_embeddings.py` on top of the table `0006_events.py` created,
+  both nullable, and both written — or both left `NULL` — together, by the
+  one writer, in the same insert as the entry itself (§8). Nothing else in
+  the transcript has meaning worth indexing: a roll, a tool call or a scene
+  milestone is a fact, not a sentence, and for none of them is an embedding
+  ever asked for. The width is pinned at 1536 in a single
+  `EMBEDDING_WIDTH` the model and the migration share, and a vector that
+  comes back any other width is discarded rather than stored. **Nothing
+  searches these vectors yet**: this phase records what a narration meant;
+  finding a narration again by that meaning is a later one.
 - **Cost is stored per event, not per run.** A run's spend is a sum over its
   events, which cannot drift from the events that caused it — there is no
   separate ledger row and nothing to keep in step. How that sum is read, and
@@ -397,12 +417,47 @@ type's shape raises `InvalidEventPayloadError` and **writes nothing** — not
 a partial row, not a row with a wrong-shaped payload. Model usage, when
 given, copies its token counts across and turns its cost into
 `Decimal(str(usage.cost_usd))`, never `Decimal(float)`, so the exact figure
-survives. `append_event` `add`s and `flush`es, so the new row's id exists for
-whatever caused it to be written, but it **never commits**: the mechanic
+survives — and where the entry's own embedding (below) cost something too,
+its prompt tokens and its cost are added on top of the caller's, so one
+entry still reports one honest number for everything writing it spent;
+completion tokens stay the caller's alone. `append_event` `add`s and
+`flush`es, so the new row's id exists for whatever caused it to be written, but it **never commits**: the mechanic
 recording its own work — a roll, a scene entered, a tool called — commits
 once, after it has also made whatever state change the event describes, so
 the two land together or not at all. It makes **no membership check**,
 because by the time anything calls it, something upstream already has.
+
+**A narration is embedded as it is written.** When the entry being
+appended is a `narration` whose text is not blank — and only then —
+`append_event` first asks the core embedding seam (`core/llm`'s
+`embed_texts`, called off the event loop) for a vector of that text, and
+builds the row with that vector and the name of the model that produced it
+already on it (§7). It happens inside the one call that writes the entry,
+never as a second pass over the transcript afterwards: the meaning of a
+narration is recorded in the same insert as the narration, or not at all.
+Every other kind of entry is written exactly as it was before — no call is
+made, and both columns stay `NULL`.
+
+**A lost embedding must never lose the narration.** Anything that goes
+wrong — the seam raising, the provider refusing, a vector coming back the
+wrong width — is caught, logged once as a warning, and then let go: both
+columns are left `NULL` and the row is written regardless. The caller sees
+no difference, gets no error and needs no handling of its own, because a
+transcript entry is the thing that matters and an embedding is not worth
+losing one over.
+
+**Writing to the transcript by hand** is `app playthrough narrate <run-id>
+"<text>"`, the module's third command run by hand. It appends one
+`narration` entry to the run — or one `player_action` entry with
+`--player-action` — both `player`-visible and carrying nothing but that
+text, commits, and prints the new entry's id. It goes through
+`append_event` like every other writer, so a narration written this way is
+embedded exactly as one written by a mechanic is. There is no `--user` and
+no membership check — unlike the cost command (§11), which takes a
+`--user` and is gated like every other read here, this one is for whoever
+operates the service rather than for a player. That is also why a run id
+nothing answers to surfaces as the database's own foreign-key error rather
+than as this module's "not found": there is no lookup here to raise it.
 
 **Reading the transcript** is `list_events`, behind
 `GET …/{runId}/events`. It answers the run's `player`-visible events, oldest

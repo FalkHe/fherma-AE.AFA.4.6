@@ -22,11 +22,24 @@ WI3 (sprint 006/01) adds `app playthrough narrate`, the command half of
 AC5. Like `cost` above -- not `roll` -- these tests fake the seam at
 `playthrough_service.append_event` (module attribute) and stay
 engine-free: no `@pytest.mark.database`.
+
+WI3 (sprint 006/02) adds `app playthrough recall` and `app playthrough
+recap`, the command half of that sprint's AC5. Like `narrate` above, these
+fake `playthrough_service.recall`/`.recap` (module attribute) and stay
+engine-free. Neither function exists yet at the time this file is written
+-- `raising=False` lets the monkeypatch install the attribute regardless of
+which of this work item and the service work items lands first. Returned
+items are faked with `types.SimpleNamespace(id=..., created_at=...,
+text=...)`, the exact three attributes `commands.py` reads off a
+`NarrationRead` -- a stand-in is enough because the command only ever does
+attribute access, never an isinstance check.
 """
 
 import asyncio
 import random as random_module
+from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
@@ -282,3 +295,125 @@ def test_narrate_on_a_writer_refusal_exits_1_with_the_error_code_on_stderr(monke
     assert result.exit_code == 1
     assert result.stdout == ""
     assert result.stderr.strip() == "VALIDATION_ERROR: unknown event type: narration"
+
+
+# --- `app playthrough recall` / `app playthrough recap` (WI3, sprint 006/02) -----
+
+
+def _fake_item(item_id: str, *, when: datetime, text: str) -> SimpleNamespace:
+    return SimpleNamespace(id=item_id, created_at=when, text=text)
+
+
+def test_recall_prints_one_line_per_item_with_id_time_and_text_and_defaults_k_to_5(
+    monkeypatch,
+):
+    when = datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+    async def fake_recall(db, *, run_id, query, k):
+        assert run_id == RUN_ID
+        assert query == "the rusty key"
+        assert k == 5
+        return [_fake_item("event-1", when=when, text="You find a rusty key.")]
+
+    monkeypatch.setattr(playthrough_service, "recall", fake_recall, raising=False)
+
+    result = runner.invoke(cli, ["playthrough", "recall", RUN_ID, "the rusty key"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert result.stdout == f"event-1 {when.isoformat()} You find a rusty key.\n"
+
+
+def test_recall_with_k_option_passes_it_through(monkeypatch):
+    async def fake_recall(db, *, run_id, query, k):
+        assert k == 2
+        return []
+
+    monkeypatch.setattr(playthrough_service, "recall", fake_recall, raising=False)
+
+    result = runner.invoke(cli, ["playthrough", "recall", RUN_ID, "the rusty key", "--k", "2"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_recall_with_no_matches_prints_nothing_and_exits_0(monkeypatch):
+    async def fake_recall(db, *, run_id, query, k):
+        return []
+
+    monkeypatch.setattr(playthrough_service, "recall", fake_recall, raising=False)
+
+    result = runner.invoke(cli, ["playthrough", "recall", RUN_ID, "nothing like that"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
+def test_recall_on_a_foreign_or_unknown_run_exits_1_with_not_found_on_stderr(monkeypatch):
+    async def failing_recall(db, *, run_id, query, k):
+        raise CampaignRunNotFoundError(run_id)
+
+    monkeypatch.setattr(playthrough_service, "recall", failing_recall, raising=False)
+
+    result = runner.invoke(cli, ["playthrough", "recall", RUN_ID, "the rusty key"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr.strip() == f"NOT_FOUND: campaign run not found: {RUN_ID}"
+
+
+def test_recap_prints_one_line_per_item_with_id_time_and_text_and_defaults_n_to_5(
+    monkeypatch,
+):
+    when = datetime(2024, 3, 4, 5, 6, 7, tzinfo=UTC)
+
+    async def fake_recap(db, *, run_id, n):
+        assert run_id == RUN_ID
+        assert n == 5
+        return [_fake_item("event-2", when=when, text="The party rests at the inn.")]
+
+    monkeypatch.setattr(playthrough_service, "recap", fake_recap, raising=False)
+
+    result = runner.invoke(cli, ["playthrough", "recap", RUN_ID])
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    assert result.stdout == f"event-2 {when.isoformat()} The party rests at the inn.\n"
+
+
+def test_recap_with_n_option_passes_it_through(monkeypatch):
+    async def fake_recap(db, *, run_id, n):
+        assert n == 10
+        return []
+
+    monkeypatch.setattr(playthrough_service, "recap", fake_recap, raising=False)
+
+    result = runner.invoke(cli, ["playthrough", "recap", RUN_ID, "--n", "10"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_recap_with_no_events_prints_nothing_and_exits_0(monkeypatch):
+    async def fake_recap(db, *, run_id, n):
+        return []
+
+    monkeypatch.setattr(playthrough_service, "recap", fake_recap, raising=False)
+
+    result = runner.invoke(cli, ["playthrough", "recap", RUN_ID])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
+def test_recap_on_a_foreign_or_unknown_run_exits_1_with_not_found_on_stderr(monkeypatch):
+    async def failing_recap(db, *, run_id, n):
+        raise CampaignRunNotFoundError(run_id)
+
+    monkeypatch.setattr(playthrough_service, "recap", failing_recap, raising=False)
+
+    result = runner.invoke(cli, ["playthrough", "recap", RUN_ID])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr.strip() == f"NOT_FOUND: campaign run not found: {RUN_ID}"
