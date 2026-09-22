@@ -17,6 +17,7 @@ Sprint outcomes, dependency-ordered. Status: `open | running | done`.
 | 04 | Running `app srd ingest` a second time replaces the corpus wholesale — the row count is the same, nothing is duplicated, and a run that fails part-way leaves the previous corpus intact | 03 | #11 | done |
 | 05 | `app srd search "<query>"` answers a rules question with SRD passages, best first, each carrying the heading path that cites the rule it came from | 03 | #12 | done |
 | 06 | `app srd search "<query>"` returns nothing and says so for a question the SRD does not cover, while still answering one it does — the relevance floor is pinned to a measured value | 05 | #13 | done |
+| 07 | Every rule is cited under its real heading: a heading's siblings are no longer filed under the first sibling (481 of 1,750 passages today), the corpus is re-loaded and the relevance cut-off re-checked | 05, 06 | #41 | open |
 
 ## Notes
 
@@ -36,6 +37,9 @@ Sprint outcomes, dependency-ordered. Status: `open | running | done`.
 - D7's floor cannot be picked before a corpus exists to measure against, which is
   why 06 sits behind 05. 02's `--dry-run` exists so D3's fetch/store/chunk half is
   mergeable before `embed_texts` lands; 03 is the same command without the flag.
+- 07 is a follow-up found in the 2026-09-22 completeness review: the source skips
+  heading levels and the splitter nested siblings under the first sibling. It
+  changes citations only, not how text is split.
 - No screen this phase, by design — "using the product" is the `app srd …`
   commands (← D2).
 - Coverage: D1 → 01, 03, 05 · D2 → 01–06 · D3 → 02, 03, 04 · D4 → 02, 05 · D5 →
