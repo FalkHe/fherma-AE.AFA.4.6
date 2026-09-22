@@ -12,9 +12,13 @@
 // The header's `×` close button (design bundle's `IconButton` recipe,
 // `_ds_bundle.js:711-716`, used by this same picker at Dashboard.dc.html:
 // 100) follows MUI's own "customized dialog" pattern: an `IconButton`
-// positioned inside `DialogTitle` rather than a footer action, since this
-// dialog has no action row of its own (unlike `InDevelopmentDialog`'s
-// footer "Close" button). It calls the same `handleClose` as Escape/backdrop
+// positioned absolutely as `DialogTitle`'s *sibling*, since this dialog has
+// no action row of its own (unlike `InDevelopmentDialog`'s footer "Close"
+// button) — not nested inside `DialogTitle`, which is exactly the element
+// `Dialog`'s `aria-labelledby` points at; nesting it there would fold
+// "Close" into the dialog's own accessible name. `Dialog`'s paper is
+// already `position: relative`, so the sibling needs no positioning
+// context of its own. It calls the same `handleClose` as Escape/backdrop
 // dismissal, so all three paths behave identically.
 import { useState, type ReactElement } from "react";
 import Alert from "@mui/material/Alert";
@@ -74,17 +78,15 @@ export function SelectCampaignDialog({ open, onClose }: SelectCampaignDialogProp
 
   return (
     <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
-      <DialogTitle sx={{ pr: 7 }}>
-        {t("dashboard.select.title")}
-        <IconButton
-          aria-label={t("dashboard.select.close")}
-          onClick={handleClose}
-          size="small"
-          sx={{ position: "absolute", right: 12, top: 12, color: "text.secondary" }}
-        >
-          <X size={18} aria-hidden />
-        </IconButton>
-      </DialogTitle>
+      <DialogTitle sx={{ pr: 7 }}>{t("dashboard.select.title")}</DialogTitle>
+      <IconButton
+        aria-label={t("dashboard.select.close")}
+        onClick={handleClose}
+        size="small"
+        sx={{ position: "absolute", right: 12, top: 12, color: "text.secondary" }}
+      >
+        <X size={18} aria-hidden />
+      </IconButton>
       <DialogContent>
         <Stack spacing={4}>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>

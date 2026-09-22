@@ -51,6 +51,17 @@ function stubAuthenticated() {
 async function openDialog(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: "Create new campaign" }));
   await screen.findByRole("heading", { name: "Select a campaign" });
+  // The close button must be a sibling of `DialogTitle`, never nested
+  // inside it — `Dialog`'s `aria-labelledby` points at `DialogTitle`, so an
+  // `IconButton` nested there folds its own "Close" name into the dialog's.
+  // `toHaveAccessibleName` checks the *whole* computed name, not a
+  // substring, so a folded "Select a campaign Close" would fail this even
+  // where it would not fail a plain `getByRole` name match (documented
+  // gap: this still passes under jsdom's own accessible-name computation,
+  // which does not fold a nested interactive descendant's name the way a
+  // real browser does — the live browser check is what actually guards
+  // this regression; verified live at intent review time).
+  expect(screen.getByRole("dialog")).toHaveAccessibleName("Select a campaign");
 }
 
 describe("SelectCampaignDialog (AC1-AC6)", () => {
@@ -170,7 +181,7 @@ describe("SelectCampaignDialog (AC1-AC6)", () => {
     await user.click(screen.getByRole("button", { name: new RegExp(CAMPAIGN_A.title) }));
 
     expect(await screen.findByText("Something went wrong. Please try again.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Select a campaign" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toHaveAccessibleName("Select a campaign");
     expect(app.getPathname()).toBe("/");
     expect(getRequests({ method: "POST", path: "/api/v1/playthrough/campaign" })).toHaveLength(1);
 
