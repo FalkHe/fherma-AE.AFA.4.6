@@ -24,3 +24,4 @@ A rules question the SRD does not cover now gets a clean "no relevant rule" inst
 Brief: docs/intents/004-srd-knowledge-base/sprints/06-relevance-floor/brief.md
 
 ## Verdict
+Round 1: Approve. A question the rulebook does not cover — a plasma rifle, sourdough bread, a Kubernetes setting — now answers "no relevant rule" and ends normally, while "how does half cover work" still opens with the cover rule and its three degrees. An empty rulebook remains a clearly different, failing outcome, and the module documentation records the cut-off together with the eleven questions measured to pick it.

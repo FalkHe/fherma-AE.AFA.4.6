@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: running
+stage: done
 ---
 # Progress: Sprint 06 — relevance floor
 
@@ -26,3 +26,4 @@ Status: `open | running | done | failed`
 Lint, backend suite (1037 passed), database-marked suite (152 passed) and frontend suite (65) pass.
 
 ## Verify
+Round 1: approve — AC1–AC5 and D7 pass on the verifier's own live queries (two extra off-topic questions also answered `no relevant rule`). Approval posted with the human's glab token, as before.
