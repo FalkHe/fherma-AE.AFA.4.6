@@ -1,7 +1,6 @@
 # playthrough
 
-The run screens: opening one run's campaign, its party and (sprint 06) its
-adventures.
+The run screens: opening one run's campaign, its party and its adventures.
 
 ## Owns
 
@@ -18,6 +17,11 @@ adventures.
   `PlayerCard` per member and an `InviteTile` for open seats; both the card's
   "Create character" button and the tile open `InDevelopmentDialog` (WI3,
   keys in `common`), whose open state `PartySection` alone owns (WI2).
+- `AdventuresSection` — one numbered row per adventure in campaign order;
+  the first unplayed one reads "Next up"/"Waiting on party" from whether
+  every seated member is ready, later rows read "Locked", finished ones
+  "Done", and a disabled "Start adventure" sits on the current row only
+  (sprint 007/06 WI1).
 
 ## Surface
 
@@ -28,8 +32,8 @@ adventures.
 ## Notes
 
 - Translation keys are disjoint per work item in one
-  `core/i18n/locales/en/playthrough.json`: WI1 owns `run.*`, WI2 owns
-  `party.*`.
+  `core/i18n/locales/en/playthrough.json`: sprint 05 WI1 owns `run.*`, WI2
+  owns `party.*`; sprint 06 WI1 owns `adventures.*`.
 - The status badge reuses the dashboard's own wording (`run.status.new` /
   `.inProgress` / `.archived`), not the raw `setup|ready|active|archived|finished`
   status, so the run screen and the dashboard (sprint 07) read as one voice.
