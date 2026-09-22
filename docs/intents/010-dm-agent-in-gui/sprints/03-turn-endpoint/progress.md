@@ -22,3 +22,4 @@ Research found that nothing wrote the player's row when a question was resumed, 
 The acceptance tests drive the route with the turn engine stubbed, so they prove the wire and the error envelope; the engine's own behaviour is covered by its unit tests.
 
 ## Verify
+Round 1: changes-requested — AC4: the retry path answered with a server error whenever the run had no turn-bearing event yet, and was never genuinely tested; review.md over the word cap.
