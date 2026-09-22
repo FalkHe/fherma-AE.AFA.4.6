@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: running
+stage: done
 ---
 # Progress: Sprint 02 — fetch and chunk
 
@@ -22,6 +22,8 @@ Status: `open | running | done | failed`
 - Milestone 4 was still titled `Stage-01 Phase 4 — SRD Knowledge Base`; renamed to `004-srd-knowledge-base` per the project's convention.
 
 ## Backlog proposals
+- Oversized sections are split on whitespace and rejoined with single spaces, flattening tables and list breaks in exactly the long sections most likely to be quoted; revisit when sprint 05 shows passages.
+- The source URL is a community GitHub mirror of the CC-BY markdown, not a Wizards-hosted file, so upstream availability depends on a third party.
 - The CLI container runs as root, so a live ingest leaves the stored SRD file root-owned on the host and the implementer had to fix permissions by hand; a non-root user in the Dockerfile would remove that step for every future ingest.
 - The chunk sample the dry-run prints is the first five heading paths, so it always shows the legal notice and racial traits; a spread sample would be more telling.
 
@@ -29,3 +31,4 @@ Status: `open | running | done | failed`
 Lint (backend + frontend), backend suite (980 passed, 147 database-marked deselected) and frontend suite (53) all pass.
 
 ## Verify
+Round 1: approve — all six criteria and D2/D3/D4/D6 pass; the verifier could not re-run the live fetch in its sandbox and relied on the recorded run plus a byte-identical re-chunk of the stored file.

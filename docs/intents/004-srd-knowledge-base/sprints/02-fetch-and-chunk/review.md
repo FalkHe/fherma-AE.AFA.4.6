@@ -25,3 +25,4 @@ The rules text now lives in the repository: one command downloads the freely lic
 Brief: docs/intents/004-srd-knowledge-base/sprints/02-fetch-and-chunk/brief.md
 
 ## Verdict
+Round 1: Approve. The rules text is now in the repository — one command downloads the freely licensed SRD 5.1, stores it, and reports 1750 citable passages of about 508 000 tokens, each labelled with the chapter path it came from and none longer than the agreed limit; the verifier re-derived those exact numbers from the stored file. A repeat run leaves the repository unchanged, an unreachable or unreadable source stops with a plain message and keeps the stored text as it was, and the Creative Commons attribution sits both beside the stored text and in the project README.
