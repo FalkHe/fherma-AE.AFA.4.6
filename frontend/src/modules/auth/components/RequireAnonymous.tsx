@@ -3,16 +3,18 @@
 // "unknown" looks like, and sends an authenticated visitor back to / with no
 // message.
 import type { ReactNode } from "react";
-import { Navigate } from "react-router";
+import { Navigate, useLocation } from "react-router";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import { useTranslation } from "react-i18next";
 
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import type { AuthRedirectState } from "./RequireAuth";
 
 export function RequireAnonymous({ children }: { children: ReactNode }) {
   const { t } = useTranslation("common");
   const { user, isPending } = useCurrentUser();
+  const location = useLocation();
 
   if (isPending) {
     return (
@@ -23,7 +25,8 @@ export function RequireAnonymous({ children }: { children: ReactNode }) {
   }
 
   if (user) {
-    return <Navigate to="/" replace />;
+    const state = location.state as AuthRedirectState | null;
+    return <Navigate to={state?.from ?? "/"} replace />;
   }
 
   return <>{children}</>;
