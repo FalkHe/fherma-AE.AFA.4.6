@@ -18,6 +18,7 @@ from app.core.db import get_sessionmaker
 from app.core.llm.errors import LlmError
 from app.modules.game import service as game_service
 from app.modules.game.agent.state import DmContext
+from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import PlaythroughError
 
 game_app = typer.Typer()
@@ -169,19 +170,48 @@ class _ToolAwareStubModel(GenericFakeChatModel):
         return self
 
 
+async def _play(
+    *,
+    user_id: str,
+    run_id: str | None,
+    actor_id: str | None,
+    thread_id: str,
+) -> None:
+    resolved_actor_id = actor_id
+    if run_id is not None and actor_id is None:
+        sessionmaker = get_sessionmaker()
+        async with sessionmaker() as db:
+            character = await playthrough_service.get_member_character(
+                db, user_id=user_id, run_id=run_id
+            )
+            resolved_actor_id = character.id
+
+    await _play_session(
+        user_id=user_id,
+        run_id=run_id,
+        actor_id=resolved_actor_id,
+        thread_id=thread_id,
+    )
+
+
 @game_app.command("play")
 def play(
     user_id: str = typer.Option(..., "--user", help="The caller's user id."),
     run_id: str | None = typer.Option(None, "--run-id", help="The campaign run id."),
     actor_id: str | None = typer.Option(
-        None, "--actor", "--actor-id", help="Optional default actor id override."
+        None,
+        "--actor",
+        "--actor-id",
+        help="Optional actor id override, skipping resolution from the run.",
     ),
-    thread_id: str | None = typer.Option(None, "--thread-id", help="Checkpointer thread id."),
+    thread_id: str | None = typer.Option(
+        None, "--thread-id", help="Checkpointer thread id override, defaults to the run id."
+    ),
 ) -> None:
-    active_thread_id = thread_id or str(uuid.uuid4())
+    active_thread_id = thread_id or run_id or str(uuid.uuid4())
     try:
         asyncio.run(
-            _play_session(
+            _play(
                 user_id=user_id,
                 run_id=run_id,
                 actor_id=actor_id,

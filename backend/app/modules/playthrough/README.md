@@ -226,6 +226,11 @@ Service functions (`service.py`), called as `service.f(...)`:
   `proficiency_bonus`, `saving_throws`, `skills`, `equipment`) and one
   carried `item` row per unit of quantity of each `SheetItem`, with no
   content template of its own — same single commit boundary.
+- `get_member_character` — the caller's own character on a run: gated by
+  membership (`_require_member`), then the one `objects` row with
+  `kind == 'creature' AND member_id == member.id`. No character yet raises
+  `CharacterNotFoundError`. Reads only: no commit, no event, no status
+  change.
 - `rename_campaign_run` — sets the run's title. Refuses an archived run
   (`RunArchivedError`).
 - `archive_campaign_run` — `ready` / `active` / `finished` move to
