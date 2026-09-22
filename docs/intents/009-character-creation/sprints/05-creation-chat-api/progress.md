@@ -9,8 +9,8 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
-| qa | running | |
+| 1 | done | routes, fixture, 5 route tests, client regenerated via app-cli export |
+| qa | done | 3 acceptance tests over the HTTP app |
 
 Status: `open | running | done | failed`
 
