@@ -23,3 +23,4 @@ The game now knows every race, class, skill and alignment a player may pick, and
 Brief: docs/intents/009-character-creation/sprints/01-character-sheet-and-srd-options/brief.md
 
 ## Verdict
+Round 1: approve — every value checked against the rules text was correct, including the full weapon and armour tables; a sheet naming a race, class, alignment or skill outside the SRD lists is refused.

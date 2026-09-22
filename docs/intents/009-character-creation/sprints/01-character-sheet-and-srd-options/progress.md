@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: draft
+stage: done
 ---
 # Progress: Sprint 01
 
@@ -22,3 +22,4 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: approve, no failed criteria. review.md ~265 words (cap 250), left as is.
