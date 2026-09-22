@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: running
+stage: done
 ---
 # Progress: Sprint 06
 
@@ -19,5 +19,7 @@ Status: `open | running | done | failed`
 - An adventure the API marks `active` renders as the current row: D9 names no word for one already under way, and nothing in this intent can start an adventure. Worth deciding when adventure entry ships.
 
 ## Backlog proposals
+- The seeded content has one campaign with one adventure, so the "Locked" and "Done" badges cannot be seen on the running site at all — a second, longer campaign would make the run screen reviewable end to end.
 
 ## Verify
+Round 1: approve — no failed criteria. One non-blocking accessibility defect the verifier named (a stale aria-label on the ready state's disabled button) was fixed on the branch before merge; gates re-run green.

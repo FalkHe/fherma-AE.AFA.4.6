@@ -3,7 +3,7 @@ author: sprint
 owner: human
 created: 2026-09-22
 updated: 2026-09-22
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/51
 ---
 # Review: Sprint 06 — The run screen lists the adventures in order, marks which is next and says what the party is waiting for
 
@@ -32,3 +32,8 @@ an adventure is not possible yet, and the button says as much by being greyed ou
 Brief: docs/intents/007-initial-frontend/sprints/06-run-adventures-list/brief.md
 
 ## Verdict
+Round 1: approve — opening a run now shows its adventures in order, each with a number, title, teaser and a word for
+where it stands; the next one to play says so, or says the party is not ready yet and why, and starting one is visibly
+not possible yet. One flaw found and fixed before merge: on a run where everyone had a character, the greyed-out
+button still carried the "everyone needs a character first" explanation invisibly, so a screen-reader user could hear
+a reason that no longer applied.
