@@ -12,8 +12,9 @@ A player can now create their character in a terminal conversation with the Tave
 
 ## How to check it
 - With a run id and your user id, start `app character create --run <id> --user <id>` in the backend container: the greeting names Rosalind Thorn as one way in and building your own as the other.
-- Say "take Rosalind": the Keeper confirms, the run holds Rosalind and the command ends with the finality line.
-- On a fresh run say "a sneaky halfling burglar": the Keeper proposes Halfling Rogue and waits for your yes; answer the name, looks and story questions; the full sheet appears; say yes to "Save as they stand?" and the run holds that character.
+- On a fresh run say "a sneaky halfling burglar": the Keeper proposes Halfling Rogue and waits for your yes; answer the name, looks and story questions; the full sheet with hit points, armour class and abilities is printed before the Keeper asks "Save as they stand?"; say yes and the run holds that character.
+- Say "take Rosalind": her sheet is printed before the same save question.
+- Ask for two things in one sentence ("suggest the scores and show me the sheet"): both happen, nothing crashes.
 - Type `quit` at any point before saving: nothing is kept, the run still has no character.
 
 ## Heads-up

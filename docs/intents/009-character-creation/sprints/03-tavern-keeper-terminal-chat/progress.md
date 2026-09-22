@@ -9,7 +9,7 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | two-node graph, six tools, prompt character/system/creator |
+| 1 | done | two-node graph, six tools, prompt character/system/creator |
 | 2 | done | `app character create` + six scenario tests |
 
 Status: `open | running | done | failed`
@@ -23,3 +23,4 @@ Status: `open | running | done | failed`
 
 ## Verify
 Round 1: changes requested — AC1 (ready-made review missing), AC4 (sheet never printed), AC6 (crash on two draft updates in one step prints a traceback); AC3/AC4 tests asserted on text the test itself supplied.
+Round 1 fixes: draft reducer, sheet surfaced in the reply, ready-made preview, broad in-voice catch, AC3/AC4 tests rewritten + 1 regression test (7 total).
