@@ -7,11 +7,16 @@ and `max_retries=0` stay in one place. The checkpointer defaults to
 `InMemorySaver()` when omitted (e.g. for lightweight testing), or an
 `AsyncPostgresSaver` in persistent sessions.
 
+`run_turn` (sprint 010/03) is the one entry point a route calls: it opens
+its own checkpointer connection, reads the DM thread's own state back
+(`thread_state`) and decides which of five kinds this turn is from that
+state and the transcript alone -- never from what the caller claims.
+
 Tests monkeypatch `service.chat_model` and `service.load_prompt`.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
@@ -20,14 +25,21 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.checkpointer import service as checkpointer_service
+from app.core.ids import generate_id
 from app.core.llm.service import chat_model
 from app.core.prompts.service import load_prompt
 from app.core.tracing import service as tracing
 from app.modules.game.agent.graph import build_graph
 from app.modules.game.agent.state import DmContext, DmState, rolls_in
+from app.modules.game.errors import ActionNotAvailableError
+from app.modules.playthrough import service as playthrough_service
 
 SYSTEM_PROMPT_ID = "game/system/dm"
+
+TurnKind = Literal["answer", "roll", "retry", "action", "opening"]
 
 
 @dataclass(frozen=True)
@@ -35,6 +47,19 @@ class TurnResult:
     reply: str
     rolls: list[dict[str, Any]] = field(default_factory=list)
     interrupt: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ThreadState:
+    interrupt: dict[str, Any] | None
+    pending: bool
+
+
+@dataclass(frozen=True)
+class TurnOutcome:
+    turn_id: str
+    kind: TurnKind
+    awaiting: str
 
 
 def build_agent(
@@ -96,3 +121,169 @@ async def resume(
     before = (await agent.aget_state(config)).values.get("messages", [])
     result = await agent.ainvoke(Command(resume=resume_value), config=config, context=context)
     return _extract_turn_result(result, len(before))
+
+
+async def retry(
+    agent: CompiledStateGraph[DmState, DmContext],
+    *,
+    thread_id: str,
+    context: DmContext,
+) -> TurnResult:
+    """Resumes a turn that broke off mid-flight: `invoke(None)` continues
+    the graph from its last saved checkpoint step, rather than feeding it a
+    new human message (`turn`) or answering an interrupt (`resume`) --
+    whatever step already completed (a roll already recorded, say) is not
+    repeated, only whatever comes after it (sprint 010/03, I3)."""
+    config = RunnableConfig(
+        **tracing.langchain_config("dm-turn"), configurable={"thread_id": thread_id}
+    )
+    before = (await agent.aget_state(config)).values.get("messages", [])
+    result = await agent.ainvoke(None, config=config, context=context)
+    return _extract_turn_result(result, len(before))
+
+
+async def thread_state(
+    agent: CompiledStateGraph[DmState, DmContext], *, thread_id: str
+) -> ThreadState:
+    """The DM thread's own state, read back from the checkpointer alone --
+    never inferred from what a caller claims (sprint 010/03, I3).
+
+    `interrupt` is the value of whichever `question` or `roll_request`
+    interrupt is pending on this thread's current step, or `None` when
+    nothing is pending -- the same shape `turn`/`resume` already surface on
+    `TurnResult.interrupt`, read here straight from the checkpoint instead
+    of a fresh invoke. `pending` is whether the graph has a next step
+    queued at all, interrupted or not; `run_turn` only consults it once
+    `interrupt` is already `None`, so `pending` alone then means a turn
+    that broke off mid-flight with nothing waiting on the player.
+    """
+    config = RunnableConfig(configurable={"thread_id": thread_id})
+    snapshot = await agent.aget_state(config)
+    interrupt_value = None
+    if snapshot.tasks and snapshot.tasks[0].interrupts:
+        interrupt_value = snapshot.tasks[0].interrupts[0].value
+    return ThreadState(interrupt=interrupt_value, pending=bool(snapshot.next))
+
+
+async def run_turn(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    text: str | None,
+) -> TurnOutcome:
+    """Runs one turn for `run_id`, deciding for itself which of five kinds
+    the turn is from the DM thread's own checkpoint state plus the
+    transcript -- never from `text` alone (sprint 010/03, I2).
+
+    `playthrough_service.get_member_character` gates membership first (a
+    caller not seated at the run raises `CampaignRunNotFoundError` here,
+    before a checkpointer connection is even opened) and supplies the
+    acting hero's id, exactly the way the terminal command already
+    resolves it. The DM's memory thread is the run id itself (sprints
+    010/01-02).
+
+    In order:
+    1. A pending `question` interrupt -> kind `answer`. `text` must equal
+       one of the interrupt's own `options`, or may be anything when
+       `options` is empty; otherwise `ActionNotAvailableError` (no write,
+       no resume). Accepted, a `player_action` event
+       (`{text, answersQuestionId}`) is appended under the *open* turn's id
+       and committed before `resume(text)` -- the fix for the finding that
+       nothing else ever writes a `player_action` on an answered question,
+       which would otherwise leave `get_awaiting` reporting the same
+       question forever.
+    2. A pending `roll_request` interrupt -> kind `roll`. `resume({"action":
+       "roll"})` -- `text` is discarded; the server rolls, never the
+       caller's own number.
+    3. No interrupt but the graph still has a next step queued -> kind
+       `retry`: `invoke(None)` resumes from the last saved step, repeating
+       nothing already recorded.
+    4. `text` present -> kind `action`, a newly minted turn id.
+    5. No `text` -> kind `opening`, DM-led: `record_action=False` on the
+       context stops `record_action` (`agent/nodes.py`) from writing a
+       player row for it.
+
+    Kinds 1-3 reuse the open turn's own id (`playthrough_service.
+    open_turn_id`) rather than minting a new one; kinds 4-5 each mint a
+    fresh one (`core.ids.generate_id`, the same ULID every other id in
+    this app is). `awaiting` on the returned `TurnOutcome` is
+    `get_awaiting` read *after* the turn runs, so it always reflects
+    whatever the turn just did, not what it started from.
+    """
+    character = await playthrough_service.get_member_character(db, user_id=user_id, run_id=run_id)
+
+    async with checkpointer_service.checkpointer() as saver:
+        agent = build_agent(checkpointer=saver)
+        snapshot = await thread_state(agent, thread_id=run_id)
+
+        kind: TurnKind
+        if snapshot.interrupt is not None:
+            interrupt_type = snapshot.interrupt.get("type")
+            if interrupt_type == "question":
+                kind = "answer"
+                options = snapshot.interrupt.get("options") or []
+                if options and text not in options:
+                    awaiting = await playthrough_service.get_awaiting(
+                        db, user_id=user_id, run_id=run_id
+                    )
+                    raise ActionNotAvailableError(awaiting=awaiting, options=options)
+
+                turn_id = await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
+                await playthrough_service.append_event(
+                    db,
+                    run_id=run_id,
+                    type="player_action",
+                    visibility="player",
+                    payload={
+                        "text": text or "",
+                        "answersQuestionId": snapshot.interrupt.get("question_id"),
+                    },
+                    turn_id=turn_id,
+                )
+                await db.commit()
+
+                context = DmContext(
+                    db=db, user_id=user_id, actor_id=character.id, run_id=run_id, turn_id=turn_id
+                )
+                await resume(agent, thread_id=run_id, context=context, resume_value=text)
+            elif interrupt_type == "roll_request":
+                kind = "roll"
+                turn_id = await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
+                context = DmContext(
+                    db=db, user_id=user_id, actor_id=character.id, run_id=run_id, turn_id=turn_id
+                )
+                await resume(
+                    agent, thread_id=run_id, context=context, resume_value={"action": "roll"}
+                )
+            else:  # pragma: no cover - only `ask_player`/`request_player_roll` interrupt
+                raise AssertionError(f"unknown interrupt type: {interrupt_type!r}")
+        elif snapshot.pending:
+            kind = "retry"
+            turn_id = await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
+            context = DmContext(
+                db=db, user_id=user_id, actor_id=character.id, run_id=run_id, turn_id=turn_id
+            )
+            await retry(agent, thread_id=run_id, context=context)
+        elif text and text.strip():
+            kind = "action"
+            turn_id = generate_id()
+            context = DmContext(
+                db=db, user_id=user_id, actor_id=character.id, run_id=run_id, turn_id=turn_id
+            )
+            await turn(agent, thread_id=run_id, context=context, player_text=text)
+        else:
+            kind = "opening"
+            turn_id = generate_id()
+            context = DmContext(
+                db=db,
+                user_id=user_id,
+                actor_id=character.id,
+                run_id=run_id,
+                turn_id=turn_id,
+                record_action=False,
+            )
+            await turn(agent, thread_id=run_id, context=context, player_text=text or "")
+
+    awaiting = await playthrough_service.get_awaiting(db, user_id=user_id, run_id=run_id)
+    return TurnOutcome(turn_id=turn_id, kind=kind, awaiting=awaiting)

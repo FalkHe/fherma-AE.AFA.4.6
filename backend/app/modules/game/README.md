@@ -25,8 +25,12 @@ or writes an event.
   `PlaythroughError`/`GameError` onto the one error envelope.
 - `agent/graph.py` — the `StateGraph`: `load_context -> record_action -> guard -> narrate -> (tools -> narrate)* -> record_narration -> END`.
 - `agent/nodes.py` — node factories, context hydration, and routing functions.
-- `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id —
+- `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id,
+  `record_action` —
   what tools need and the model must never supply) and readers.
+  `record_action` defaults `True`; `run_turn`'s `opening` leg (sprint
+  010/03) sets it `False` so `record_action` (`agent/nodes.py`) writes no
+  player row for a turn with no player text.
 - `agent/tools.py` — the tools the DM may call; each is a thin call into
   `playthrough.service` or `content.service`.
 - `prompts/v<n>/system/dm.md` — the DM system prompt, resolved through
@@ -78,3 +82,9 @@ or writes an event.
   since the last `HumanMessage` (the boundary an interrupt survives) and
   passes the total as that turn's narration `usage=`; `playthrough.service`
   stores it and sums it back up per run.
+- `run_turn`'s own building blocks are `thread_state()` (the checkpoint's
+  pending interrupt, if any, plus whether a next step is queued at all —
+  `ThreadState`) and `retry()` (`invoke(None)`, resuming a broken turn from
+  its last saved step without repeating it); `playthrough_service.
+  open_turn_id` supplies the id a resumed leg reuses instead of minting a
+  new one.
