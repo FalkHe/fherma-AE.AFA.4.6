@@ -5,8 +5,10 @@ checkpointer.
 
 import asyncio
 import uuid
+from typing import Any
 
 import typer
+from langchain_core.runnables import RunnableConfig
 
 from app.core.checkpointer import service as checkpointer_service
 from app.core.db import get_sessionmaker
@@ -41,6 +43,29 @@ async def _run_turn(
         )
 
 
+async def _resume_turn(
+    agent,
+    *,
+    user_id: str,
+    actor_id: str | None,
+    run_id: str | None,
+    thread_id: str,
+    resume_value: Any,
+) -> game_service.TurnResult:
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as db:
+        context = DmContext(
+            db=db,
+            user_id=user_id,
+            actor_id=actor_id,
+            run_id=run_id,
+            turn_id=str(uuid.uuid4()),
+        )
+        return await game_service.resume(
+            agent, thread_id=thread_id, context=context, resume_value=resume_value
+        )
+
+
 async def _play_session(
     *,
     user_id: str,
@@ -50,28 +75,79 @@ async def _play_session(
 ) -> None:
     async with checkpointer_service.checkpointer() as saver:
         agent = game_service.build_agent(checkpointer=saver)
+
+        config = RunnableConfig(configurable={"thread_id": thread_id})
+        state = await agent.aget_state(config)
+        in_flight_interrupt = (
+            state.tasks[0].interrupts[0].value
+            if (state.tasks and state.tasks[0].interrupts)
+            else None
+        )
+
         while True:
-            try:
-                player_text = await asyncio.to_thread(input, "> ")
-            except (EOFError, KeyboardInterrupt):
-                break
+            if in_flight_interrupt is not None:
+                int_type = in_flight_interrupt.get("type")
+                if int_type == "question":
+                    q_text = in_flight_interrupt.get("text", "Choose an option:")
+                    options = in_flight_interrupt.get("options", [])
+                    typer.echo(f"\n[DM asks]: {q_text}")
+                    for idx, opt in enumerate(options, 1):
+                        typer.echo(f"  {idx}. {opt}")
+                    try:
+                        ans = await asyncio.to_thread(input, "?> ")
+                    except (EOFError, KeyboardInterrupt):
+                        break
+                    ans_clean = ans.strip()
+                    if ans_clean.isdigit():
+                        idx = int(ans_clean) - 1
+                        if 0 <= idx < len(options):
+                            ans_clean = options[idx]
+                    resume_val = ans_clean
+                elif int_type == "roll_request":
+                    req_kind = in_flight_interrupt.get("kind", "roll")
+                    formula = in_flight_interrupt.get("formula", "")
+                    typer.echo(f"\n[Roll Requested]: {req_kind} ({formula})")
+                    try:
+                        await asyncio.to_thread(input, "Press Enter to roll...")
+                    except (EOFError, KeyboardInterrupt):
+                        break
+                    resume_val = {"action": "roll"}
+                else:
+                    try:
+                        resume_val = await asyncio.to_thread(input, "?> ")
+                    except (EOFError, KeyboardInterrupt):
+                        break
 
-            if not player_text.strip() or player_text.strip().lower() in (
-                ":quit",
-                ":q",
-                "exit",
-                "quit",
-            ):
-                break
+                result = await _resume_turn(
+                    agent,
+                    user_id=user_id,
+                    actor_id=actor_id,
+                    run_id=run_id,
+                    thread_id=thread_id,
+                    resume_value=resume_val,
+                )
+            else:
+                try:
+                    player_text = await asyncio.to_thread(input, "> ")
+                except (EOFError, KeyboardInterrupt):
+                    break
 
-            result = await _run_turn(
-                agent,
-                user_id=user_id,
-                actor_id=actor_id,
-                run_id=run_id,
-                thread_id=thread_id,
-                text=player_text,
-            )
+                if not player_text.strip() or player_text.strip().lower() in (
+                    ":quit",
+                    ":q",
+                    "exit",
+                    "quit",
+                ):
+                    break
+
+                result = await _run_turn(
+                    agent,
+                    user_id=user_id,
+                    actor_id=actor_id,
+                    run_id=run_id,
+                    thread_id=thread_id,
+                    text=player_text,
+                )
 
             for roll in result.rolls:
                 typer.echo(
@@ -79,7 +155,10 @@ async def _play_session(
                     f"{roll['modifier']:+d} = {roll['total']}",
                     err=True,
                 )
-            typer.echo(result.reply)
+            if result.reply:
+                typer.echo(result.reply)
+
+            in_flight_interrupt = result.interrupt
 
 
 @game_app.command("play")

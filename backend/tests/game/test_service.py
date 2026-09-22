@@ -31,6 +31,7 @@ class _Event:
     payload: dict[str, Any]
     id: str = "event-1"
     type: str = "roll"
+    campaign_run_id: str = "run-1"
 
 
 @dataclass
@@ -91,6 +92,22 @@ class _FakeDb:
     async def commit(self):
         pass
 
+    async def refresh(self, instance):
+        pass
+
+    async def execute(self, statement):
+        class _EmptyResult:
+            def scalar_one_or_none(self):
+                return None
+
+            def scalars(self):
+                return self
+
+            def all(self):
+                return []
+
+        return _EmptyResult()
+
 
 _DB = _FakeDb()
 _CONTEXT = DmContext(db=_DB, user_id="user-1", actor_id="actor-1", run_id="run-1", turn_id="turn-1")
@@ -102,6 +119,12 @@ def _scripted_model(messages: list[AIMessage]) -> GenericFakeChatModel:
 
 def _turn(agent, text, thread_id="t1"):
     return asyncio.run(service.turn(agent, thread_id=thread_id, context=_CONTEXT, player_text=text))
+
+
+def _resume(agent, resume_value, thread_id="t1"):
+    return asyncio.run(
+        service.resume(agent, thread_id=thread_id, context=_CONTEXT, resume_value=resume_value)
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -498,6 +521,222 @@ def test_the_model_cannot_supply_session_or_user_id():
 
     init_schema = tools.roll_initiative.tool_call_schema.model_json_schema()
     assert set(init_schema["properties"]) == {"side_a_ids", "side_b_ids"}
+
+    ask_schema = tools.ask_player.tool_call_schema.model_json_schema()
+    assert set(ask_schema["properties"]) == {"text", "options"}
+
+    request_roll_schema = tools.request_player_roll.tool_call_schema.model_json_schema()
+    assert set(request_roll_schema["properties"]) == {"kind", "actor_id", "context"}
+
+
+def test_ask_player_tool_interrupts_and_resumes_with_answer(prompt, monkeypatch):
+    ask_calls = []
+
+    async def fake_ask_player(db, *, user_id, run_id, text, options, turn_id=None):
+        ask_calls.append(
+            {
+                "user_id": user_id,
+                "run_id": run_id,
+                "text": text,
+                "options": options,
+                "turn_id": turn_id,
+            }
+        )
+        return _Event({"text": text, "options": options}, id="q-event-1", type="question")
+
+    monkeypatch.setattr(tools.playthrough_service, "ask_player", fake_ask_player)
+
+    ask_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-ask-1",
+                "name": "ask_player",
+                "args": {
+                    "text": "Do you open the oak door or the iron door?",
+                    "options": ["Oak door", "Iron door"],
+                },
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model(
+            [ask_call, AIMessage(content="You open the oak door and find a chest.")]
+        )
+    )
+
+    turn_res = _turn(agent, "I look for a door.", thread_id="t-ask")
+    assert turn_res.interrupt == {
+        "type": "question",
+        "question_id": "q-event-1",
+        "text": "Do you open the oak door or the iron door?",
+        "options": ["Oak door", "Iron door"],
+    }
+    assert ask_calls == [
+        {
+            "user_id": "user-1",
+            "run_id": "run-1",
+            "text": "Do you open the oak door or the iron door?",
+            "options": ["Oak door", "Iron door"],
+            "turn_id": "turn-1",
+        }
+    ]
+
+    resume_res = _resume(agent, "Oak door", thread_id="t-ask")
+    assert resume_res.reply == "You open the oak door and find a chest."
+    assert resume_res.interrupt is None
+
+
+def test_request_player_roll_tool_interrupts_and_resumes_with_resolved_roll(prompt, monkeypatch):
+    req_calls = []
+    res_calls = []
+
+    async def fake_request_player_roll(db, *, user_id, actor_id, kind, context, turn_id=None):
+        req_calls.append(
+            {
+                "user_id": user_id,
+                "actor_id": actor_id,
+                "kind": kind,
+                "context": context,
+                "turn_id": turn_id,
+            }
+        )
+        return _Event(
+            {"formula": "1d20+2", "kind": kind, "actor_id": actor_id},
+            id="req-event-1",
+            type="roll_requested",
+        )
+
+    async def fake_resolve_roll_request(db, *, user_id, request_id, turn_id=None):
+        res_calls.append({"user_id": user_id, "request_id": request_id, "turn_id": turn_id})
+        return _Event(
+            {
+                "request_id": request_id,
+                "kind": "ability_check",
+                "formula": "1d20+2",
+                "faces": [14],
+                "modifier": 2,
+                "total": 16,
+            },
+            id="roll-event-1",
+            type="roll",
+        )
+
+    monkeypatch.setattr(tools.playthrough_service, "request_player_roll", fake_request_player_roll)
+    monkeypatch.setattr(
+        tools.playthrough_service, "resolve_roll_request", fake_resolve_roll_request
+    )
+
+    roll_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-req-1",
+                "name": "request_player_roll",
+                "args": {"kind": "ability_check", "context": {"ability": "dexterity"}},
+            }
+        ],
+    )
+    agent = service.build_agent(
+        model=_scripted_model([roll_call, AIMessage(content="You leap over the pit cleanly.")])
+    )
+
+    turn_res = _turn(agent, "I jump across.", thread_id="t-req")
+    assert turn_res.interrupt == {
+        "type": "roll_request",
+        "request_id": "req-event-1",
+        "kind": "ability_check",
+        "formula": "1d20+2",
+        "actor_id": "actor-1",
+        "context": {"ability": "dexterity"},
+    }
+    assert req_calls == [
+        {
+            "user_id": "user-1",
+            "actor_id": "actor-1",
+            "kind": "ability_check",
+            "context": {"ability": "dexterity"},
+            "turn_id": "turn-1",
+        }
+    ]
+
+    resume_res = _resume(agent, {"action": "roll"}, thread_id="t-req")
+    assert resume_res.reply == "You leap over the pit cleanly."
+    assert resume_res.interrupt is None
+    assert res_calls == [{"user_id": "user-1", "request_id": "req-event-1", "turn_id": "turn-1"}]
+    assert resume_res.rolls == [
+        {
+            "roll_id": "roll-event-1",
+            "kind": "ability_check",
+            "formula": "1d20+2",
+            "faces": [14],
+            "modifier": 2,
+            "total": 16,
+        }
+    ]
+
+
+def test_cli_play_handles_question_and_roll_request_interrupts(monkeypatch, prompt):
+    async def fake_ask_player(db, *, user_id, run_id, text, options, turn_id=None):
+        return _Event({"text": text, "options": options}, id="q-event-1", type="question")
+
+    async def fake_request_player_roll(db, *, user_id, actor_id, kind, context, turn_id=None):
+        return _Event(
+            {"formula": "1d20+3", "kind": kind, "actor_id": actor_id},
+            id="req-event-1",
+            type="roll_requested",
+        )
+
+    async def fake_resolve_roll_request(db, *, user_id, request_id, turn_id=None):
+        return _Event(
+            {
+                "request_id": request_id,
+                "kind": "ability_check",
+                "formula": "1d20+3",
+                "faces": [15],
+                "modifier": 3,
+                "total": 18,
+            },
+            id="roll-event-1",
+            type="roll",
+        )
+
+    monkeypatch.setattr(tools.playthrough_service, "ask_player", fake_ask_player)
+    monkeypatch.setattr(tools.playthrough_service, "request_player_roll", fake_request_player_roll)
+    monkeypatch.setattr(
+        tools.playthrough_service, "resolve_roll_request", fake_resolve_roll_request
+    )
+
+    ask_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "call-ask-cli",
+                "name": "ask_player",
+                "args": {"text": "Do you sneak or run?", "options": ["Sneak", "Run"]},
+            }
+        ],
+    )
+    scripted = _scripted_model(
+        [
+            ask_call,
+            AIMessage(content="You choose to sneak quietly."),
+        ]
+    )
+    monkeypatch.setattr(service, "chat_model", lambda: scripted)
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+
+    result = runner.invoke(
+        cli,
+        ["game", "play", "--user", "user-1", "--actor", "actor-1", "--run-id", "run-1"],
+        input="I approach the goblins.\n1\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "[DM asks]: Do you sneak or run?" in result.stdout
+    assert "1. Sneak" in result.stdout
+    assert "2. Run" in result.stdout
+    assert "You choose to sneak quietly." in result.stdout
 
 
 def test_the_model_can_supply_explicit_actor_id(prompt, roll_spy):

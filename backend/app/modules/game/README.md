@@ -32,13 +32,14 @@ or writes an event.
 |---|---|
 | `roll_dice(kind, context)` → `playthrough.service.roll` | done |
 | `resolve_check`, `resolve_save`, `passive_check`, `roll_initiative` | done |
+| `ask_player`, `request_player_roll` (interrupts) | done |
 | `get_scene`, `get_object`, `get_campaign` | done |
 | `lookup_rule`, `update_object` | not yet |
 
 ## Quirks
 
 - The checkpointer uses `core/checkpointer/service.py` for Postgres session-level persistence, with `InMemorySaver` fallback for isolated unit testing.
-- No guard node and no `ask_player` interrupt yet.
+- Interrupt tools (`ask_player`, `request_player_roll`) pause turn execution via LangGraph `interrupt()` and resume seamlessly via `Command(resume=...)`.
 - The graph is async end to end because the mechanics are.
 - Tests monkeypatch `service.chat_model`, `service.load_prompt` and
   `tools.playthrough_service.roll`; call

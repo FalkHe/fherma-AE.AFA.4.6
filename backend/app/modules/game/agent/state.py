@@ -19,6 +19,8 @@ RESOLVE_CHECK_TOOL = "resolve_check"
 RESOLVE_SAVE_TOOL = "resolve_save"
 PASSIVE_CHECK_TOOL = "passive_check"
 ROLL_INITIATIVE_TOOL = "roll_initiative"
+ASK_PLAYER_TOOL = "ask_player"
+REQUEST_PLAYER_ROLL_TOOL = "request_player_roll"
 
 
 @dataclass
@@ -39,7 +41,10 @@ def rolls_in(messages: list[AnyMessage], *, start: int = 0) -> list[dict[str, An
     content is parsed here; a dict is accepted for hand-built messages."""
     rolls = []
     for message in messages[start:]:
-        if not (isinstance(message, ToolMessage) and message.name == ROLL_DICE_TOOL):
+        if not (
+            isinstance(message, ToolMessage)
+            and message.name in (ROLL_DICE_TOOL, REQUEST_PLAYER_ROLL_TOOL)
+        ):
             continue
         payload = message.content
         if isinstance(payload, str):

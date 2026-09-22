@@ -10,19 +10,24 @@ from typing import Any
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolRuntime
+from langgraph.types import interrupt
+from sqlalchemy import select
 
 from app.modules.content import service as content_service
 from app.modules.game.agent.state import (
+    ASK_PLAYER_TOOL,
     GET_CAMPAIGN_TOOL,
     GET_OBJECT_TOOL,
     GET_SCENE_TOOL,
     PASSIVE_CHECK_TOOL,
+    REQUEST_PLAYER_ROLL_TOOL,
     RESOLVE_CHECK_TOOL,
     RESOLVE_SAVE_TOOL,
     ROLL_DICE_TOOL,
     ROLL_INITIATIVE_TOOL,
     DmContext,
 )
+from app.modules.playthrough import models as playthrough_models
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.schemas import RollKind
 
@@ -253,6 +258,114 @@ async def get_campaign(
     }
 
 
+## Interrupt Tools
+@tool(ASK_PLAYER_TOOL)
+async def ask_player(
+    text: str,
+    options: list[str],
+    runtime: ToolRuntime[DmContext],
+) -> str:
+    """Put a question to the player with explicit options when clarification or a choice is needed.
+    Interrupts the turn to ask the player and resumes with the player's chosen answer.
+    `text` is the question to ask. `options` is a list of option strings."""
+    ctx = runtime.context
+    if not ctx.run_id:
+        raise ValueError("run_id is required for ask_player.")
+
+    event = await playthrough_service.ask_player(
+        ctx.db,
+        user_id=ctx.user_id,
+        run_id=ctx.run_id,
+        text=text,
+        options=options,
+        turn_id=ctx.turn_id,
+    )
+    answer = interrupt(
+        {
+            "type": "question",
+            "question_id": event.id,
+            "text": text,
+            "options": options,
+        }
+    )
+    return f"Player answered: {answer}"
+
+
+@tool(REQUEST_PLAYER_ROLL_TOOL)
+async def request_player_roll(
+    kind: RollKind,
+    runtime: ToolRuntime[DmContext],
+    actor_id: str | None = None,
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Ask the player to make a roll of `kind` (ability_check, saving_throw, attack, etc).
+    Interrupts execution and waits for the player to resolve the roll.
+    `actor_id` is the character making the roll (defaults to current actor).
+    `context` provides mechanics context: e.g. {"ability": "dexterity"} for check/save."""
+    ctx = runtime.context
+    target_actor_id = actor_id or ctx.actor_id
+    if not target_actor_id:
+        raise ValueError(
+            "actor_id is required for request_player_roll when no default actor is set in context."
+        )
+
+    event = await playthrough_service.request_player_roll(
+        ctx.db,
+        user_id=ctx.user_id,
+        actor_id=target_actor_id,
+        kind=kind,
+        context=context or {},
+        turn_id=ctx.turn_id,
+    )
+
+    interrupt(
+        {
+            "type": "roll_request",
+            "request_id": event.id,
+            "kind": kind,
+            "formula": event.payload["formula"],
+            "actor_id": target_actor_id,
+            "context": context or {},
+        }
+    )
+
+    # Check if a roll answering this request was already recorded before resume
+    run_id = getattr(event, "campaign_run_id", ctx.run_id)
+    roll_event = None
+    if run_id:
+        stmt = select(playthrough_models.Event).where(
+            playthrough_models.Event.campaign_run_id == run_id,
+            playthrough_models.Event.type == "roll",
+        )
+        result = await ctx.db.execute(stmt)
+        roll_event = next(
+            (
+                e
+                for e in result.scalars().all()
+                if isinstance(getattr(e, "payload", None), dict)
+                and e.payload.get("request_id") == event.id
+            ),
+            None,
+        )
+    if roll_event is None:
+        roll_event = await playthrough_service.resolve_roll_request(
+            ctx.db,
+            user_id=ctx.user_id,
+            request_id=event.id,
+            turn_id=ctx.turn_id,
+        )
+
+    payload = roll_event.payload
+    return {
+        "roll_id": roll_event.id,
+        "kind": payload["kind"],
+        "formula": payload["formula"],
+        "faces": payload["faces"],
+        "modifier": payload["modifier"],
+        "total": payload["total"],
+    }
+
+
 ## Tool registry
 TOOLS = [
     roll_dice,
@@ -260,6 +373,8 @@ TOOLS = [
     resolve_save,
     passive_check,
     roll_initiative,
+    ask_player,
+    request_player_roll,
     get_scene,
     get_object,
     get_campaign,

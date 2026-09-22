@@ -19,6 +19,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
 
 from app.core.llm.service import chat_model
 from app.core.prompts.service import load_prompt
@@ -33,6 +34,7 @@ SYSTEM_PROMPT_ID = "game/system/dm"
 class TurnResult:
     reply: str
     rolls: list[dict[str, Any]] = field(default_factory=list)
+    interrupt: dict[str, Any] | None = None
 
 
 def build_agent(
@@ -45,6 +47,19 @@ def build_agent(
         model if model is not None else chat_model(),
         system_prompt=load_prompt(SYSTEM_PROMPT_ID, version=prompt_version).text,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
+    )
+
+
+def _extract_turn_result(result: dict[str, Any], before_count: int) -> TurnResult:
+    interrupt_info = None
+    if "__interrupt__" in result and result["__interrupt__"]:
+        interrupt_info = result["__interrupt__"][0].value
+    messages = result.get("messages", [])
+    reply = messages[-1].text if messages and hasattr(messages[-1], "text") else ""
+    return TurnResult(
+        reply=reply,
+        rolls=rolls_in(messages, start=before_count),
+        interrupt=interrupt_info,
     )
 
 
@@ -64,5 +79,20 @@ async def turn(
     result = await agent.ainvoke(
         {"messages": [HumanMessage(content=player_text)]}, config=config, context=context
     )
-    messages = result["messages"]
-    return TurnResult(reply=messages[-1].text, rolls=rolls_in(messages, start=len(before)))
+    return _extract_turn_result(result, len(before))
+
+
+async def resume(
+    agent: CompiledStateGraph[DmState, DmContext],
+    *,
+    thread_id: str,
+    context: DmContext,
+    resume_value: Any,
+) -> TurnResult:
+    """Resumes a paused agent thread from an interrupt."""
+    config = RunnableConfig(
+        **tracing.langchain_config("dm-turn"), configurable={"thread_id": thread_id}
+    )
+    before = (await agent.aget_state(config)).values.get("messages", [])
+    result = await agent.ainvoke(Command(resume=resume_value), config=config, context=context)
+    return _extract_turn_result(result, len(before))
