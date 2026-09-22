@@ -10,18 +10,35 @@ then its party and its adventures.
   chosen tag lives in component state only, never persisted), each card
   (cover-art placeholder, title, status badge, teaser, the "Adventure n of m
   · k players · Created <relative date>" line, a Begin/Resume action) newest
-  first within its group, the empty-state invitation card, and the
-  always-inert "Start a new campaign" card. The dashboard opens on In
-  progress, falls back to New when nothing is in progress, and shows only
-  the invitation with no tags at all when there are no runs; a tag with no
-  runs in it shows a short "nothing here" line instead of an empty list. An
-  archived card renders muted with no action block at all — it cannot be
+  first within its group, the empty-state invitation card, and the "Start a
+  new campaign" card, which opens `SelectCampaignDialog`. The dashboard opens
+  on In progress, falls back to New when nothing is in progress, and shows
+  only the invitation with no tags at all when there are no runs; a tag with
+  no runs in it shows a short "nothing here" line instead of an empty list.
+  An archived card renders muted with no action block at all — it cannot be
   opened — under a note above the list saying archived runs are kept as they
   are and are view-only. Replaces the retired `modules/home`'s `HomeRoute`.
 - `useRunSummaries()`, the dashboard's one read —
   `GET /api/v1/playthrough/runs`. Server order is rendered as received and
   never re-sorted in the browser; the tag filter is applied client-side only,
   there is no server-side filter parameter.
+- `CampaignCta` owns its own "Select a campaign" dialog-open flag (one
+  instance per branch of `DashboardRoute`'s two mutually exclusive call
+  sites, so nothing needs lifting or sharing — same house pattern as
+  `PartySection`'s `InDevelopmentDialog`). `SelectCampaignDialog` lists every
+  campaign in the catalogue (`useCampaignCatalogue()` —
+  `GET /api/v1/content/campaigns`) as a clickable card (placeholder art
+  reusing `CoverArt`, title, teaser, adventure count; no tone badge — the
+  wire shape carries none). Picking one runs `useStartCampaignRun()`
+  (`POST /api/v1/playthrough/campaign`), which disables every card and shows
+  an inset "Rolling up …" row while in flight, then navigates to the new
+  run's screen and invalidates `["runSummaries"]` in the background so the
+  dashboard is current by the time the player returns. A failed start shows
+  a retryable error inline without closing the dialog; dismissing the dialog
+  (`Escape`, backdrop, or the close affordance) issues no request at all and
+  resets the mutation. Starting the same campaign twice is unrestricted by
+  design — the uniqueness constraint behind the endpoint is per-run, not
+  per-campaign-per-player — so it simply creates a second run.
 - `runStatus.ts` — `runStatusKey`/`runActionKey`, the run-status vocabulary
   shared by `RunRoute` and the dashboard (`run.status.new/.inProgress/.archived`,
   `dashboard.card.begin/.resume`). `runStatusKey`'s three values are also the
@@ -51,18 +68,24 @@ then its party and its adventures.
 
 ## Surface
 
-- `RunOverview`/`RunMember`/`RunSummary` (re-exported off the generated
-  `components["schemas"]` types) and `useRunOverview`/`useRunSummaries` are
-  this module's interface outward; no other module imports from
-  `playthrough` yet. `DashboardRoute` imports `useCurrentUser` from `auth` —
-  the one permitted cross-module edge (structure.test.ts criterion 42(c)).
+- `RunOverview`/`RunMember`/`RunSummary`/`CampaignSummary`/`CampaignRun`
+  (re-exported off the generated `components["schemas"]` types) and
+  `useRunOverview`/`useRunSummaries`/`useCampaignCatalogue`/
+  `useStartCampaignRun` are this module's interface outward; no other module
+  imports from `playthrough` yet. `DashboardRoute` imports `useCurrentUser`
+  from `auth` — the one permitted cross-module edge (structure.test.ts
+  criterion 42(c)).
+- `CoverArt` — the shared cover-art placeholder box, used by both
+  `CampaignCard` (the dashboard's run cards) and `SelectCampaignDialog` (the
+  catalogue cards), so the gradient-and-label markup exists in one place.
 
 ## Notes
 
 - Translation keys are disjoint per work item in one
   `core/i18n/locales/en/playthrough.json`: sprint 05 WI1 owns `run.*`, WI2
   owns `party.*`; sprint 06 WI1 owns `adventures.*`; sprint 07 WI1 owns
-  `dashboard.*` and sprint 08 WI1 owns `dashboard.tags.*` within it.
+  `dashboard.*` and sprint 08 WI1 owns `dashboard.tags.*` within it; sprint
+  09 WI1 owns `dashboard.select.*` within it.
 - The status badge reuses the dashboard's own wording (`run.status.new` /
   `.inProgress` / `.archived`), not the raw `setup|ready|active|archived|finished`
   status, so the run screen and the dashboard read as one voice — both pull
