@@ -30,7 +30,12 @@ from app.modules.playthrough.errors import (
     InvalidRunStatusError,
     RunArchivedError,
 )
-from app.modules.playthrough.schemas import CampaignRunSummaryRead
+from app.modules.playthrough.schemas import (
+    CampaignRunAdventureRead,
+    CampaignRunMemberRead,
+    CampaignRunOverviewRead,
+    CampaignRunSummaryRead,
+)
 from app.modules.users import service as users_service
 from tests.factories import make_session, make_user
 
@@ -314,6 +319,110 @@ def test_list_run_summaries_without_session_cookie_returns_401(client, monkeypat
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"
+
+
+def test_get_run_overview_response_has_exactly_the_camelcase_field_set(
+    client, monkeypatch, session_cookie_header
+):
+    _stub_auth(monkeypatch)
+    overview = CampaignRunOverviewRead(
+        id=generate_id(),
+        campaign_id="greenhollow",
+        content_version="v1",
+        title=None,
+        status="setup",
+        created_at=datetime.now(UTC),
+        campaign_title="Greenhollow",
+        campaign_summary="A hedge-village …",
+        unavailable=False,
+        members=[
+            CampaignRunMemberRead(
+                user_id=USER_ID,
+                username="aragorn",
+                role="owner",
+                ready=False,
+                character_name=None,
+            )
+        ],
+        adventures=[
+            CampaignRunAdventureRead(
+                id="goblins-of-greenhollow",
+                title="Goblins of Greenhollow",
+                intro_excerpt="Smoke rises over the hedgerows.",
+                status="unplayed",
+            )
+        ],
+    )
+
+    async def fake_overview(db, *, user_id, run_id):
+        return overview
+
+    monkeypatch.setattr(playthrough_service, "get_run_overview", fake_overview)
+
+    response = client.get(
+        f"/api/v1/playthrough/runs/{overview.id}/overview",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert set(body.keys()) == {
+        "id",
+        "campaignId",
+        "contentVersion",
+        "title",
+        "status",
+        "createdAt",
+        "campaignTitle",
+        "campaignSummary",
+        "unavailable",
+        "members",
+        "adventures",
+    }
+    assert set(body["members"][0].keys()) == {
+        "userId",
+        "username",
+        "role",
+        "ready",
+        "characterName",
+    }
+    assert set(body["adventures"][0].keys()) == {"id", "title", "introExcerpt", "status"}
+
+
+def test_get_run_overview_without_session_cookie_returns_401(client, monkeypatch):
+    async def fake_overview(db, *, user_id, run_id):
+        raise AssertionError("service must not be called without auth")
+
+    monkeypatch.setattr(playthrough_service, "get_run_overview", fake_overview)
+
+    response = client.get("/api/v1/playthrough/runs/some-run-id/overview")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"
+
+
+def test_get_run_overview_foreign_and_unknown_run_answer_the_identical_not_found_envelope(
+    client, monkeypatch, session_cookie_header, assert_error_envelope
+):
+    _stub_auth(monkeypatch)
+
+    async def fake_overview_foreign(db, *, user_id, run_id):
+        raise CampaignRunNotFoundError(run_id)
+
+    monkeypatch.setattr(playthrough_service, "get_run_overview", fake_overview_foreign)
+
+    foreign_response = client.get(
+        "/api/v1/playthrough/runs/someone-elses-run-id/overview",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+    unknown_response = client.get(
+        "/api/v1/playthrough/runs/no-such-run-id/overview",
+        headers=session_cookie_header("a-valid-cookie"),
+    )
+
+    foreign_error = assert_error_envelope(foreign_response, status=404, code="NOT_FOUND")
+    unknown_error = assert_error_envelope(unknown_response, status=404, code="NOT_FOUND")
+    assert foreign_error == unknown_error
 
 
 def test_get_campaign_run_without_session_cookie_returns_401(client, monkeypatch):
