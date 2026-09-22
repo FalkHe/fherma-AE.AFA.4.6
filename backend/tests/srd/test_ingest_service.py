@@ -130,3 +130,116 @@ def test_ingest_on_embedding_failure_adds_and_commits_nothing_and_restores_the_s
     assert db.added == []
     assert db.committed is False
     assert dest_path.read_bytes() == previous_bytes
+
+
+def test_ingest_failing_on_the_second_batch_adds_and_commits_nothing(
+    matching_width, monkeypatch, tmp_path
+):
+    # <- AC3: a batch failure "after some batches embedded" -- not just the
+    # first and only one -- must still leave the write untouched. Two
+    # headings (two chunks) with `EMBED_BATCH_SIZE` pinned to 1 forces two
+    # separate `embed_texts` calls; the first succeeds, the second raises.
+    monkeypatch.setattr(srd_service, "EMBED_BATCH_SIZE", 1)
+    two_heading_source = b"# Heading One\n\nbody one\n\n# Heading Two\n\nbody two"
+    dest_path = _stub_source(monkeypatch, tmp_path, source_bytes=two_heading_source)
+    # `_stub_source` only points at the path; `fetch_source` writes it.
+    assert not dest_path.exists()
+
+    calls = {"count": 0}
+
+    def flaky_embed_texts(texts, *, model=None):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise LlmError("second batch failed")
+        return EmbeddingResult(
+            vectors=[[0.1] * EMBEDDING_WIDTH for _ in texts],
+            usage=Usage(prompt_tokens=1, completion_tokens=0, total_tokens=1, cost_usd=0.01),
+        )
+
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", flaky_embed_texts)
+    db = FakeWriteSession()
+
+    with pytest.raises(LlmError):
+        asyncio.run(srd_service.ingest(db))
+
+    assert calls["count"] == 2
+    assert db.executed == []
+    assert db.added == []
+    assert db.committed is False
+    assert not dest_path.exists()  # restored to "no previous file"
+
+
+def test_ingest_deletes_then_adds_then_commits_in_order_with_no_commit_before_delete(
+    matching_width, monkeypatch, tmp_path
+):
+    # <- AC5: one transaction -- `delete(SrdRule)`, then `add_all`, then
+    # exactly one `commit`, nothing committed before the delete.
+    _stub_source(monkeypatch, tmp_path)
+
+    def fake_embed_texts(texts, *, model=None):
+        return EmbeddingResult(
+            vectors=[[0.1] * EMBEDDING_WIDTH for _ in texts],
+            usage=Usage(prompt_tokens=1, completion_tokens=0, total_tokens=1, cost_usd=0.01),
+        )
+
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", fake_embed_texts)
+
+    call_log: list[str] = []
+
+    class OrderedFakeWriteSession(FakeWriteSession):
+        async def execute(self, stmt):
+            call_log.append("execute")
+            assert self.committed is False
+            await super().execute(stmt)
+
+        def add_all(self, objs):
+            call_log.append("add_all")
+            assert self.committed is False
+            super().add_all(objs)
+
+        async def commit(self):
+            call_log.append("commit")
+            await super().commit()
+
+    db = OrderedFakeWriteSession()
+
+    asyncio.run(srd_service.ingest(db))
+
+    assert call_log == ["execute", "add_all", "commit"]
+    assert len(db.executed) == 1  # exactly one execute call: the delete
+
+
+def test_ingest_row_count_follows_a_changed_source_file(matching_width, monkeypatch, tmp_path):
+    # <- AC4: `chunk_source` is a pure function of the file bytes, so a
+    # changed source (an added section) must yield a different chunk count,
+    # and `ingest` writes exactly that many rows.
+    dest_path = _stub_source(monkeypatch, tmp_path, source_bytes=b"# Heading One\n\nbody one")
+
+    def fake_embed_texts(texts, *, model=None):
+        return EmbeddingResult(
+            vectors=[[0.1] * EMBEDDING_WIDTH for _ in texts],
+            usage=Usage(prompt_tokens=1, completion_tokens=0, total_tokens=1, cost_usd=0.01),
+        )
+
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", fake_embed_texts)
+
+    db_before = FakeWriteSession()
+    report_before = asyncio.run(srd_service.ingest(db_before))
+    original_chunks = srd_service.chunk_source(dest_path)
+    assert report_before.chunk_count == len(original_chunks)
+    assert len(db_before.added) == len(original_chunks)
+
+    # `fetch_source` re-writes the file with an added section on the next call.
+    def _fake_fetch_with_new_section(*, version=srd_service.SOURCE_VERSION):
+        dest_path.write_bytes(b"# Heading One\n\nbody one\n\n# Heading Two\n\nbody two")
+        return dest_path
+
+    monkeypatch.setattr(srd_service, "fetch_source", _fake_fetch_with_new_section)
+
+    db_after = FakeWriteSession()
+    report_after = asyncio.run(srd_service.ingest(db_after))
+    expected_chunks = srd_service.chunk_source(dest_path)
+
+    assert report_after.chunk_count != report_before.chunk_count
+    assert report_after.chunk_count == len(expected_chunks)
+    assert len(db_after.added) == len(expected_chunks)
