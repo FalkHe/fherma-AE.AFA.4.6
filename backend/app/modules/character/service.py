@@ -65,7 +65,7 @@ from app.modules.character.schemas import (
     Weapon,
 )
 from app.modules.content import service as content_service
-from app.modules.content.schemas import SeedCharacter
+from app.modules.content.schemas import Abilities, SeedCharacter
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import CampaignRunNotFoundError, CharacterExistsError
 
@@ -351,7 +351,18 @@ def creation_progress(draft: dict[str, Any]) -> CreationProgress:
     (`_request_from_draft`/`_draft_gaps`) rather than forking it -- since
     `agent.tools` already imports this module at the top, the reverse
     import happens inside this function only, the same cycle-breaking seam
-    `build_sheet`/`build_creation_agent` use above."""
+    `build_sheet`/`build_creation_agent` use above.
+
+    `abilities` is always the *final* scores, racial bonus included --
+    never the raw point-buy/rolled base a race hasn't been applied to yet
+    (← round-1 review): once `build_sheet` succeeds, its own
+    `sheet.abilities` is authoritative; before that, if a race and a base
+    set of scores are both in the draft, `builder.apply_race` (the same
+    helper `build_sheet` itself calls, with no free bonus picked yet --
+    `_request_from_draft` never draws one from the draft either) renders
+    the same final scores the sheet will end up with. Only with no race
+    chosen yet is there no bonus to apply, so the raw draft scores show."""
+    from app.modules.character import builder
     from app.modules.character.agent import tools as creation_tools
 
     step, step_number = _current_step(draft)
@@ -367,20 +378,27 @@ def creation_progress(draft: dict[str, Any]) -> CreationProgress:
         "backstory": draft.get("backstory"),
     }
 
+    sheet = None
     can_save = False
     if not creation_tools._draft_gaps(draft):  # noqa: SLF001 -- reuses the tool's own gap check
         try:
             request = creation_tools._request_from_draft(draft)  # noqa: SLF001
             sheet = build_sheet(request, point_buy=not draft.get("rolled", False))
         except CharacterBuildError:
-            pass
+            sheet = None
         else:
             can_save = True
-            sheet_fields["max_hp"] = sheet.max_hp
-            sheet_fields["armour_class"] = sheet.armour_class
-            sheet_fields["speed"] = sheet.speed
-            sheet_fields["skills"] = sheet.skills
-            sheet_fields["equipment"] = [item.name for item in sheet.equipment]
+
+    if sheet is not None:
+        sheet_fields["abilities"] = sheet.abilities.model_dump()
+        sheet_fields["max_hp"] = sheet.max_hp
+        sheet_fields["armour_class"] = sheet.armour_class
+        sheet_fields["speed"] = sheet.speed
+        sheet_fields["skills"] = sheet.skills
+        sheet_fields["equipment"] = [item.name for item in sheet.equipment]
+    elif draft.get("race") and draft.get("abilities") is not None:
+        base = Abilities.model_validate(draft["abilities"])
+        sheet_fields["abilities"] = builder.apply_race(base, race(draft["race"]), []).model_dump()
 
     return CreationProgress(
         sheet=SheetSoFar.model_validate(sheet_fields),

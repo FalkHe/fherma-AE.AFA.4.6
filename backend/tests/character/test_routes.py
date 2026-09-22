@@ -71,12 +71,14 @@ def test_ac3_every_reply_carries_the_sheet_step_and_can_save(
     run_id = generate_id()
     run_overview(run_id)
     # One conversation, two player messages: the first settles race/class
-    # only, the second finishes every remaining step.
+    # and ability scores (Halfling's own +2 dexterity applies before the
+    # sheet can build at all, ← round-1 review), the second finishes
+    # every remaining step.
     scripted_model(
         ("set_race_and_class", {"race": "Halfling", "character_class": "Rogue"}),
+        ("suggest_scores", {}),
         "A halfling rogue, then -- written down.",
         ("set_identity", {"name": "Pip"}),
-        ("suggest_scores", {}),
         ("set_skills", {"first": "Stealth", "second": "Deception"}),
         ("set_alignment", {"alignment": "Chaotic Good"}),
         ("take_default_equipment", {}),
@@ -92,7 +94,11 @@ def test_ac3_every_reply_carries_the_sheet_step_and_can_save(
     body = partial.json()
     assert body["sheet"]["race"] == "Halfling"
     assert body["sheet"]["characterClass"] == "Rogue"
-    assert body["step"] == "scores"
+    # `suggest_scores` gives Rogue dexterity 15 before any racial bonus;
+    # the panel must already show it with Halfling's own +2 applied, not
+    # the raw suggested base.
+    assert body["sheet"]["abilities"]["dexterity"] == 17
+    assert body["step"] == "identity"
     assert body["canSave"] is False
 
     complete = _send(client, signed_in, conversation_id, "named Pip, chaotic good, default gear")
@@ -102,6 +108,7 @@ def test_ac3_every_reply_carries_the_sheet_step_and_can_save(
     assert complete_body["step"] == "review"
     assert complete_body["canSave"] is True
     assert complete_body["sheet"]["maxHp"] is not None
+    assert complete_body["sheet"]["abilities"]["dexterity"] == 17
 
 
 def test_ac4_anonymous_unknown_conversation_and_model_failure_are_refused_in_voice(
