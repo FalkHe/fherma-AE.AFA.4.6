@@ -22,6 +22,8 @@ from app.modules.character.schemas import (
     Alignment,
     Armour,
     CharacterClass,
+    CharacterCreateRequest,
+    CharacterSheet,
     ClassName,
     GearItem,
     PointBuy,
@@ -73,3 +75,12 @@ def race(name: RaceName) -> Race:
 
 def character_class(name: ClassName) -> CharacterClass:
     return _CLASSES_BY_NAME[name]
+
+
+def build_sheet(request: CharacterCreateRequest) -> CharacterSheet:
+    # Function-local: `builder` imports this module for its own lookups
+    # (`race`, `character_class`), so a module-scope import here would be
+    # a cycle.
+    from app.modules.character import builder
+
+    return builder.build_sheet(request)
