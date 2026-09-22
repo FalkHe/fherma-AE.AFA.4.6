@@ -54,7 +54,9 @@ class FakeWriteSession:
         self.rolled_back = True
 
 
-def _stub_source(monkeypatch, tmp_path: Path, *, source_bytes: bytes = b"# Heading\n\nbody") -> Path:
+def _stub_source(
+    monkeypatch, tmp_path: Path, *, source_bytes: bytes = b"# Heading\n\nbody"
+) -> Path:
     """Points `SRD_ROOT` at `tmp_path` (never the real committed corpus)
     and makes `fetch_source` write `source_bytes` there, exactly as the
     real one would -- so a failure path has a real file to restore."""

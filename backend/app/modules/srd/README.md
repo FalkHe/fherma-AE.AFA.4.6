@@ -14,7 +14,10 @@ this module reaches the corpus directly (D1).
 - `SrdError` / `SrdCorpusEmptyError` / `SrdVectorWidthError` /
   `SrdSourceError` (`errors.py`).
 - The `vector` extension and the `srd_rules` table/index migration
-  (`alembic/versions/0002_srd_rules.py`).
+  (`alembic/versions/0002_srd_rules.py`), plus the `(source_version,
+  heading_path, ordinal)` unique constraint
+  (`alembic/versions/0009_srd_rules_unique_citation.py`) that keeps every
+  citation addressable by exactly one row.
 - The fetched SRD source markdown, `content/srd/<version>/SOURCE_FILENAME`
   (`SRD_ROOT`, `SOURCE_URL`, `SOURCE_VERSION`, `SOURCE_FILENAME` in
   `service.py`) and its `LICENSE.md` sibling, plus the chunking constants
@@ -32,10 +35,18 @@ this module reaches the corpus directly (D1).
   path, byte count, chunk count, total token count and a sample of heading
   paths on stdout. No DB access, no embedding call. `SrdSourceError` (an
   unreachable host, a non-2xx response, an unwritable target, or a source
-  with no headings) prints one stderr line and exits 1. Without
-  `--dry-run` it prints one stderr line naming sprint 03 (embedding) and
-  exits 1 -- there is nothing else to do yet. Embedding and retrieval are
-  owned by later work items in this intent.
+  with no headings) prints one stderr line and exits 1.
+- `app srd ingest` (`commands.py` / `service.ingest`, sprint 004-03 WI1):
+  fetches, chunks, embeds (`core/llm/service.embed_texts`, batched under
+  the gateway's per-request token cap by `EMBED_BATCH_SIZE`) and replaces
+  the whole `srd_rules` table in one transaction, then reports the source
+  version, byte count, chunk count, token count and USD cost (`n/a` when
+  the gateway reported none, "(partial)" when only some batches were
+  priced) on stdout. `SrdSourceError`, `SrdVectorWidthError` and an LLM
+  gateway failure each print one stderr line and exit 1; a failure after
+  the source file was replaced restores it to what it held before the
+  call, and a failure during the write leaves the previous corpus
+  untouched. Retrieval is owned by a later work item in this intent.
 
 ## Notes
 

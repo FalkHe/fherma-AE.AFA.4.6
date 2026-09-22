@@ -17,21 +17,22 @@ is echoed as-is. The empty-corpus case is not an exception -- `corpus_status`
 returns `rule_count == 0` -- so the CLI spells out "0 rules" and the ingest
 command itself (decided wording, sprint plan).
 
-`app srd ingest` -- sprint 004-02 WI1. `--dry-run` fetches and chunks the
-source and reports the counts on stdout; no DB access, no embedding call.
-Without `--dry-run` there is nothing to do yet (embedding is sprint 03), so
-it prints one stderr line and exits 1 rather than silently doing nothing at
-exit 0. `SrdSourceError` -> one stderr line with its own message, never a
-traceback, per the same failure convention as `status`."""
+`app srd ingest` -- sprint 004-02 WI1, sprint 004-03 WI1. `--dry-run`
+fetches and chunks the source and reports the counts on stdout; no DB
+access, no embedding call. Without `--dry-run` it opens its own session
+(same pattern as `status`) and runs `service.ingest`, then prints the
+report. `SrdSourceError`, `SrdVectorWidthError` and `LlmError` each map to
+one stderr line plus `typer.Exit(1)`, never a traceback."""
 
 import asyncio
 
 import typer
 
 from app.core.db import get_sessionmaker
+from app.core.llm.errors import LlmError
 from app.modules.srd import service as srd_service
 from app.modules.srd.errors import SrdSourceError, SrdVectorWidthError
-from app.modules.srd.schemas import CorpusStatus
+from app.modules.srd.schemas import CorpusStatus, IngestReport
 
 srd_app = typer.Typer()
 
@@ -61,33 +62,53 @@ def status() -> None:
     typer.echo(f"ingested at: {result.ingested_at}")
 
 
+async def _run_ingest() -> IngestReport:
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as db:
+
+        def _on_batch(done: int, total: int) -> None:
+            typer.echo(f"embedded {done}/{total} chunks", err=True)
+
+        return await srd_service.ingest(db, on_batch=_on_batch)
+
+
 @srd_app.command("ingest")
 def ingest(
     dry_run: bool = typer.Option(False, "--dry-run", help="Fetch and chunk without embedding."),
 ) -> None:
-    if not dry_run:
-        typer.echo(
-            "embedding lands in sprint 03; nothing was ingested. Run with --dry-run to "
-            "fetch and chunk the source only.",
-            err=True,
-        )
-        raise typer.Exit(code=1)
+    if dry_run:
+        try:
+            path = srd_service.fetch_source()
+            chunks = srd_service.chunk_source(path)
+        except SrdSourceError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+
+        byte_count = path.stat().st_size
+        total_tokens = sum(chunk.token_count for chunk in chunks)
+        sample = list(dict.fromkeys(chunk.heading_path for chunk in chunks))[:5]
+
+        typer.echo(f"stored: {path}")
+        typer.echo(f"bytes: {byte_count}")
+        typer.echo(f"chunks: {len(chunks)}")
+        typer.echo(f"tokens: {total_tokens}")
+        typer.echo("sample headings:")
+        for heading_path in sample:
+            typer.echo(f"  {heading_path}")
+        return
 
     try:
-        path = srd_service.fetch_source()
-        chunks = srd_service.chunk_source(path)
-    except SrdSourceError as exc:
+        report = asyncio.run(_run_ingest())
+    except (SrdSourceError, SrdVectorWidthError, LlmError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    byte_count = path.stat().st_size
-    total_tokens = sum(chunk.token_count for chunk in chunks)
-    sample = list(dict.fromkeys(chunk.heading_path for chunk in chunks))[:5]
+    cost = "n/a" if report.cost_usd is None else f"{report.cost_usd:.4f}"
+    if report.cost_usd is not None and not report.cost_complete:
+        cost += " (partial)"
 
-    typer.echo(f"stored: {path}")
-    typer.echo(f"bytes: {byte_count}")
-    typer.echo(f"chunks: {len(chunks)}")
-    typer.echo(f"tokens: {total_tokens}")
-    typer.echo("sample headings:")
-    for heading_path in sample:
-        typer.echo(f"  {heading_path}")
+    typer.echo(f"source version: {report.source_version}")
+    typer.echo(f"bytes: {report.source_bytes}")
+    typer.echo(f"chunks: {report.chunk_count}")
+    typer.echo(f"tokens: {report.token_count}")
+    typer.echo(f"cost usd: {cost}")
