@@ -1,12 +1,15 @@
-// The "Start a new campaign" card (sprint 007/07 WI1, AC1/AC3):
-// docs/design/dnd-app-dashboard-design/project/Dashboard.dc.html:72-80. The
-// button is inert until sprint 09 picks this back up (sprint brief's
-// "Decided for you") — same house pattern as `AdventuresSection`'s "Start
-// adventure": disabled, no `onClick` at all, so it can't offer to do
-// something that isn't built yet. `prominent` only changes sizing: with no
-// runs this card is the dashboard's one focal point (AC3); alongside a
-// populated list it is a quieter footer instead.
-import type { ReactElement } from "react";
+// The "Start a new campaign" card (sprint 007/07 WI1, AC1/AC3;
+// sprint 007/09 WI1, AC1-AC6): docs/design/dnd-app-dashboard-design/project/
+// Dashboard.dc.html:72-80. `prominent` only changes sizing: with no runs
+// this card is the dashboard's one focal point (AC3); alongside a populated
+// list it is a quieter footer instead.
+//
+// The button opens `SelectCampaignDialog`, whose open flag this card alone
+// owns — same house pattern as `PartySection`'s `InDevelopmentDialog` (WI2):
+// `DashboardRoute`'s two `CampaignCta` call sites are mutually exclusive
+// branches (empty state vs. populated list), so per-instance state here
+// never needs to be shared or lifted.
+import { useState, type ReactElement } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -15,12 +18,15 @@ import Typography from "@mui/material/Typography";
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { SelectCampaignDialog } from "./SelectCampaignDialog";
+
 export interface CampaignCtaProps {
   prominent?: boolean;
 }
 
 export function CampaignCta({ prominent = false }: CampaignCtaProps): ReactElement {
   const { t } = useTranslation("playthrough");
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
     <Card
@@ -47,10 +53,16 @@ export function CampaignCta({ prominent = false }: CampaignCtaProps): ReactEleme
           </Typography>
           <Typography sx={{ color: "text.secondary" }}>{t("dashboard.cta.body")}</Typography>
         </Box>
-        <Button variant="contained" startIcon={<Plus size={16} aria-hidden />} disabled sx={{ flex: "0 0 auto" }}>
+        <Button
+          variant="contained"
+          startIcon={<Plus size={16} aria-hidden />}
+          onClick={() => setDialogOpen(true)}
+          sx={{ flex: "0 0 auto" }}
+        >
           {t("dashboard.cta.button")}
         </Button>
       </Stack>
+      <SelectCampaignDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
     </Card>
   );
 }
