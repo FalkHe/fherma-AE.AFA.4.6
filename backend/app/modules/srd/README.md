@@ -96,14 +96,19 @@ this module reaches the corpus directly (D1).
   its heading trail plus body). The worst in-corpus best-match distance
   was `0.515`; the best out-of-corpus best-match distance was `0.686` — no
   overlap, so `0.60` sits in the gap with a `0.085` margin on both sides.
+  Re-measured on 2026-09-22 after the level-aware heading fix (sprint
+  004-07) re-ingested the corpus with corrected citations: the same eleven
+  questions gave the same worst in-corpus (`0.515`) and best out-of-corpus
+  (`0.686`) distances, so the floor was left at `0.60`. The tables below
+  are the re-measured values.
 
   In-corpus (every one the correct passage):
 
   | query | best distance | best match |
   |---|---|---|
   | how does half cover work | 0.515 | Combat › Cover |
-  | what happens when a creature is frightened | 0.389 | Adventuring › Conditions › Blinded › Frightened |
-  | what does fire bolt do | 0.486 | Spell Lists › Spell Descriptions › Acid Arrow › Fire Bolt |
+  | what happens when a creature is frightened | 0.363 | Adventuring › Conditions › Frightened |
+  | what does fire bolt do | 0.369 | Spell Lists › Spell Descriptions › Fire Bolt |
   | how does grappling work | 0.362 | Combat › Making an Attack › Melee Attacks › Grappling |
   | what is a saving throw | 0.297 | Using Ability Scores › Saving Throws |
   | how much does a longsword cost | 0.511 | Equipment › Weapons › Weapon Properties › Special Weapons |
