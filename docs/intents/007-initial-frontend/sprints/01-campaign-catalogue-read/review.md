@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/40
 ---
 # Review: Sprint 01 — The product can list the campaigns a player may choose from, with title, teaser and number of adventures
 
