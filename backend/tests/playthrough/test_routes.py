@@ -30,6 +30,7 @@ from app.modules.playthrough.errors import (
     InvalidRunStatusError,
     RunArchivedError,
 )
+from app.modules.playthrough.schemas import CampaignRunSummaryRead
 from app.modules.users import service as users_service
 from tests.factories import make_session, make_user
 
@@ -255,6 +256,61 @@ def test_list_campaign_runs_without_session_cookie_returns_401(client, monkeypat
     monkeypatch.setattr(playthrough_service, "list_campaign_runs", fake_list)
 
     response = client.get("/api/v1/playthrough/campaign")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"
+
+
+def test_list_run_summaries_response_items_have_exactly_the_camelcase_field_set(
+    client, monkeypatch, session_cookie_header
+):
+    _stub_auth(monkeypatch)
+    summary = CampaignRunSummaryRead(
+        id=generate_id(),
+        campaign_id="greenhollow",
+        status="setup",
+        created_at=datetime.now(UTC),
+        campaign_title="Greenhollow",
+        campaign_summary="A hedge-village …",
+        adventures_completed=0,
+        adventures_total=3,
+        player_count=1,
+        unavailable=False,
+    )
+
+    async def fake_list(db, *, user_id):
+        return [summary]
+
+    monkeypatch.setattr(playthrough_service, "list_run_summaries", fake_list)
+
+    response = client.get(
+        "/api/v1/playthrough/runs", headers=session_cookie_header("a-valid-cookie")
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body) == 1
+    assert set(body[0].keys()) == {
+        "id",
+        "campaignId",
+        "status",
+        "createdAt",
+        "campaignTitle",
+        "campaignSummary",
+        "adventuresCompleted",
+        "adventuresTotal",
+        "playerCount",
+        "unavailable",
+    }
+
+
+def test_list_run_summaries_without_session_cookie_returns_401(client, monkeypatch):
+    async def fake_list(db, *, user_id):
+        return []
+
+    monkeypatch.setattr(playthrough_service, "list_run_summaries", fake_list)
+
+    response = client.get("/api/v1/playthrough/runs")
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "NOT_AUTHENTICATED"

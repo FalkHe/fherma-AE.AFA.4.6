@@ -16,10 +16,12 @@ wrapped in a single `asyncio.run(...)` per test.
 import asyncio
 
 import pytest
+import structlog.testing
 from sqlalchemy.exc import IntegrityError
 
 from app.core.ids import generate_id
 from app.modules.content import service as content_service
+from app.modules.content.errors import ContentInvalidError, ContentNotFoundError
 from app.modules.content.schemas import (
     Abilities,
     Adventure,
@@ -421,3 +423,145 @@ def test_get_campaign_run_raises_not_found_for_a_foreign_run():
 
     with pytest.raises(CampaignRunNotFoundError):
         asyncio.run(service.get_campaign_run(db, user_id="user-1", run_id="someone-elses-run"))
+
+
+# --- list_run_summaries / _load_pinned -------------------------------------
+
+
+def test_load_pinned_returns_the_loaded_campaign_for_a_healthy_run():
+    run = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+
+    loaded = service._load_pinned(run)
+
+    assert loaded.campaign.id == "greenhollow"
+
+
+def test_load_pinned_returns_none_and_logs_a_warning_on_a_content_error(monkeypatch):
+    run = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+
+    def fake_load_campaign(campaign_id, version):
+        raise ContentNotFoundError("greenhollow/v1")
+
+    monkeypatch.setattr(content_service, "load_campaign", fake_load_campaign)
+
+    with structlog.testing.capture_logs() as logs:
+        loaded = service._load_pinned(run)
+
+    assert loaded is None
+    warnings = [entry for entry in logs if entry["log_level"] == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["event"] == "playthrough_content_unavailable"
+    assert warnings[0]["run_id"] == "run-1"
+
+
+def test_list_run_summaries_orders_and_includes_archived_runs_exactly_as_queried():
+    newest = CampaignRun(
+        id="run-2", campaign_id="greenhollow", content_version="v1", status="archived"
+    )
+    oldest = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1", status="setup")
+    db = FakeSession(
+        FakeResult(scalars=[newest, oldest]),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    summaries = asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    assert [summary.id for summary in summaries] == ["run-2", "run-1"]
+    assert summaries[0].status == "archived"
+
+
+def test_list_run_summaries_takes_the_completed_count_from_the_adventure_run_rows():
+    run = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+    other = CampaignRun(id="run-2", campaign_id="greenhollow", content_version="v1")
+    db = FakeSession(
+        FakeResult(scalars=[run, other]),
+        FakeResult(scalars=[("run-1", 2)]),
+        FakeResult(scalars=[("run-1", 1), ("run-2", 4)]),
+    )
+
+    summaries = asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    by_id = {summary.id: summary for summary in summaries}
+    assert by_id["run-1"].adventures_completed == 2
+    assert by_id["run-1"].player_count == 1
+    assert by_id["run-2"].adventures_completed == 0
+    assert by_id["run-2"].player_count == 4
+
+
+def test_list_run_summaries_flags_unavailable_content_without_raising_and_leaves_a_sibling_intact(
+    monkeypatch,
+):
+    healthy = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+    missing = CampaignRun(id="run-2", campaign_id="ghost-town", content_version="v1")
+    broken = CampaignRun(id="run-3", campaign_id="ruined-keep", content_version="v1")
+    db = FakeSession(
+        FakeResult(scalars=[healthy, missing, broken]),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    real_load_campaign = content_service.load_campaign
+
+    def fake_load_campaign(campaign_id, version):
+        if campaign_id == "ghost-town":
+            raise ContentNotFoundError("ghost-town/v1")
+        if campaign_id == "ruined-keep":
+            raise ContentInvalidError("ruined-keep", "v1", ["broken"])
+        return real_load_campaign(campaign_id, version)
+
+    monkeypatch.setattr(content_service, "load_campaign", fake_load_campaign)
+
+    summaries = asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    by_id = {summary.id: summary for summary in summaries}
+    for run_id in ("run-2", "run-3"):
+        summary = by_id[run_id]
+        assert summary.unavailable is True
+        assert summary.campaign_title is None
+        assert summary.campaign_summary is None
+        assert summary.adventures_total is None
+
+    sibling = by_id["run-1"]
+    assert sibling.unavailable is False
+    assert sibling.campaign_title == "Greenhollow"
+    assert sibling.adventures_total == 1
+
+
+def test_list_run_summaries_loads_pinned_content_only_once_for_two_runs_of_one_campaign(
+    monkeypatch,
+):
+    first = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+    second = CampaignRun(id="run-2", campaign_id="greenhollow", content_version="v1")
+    db = FakeSession(
+        FakeResult(scalars=[first, second]),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    calls = []
+    real_load_campaign = content_service.load_campaign
+
+    def counting_load_campaign(campaign_id, version):
+        calls.append((campaign_id, version))
+        return real_load_campaign(campaign_id, version)
+
+    monkeypatch.setattr(content_service, "load_campaign", counting_load_campaign)
+
+    asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    assert calls == [("greenhollow", "v1")]
+
+
+def test_list_run_summaries_makes_no_write():
+    run = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+    db = FakeSession(
+        FakeResult(scalars=[run]),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    assert db.committed == 0
+    assert db.added == []
