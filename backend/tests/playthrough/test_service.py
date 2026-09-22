@@ -14,12 +14,15 @@ wrapped in a single `asyncio.run(...)` per test.
 """
 
 import asyncio
+from datetime import UTC, datetime
 
 import pytest
+import structlog.testing
 from sqlalchemy.exc import IntegrityError
 
 from app.core.ids import generate_id
 from app.modules.content import service as content_service
+from app.modules.content.errors import ContentInvalidError, ContentNotFoundError
 from app.modules.content.schemas import (
     Abilities,
     Adventure,
@@ -39,7 +42,7 @@ from app.modules.playthrough.errors import (
     CampaignRunExistsError,
     CampaignRunNotFoundError,
 )
-from app.modules.playthrough.models import CampaignRun, CampaignRunMember, GameObject
+from app.modules.playthrough.models import AdventureRun, CampaignRun, CampaignRunMember, GameObject
 
 GREENHOLLOW_KEYS = {
     "goblins-of-greenhollow:village-green:mira:1",
@@ -60,6 +63,18 @@ GREENHOLLOW_KEYS = {
 
 def _load_greenhollow() -> LoadedCampaign:
     return content_service.load_campaign("greenhollow", "v1")
+
+
+def _make_campaign_run(**overrides) -> CampaignRun:
+    fields = dict(
+        id=generate_id(),
+        campaign_id="greenhollow",
+        content_version="v1",
+        status="setup",
+        created_at=datetime.now(UTC),
+    )
+    fields.update(overrides)
+    return CampaignRun(**fields)
 
 
 class FakeResult:
@@ -421,3 +436,386 @@ def test_get_campaign_run_raises_not_found_for_a_foreign_run():
 
     with pytest.raises(CampaignRunNotFoundError):
         asyncio.run(service.get_campaign_run(db, user_id="user-1", run_id="someone-elses-run"))
+
+
+# --- list_run_summaries / _load_pinned -------------------------------------
+
+
+def test_load_pinned_returns_the_loaded_campaign_for_a_healthy_run():
+    run = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+
+    loaded = service._load_pinned(run)
+
+    assert loaded.campaign.id == "greenhollow"
+
+
+def test_load_pinned_returns_none_and_logs_a_warning_on_a_content_error(monkeypatch):
+    run = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+
+    def fake_load_campaign(campaign_id, version):
+        raise ContentNotFoundError("greenhollow/v1")
+
+    monkeypatch.setattr(content_service, "load_campaign", fake_load_campaign)
+
+    with structlog.testing.capture_logs() as logs:
+        loaded = service._load_pinned(run)
+
+    assert loaded is None
+    warnings = [entry for entry in logs if entry["log_level"] == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["event"] == "playthrough_content_unavailable"
+    assert warnings[0]["run_id"] == "run-1"
+
+
+def test_list_run_summaries_orders_and_includes_archived_runs_exactly_as_queried():
+    newest = _make_campaign_run(id="run-2", status="archived")
+    oldest = _make_campaign_run(id="run-1", status="setup")
+    db = FakeSession(
+        FakeResult(scalars=[newest, oldest]),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    summaries = asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    assert [summary.id for summary in summaries] == ["run-2", "run-1"]
+    assert summaries[0].status == "archived"
+
+
+def test_list_run_summaries_takes_the_completed_count_from_the_adventure_run_rows():
+    run = _make_campaign_run(id="run-1")
+    other = _make_campaign_run(id="run-2")
+    db = FakeSession(
+        FakeResult(scalars=[run, other]),
+        FakeResult(scalars=[("run-1", 2)]),
+        FakeResult(scalars=[("run-1", 1), ("run-2", 4)]),
+    )
+
+    summaries = asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    by_id = {summary.id: summary for summary in summaries}
+    assert by_id["run-1"].adventures_completed == 2
+    assert by_id["run-1"].player_count == 1
+    assert by_id["run-2"].adventures_completed == 0
+    assert by_id["run-2"].player_count == 4
+
+
+def test_list_run_summaries_flags_unavailable_content_without_raising_and_leaves_a_sibling_intact(
+    monkeypatch,
+):
+    healthy = _make_campaign_run(id="run-1")
+    missing = _make_campaign_run(id="run-2", campaign_id="ghost-town")
+    broken = _make_campaign_run(id="run-3", campaign_id="ruined-keep")
+    db = FakeSession(
+        FakeResult(scalars=[healthy, missing, broken]),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    real_load_campaign = content_service.load_campaign
+
+    def fake_load_campaign(campaign_id, version):
+        if campaign_id == "ghost-town":
+            raise ContentNotFoundError("ghost-town/v1")
+        if campaign_id == "ruined-keep":
+            raise ContentInvalidError("ruined-keep", "v1", ["broken"])
+        return real_load_campaign(campaign_id, version)
+
+    monkeypatch.setattr(content_service, "load_campaign", fake_load_campaign)
+
+    summaries = asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    by_id = {summary.id: summary for summary in summaries}
+    for run_id in ("run-2", "run-3"):
+        summary = by_id[run_id]
+        assert summary.unavailable is True
+        assert summary.campaign_title is None
+        assert summary.campaign_summary is None
+        assert summary.adventures_total is None
+
+    sibling = by_id["run-1"]
+    assert sibling.unavailable is False
+    assert sibling.campaign_title == "Greenhollow"
+    assert sibling.adventures_total == 1
+
+
+def test_list_run_summaries_loads_pinned_content_only_once_for_two_runs_of_one_campaign(
+    monkeypatch,
+):
+    first = _make_campaign_run(id="run-1")
+    second = _make_campaign_run(id="run-2")
+    db = FakeSession(
+        FakeResult(scalars=[first, second]),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    calls = []
+    real_load_campaign = content_service.load_campaign
+
+    def counting_load_campaign(campaign_id, version):
+        calls.append((campaign_id, version))
+        return real_load_campaign(campaign_id, version)
+
+    monkeypatch.setattr(content_service, "load_campaign", counting_load_campaign)
+
+    asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    assert calls == [("greenhollow", "v1")]
+
+
+def test_list_run_summaries_makes_no_write():
+    run = _make_campaign_run(id="run-1")
+    db = FakeSession(
+        FakeResult(scalars=[run]),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    asyncio.run(service.list_run_summaries(db, user_id="user-1"))
+
+    assert db.committed == 0
+    assert db.added == []
+
+
+# --- get_run_overview / _excerpt (WI2) --------------------------------------
+
+
+def test_excerpt_keeps_a_short_text_verbatim():
+    text = "Smoke rises over the hedgerows."
+
+    assert service._excerpt(text) == text
+
+
+def test_excerpt_clips_a_long_text_at_a_word_boundary_and_appends_an_ellipsis():
+    text = "A" * 50 + " " + "B" * 200
+
+    excerpt = service._excerpt(text, limit=200)
+
+    assert excerpt == "A" * 50 + "…"
+    assert len(text[:200]) == 200  # sanity: the cut really does land mid-word
+
+
+def _member_row(*, member_id="member-1", run_id="run-1", user_id="user-1", role="owner"):
+    return CampaignRunMember(id=member_id, campaign_run_id=run_id, user_id=user_id, role=role)
+
+
+def test_get_run_overview_members_carry_username_and_role():
+    run = _make_campaign_run(id="run-1")
+    member = _member_row()
+    row = (_member_row(), "aragorn", None)
+    db = FakeSession(
+        FakeResult(scalar=member),
+        FakeResult(scalar=run),
+        FakeResult(scalars=[row]),
+        FakeResult(scalars=[]),
+    )
+
+    overview = asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+    assert len(overview.members) == 1
+    assert overview.members[0].username == "aragorn"
+    assert overview.members[0].role == "owner"
+
+
+def test_get_run_overview_ready_is_false_with_a_null_character_name():
+    run = _make_campaign_run(id="run-1")
+    member = _member_row()
+    row = (_member_row(), "aragorn", None)
+    db = FakeSession(
+        FakeResult(scalar=member),
+        FakeResult(scalar=run),
+        FakeResult(scalars=[row]),
+        FakeResult(scalars=[]),
+    )
+
+    overview = asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+    assert overview.members[0].ready is False
+    assert overview.members[0].character_name is None
+
+
+def test_get_run_overview_ready_is_true_once_the_member_owns_a_character():
+    run = _make_campaign_run(id="run-1")
+    member = _member_row()
+    row = (_member_row(), "frodo", "Rosalind Thorn")
+    db = FakeSession(
+        FakeResult(scalar=member),
+        FakeResult(scalar=run),
+        FakeResult(scalars=[row]),
+        FakeResult(scalars=[]),
+    )
+
+    overview = asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+    assert overview.members[0].ready is True
+    assert overview.members[0].character_name == "Rosalind Thorn"
+
+
+def test_get_run_overview_member_query_joins_the_character_by_member_id_and_kind():
+    """An NPC's `objects` row has `member_id` NULL (research: only a
+    member's own character carries `member_id`), so it can never satisfy
+    `member_id == member.id` -- the join predicate itself, not a Python
+    filter, is what keeps a non-player creature from ever supplying a
+    `character_name` and flipping a member `ready`. Asserted here by
+    inspecting the compiled statement, the way
+    `test_service_enter_adventure.py`'s `_compiled` helper already does in
+    this suite."""
+    run = _make_campaign_run(id="run-1")
+    member = _member_row()
+    captured: list[object] = []
+
+    class CapturingSession(FakeSession):
+        async def execute(self, stmt):
+            captured.append(stmt)
+            return await super().execute(stmt)
+
+    db = CapturingSession(
+        FakeResult(scalar=member),
+        FakeResult(scalar=run),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+    member_stmt = captured[2]
+    compiled = str(member_stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "objects.member_id = campaign_run_members.id" in compiled
+    assert "objects.kind = 'creature'" in compiled
+
+
+def _synthetic_three_adventure_campaign() -> LoadedCampaign:
+    def _adventure(adventure_id: str) -> Adventure:
+        scene = Scene(id=f"{adventure_id}-scene", title="Scene", truth=["t"])
+        return Adventure(
+            id=adventure_id,
+            title=adventure_id.replace("-", " ").title(),
+            intro=f"Intro for {adventure_id}.",
+            entry_scene=scene.id,
+            scenes=[scene],
+        )
+
+    adventures = {aid: _adventure(aid) for aid in ("first-light", "second-dusk", "third-dawn")}
+    campaign = Campaign(
+        id="synthetic-campaign",
+        title="Synthetic",
+        summary="s",
+        adventures=list(adventures.keys()),
+        seed_character=SeedCharacter(
+            name="n",
+            race="r",
+            character_class="c",
+            background="b",
+            appearance="a",
+            abilities=Abilities(
+                strength=10, dexterity=10, constitution=10, intelligence=10, wisdom=10, charisma=10
+            ),
+            max_hp=10,
+            armour_class=10,
+        ),
+        object_templates=[
+            CreatureTemplate(
+                id="npc",
+                kind="creature",
+                name="Npc",
+                description="d",
+                disposition="d",
+                stat_block=StatBlock(
+                    max_hp=5,
+                    armour_class=10,
+                    abilities=Abilities(
+                        strength=10,
+                        dexterity=10,
+                        constitution=10,
+                        intelligence=10,
+                        wisdom=10,
+                        charisma=10,
+                    ),
+                ),
+            )
+        ],
+    )
+    return LoadedCampaign(
+        campaign=campaign,
+        version="v1",
+        adventures=adventures,
+        scenes={
+            a.entry_scene: Scene(id=a.entry_scene, title="Scene", truth=["t"])
+            for a in adventures.values()
+        },
+        object_templates={"npc": campaign.object_templates[0]},
+    )
+
+
+def test_get_run_overview_adventures_are_in_campaign_order_with_all_three_statuses(monkeypatch):
+    run = _make_campaign_run(id="run-1", campaign_id="synthetic-campaign")
+    member = _member_row()
+
+    def fake_load_campaign(campaign_id, version):
+        return _synthetic_three_adventure_campaign()
+
+    monkeypatch.setattr(content_service, "load_campaign", fake_load_campaign)
+
+    completed = AdventureRun(
+        campaign_run_id="run-1", adventure_id="first-light", status="completed"
+    )
+    active = AdventureRun(campaign_run_id="run-1", adventure_id="second-dusk", status="active")
+    db = FakeSession(
+        FakeResult(scalar=member),
+        FakeResult(scalar=run),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[completed, active]),
+    )
+
+    overview = asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+    assert [a.id for a in overview.adventures] == ["first-light", "second-dusk", "third-dawn"]
+    assert [a.status for a in overview.adventures] == ["done", "active", "unplayed"]
+
+
+def test_get_run_overview_unavailable_run_answers_null_copy_and_no_adventures(monkeypatch):
+    run = _make_campaign_run(id="run-1", campaign_id="ghost-town")
+    member = _member_row()
+
+    def fake_load_campaign(campaign_id, version):
+        raise ContentNotFoundError("ghost-town/v1")
+
+    monkeypatch.setattr(content_service, "load_campaign", fake_load_campaign)
+
+    db = FakeSession(
+        FakeResult(scalar=member),
+        FakeResult(scalar=run),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    overview = asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+    assert overview.unavailable is True
+    assert overview.campaign_title is None
+    assert overview.campaign_summary is None
+    assert overview.adventures == []
+
+
+def test_get_run_overview_raises_not_found_for_a_foreign_or_unknown_run():
+    db = FakeSession(FakeResult(scalar=None))
+
+    with pytest.raises(CampaignRunNotFoundError):
+        asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+
+def test_get_run_overview_makes_no_write():
+    run = _make_campaign_run(id="run-1")
+    member = _member_row()
+    db = FakeSession(
+        FakeResult(scalar=member),
+        FakeResult(scalar=run),
+        FakeResult(scalars=[]),
+        FakeResult(scalars=[]),
+    )
+
+    asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+    assert db.committed == 0
+    assert db.added == []

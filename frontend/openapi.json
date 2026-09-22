@@ -297,6 +297,103 @@
         }
       }
     },
+    "/api/v1/playthrough/runs": {
+      "get": {
+        "tags": [
+          "playthrough"
+        ],
+        "summary": "List Run Summaries",
+        "operationId": "list_run_summaries_api_v1_playthrough_runs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CampaignRunSummaryRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Run Summaries Api V1 Playthrough Runs Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/playthrough/runs/{run_id}/overview": {
+      "get": {
+        "tags": [
+          "playthrough"
+        ],
+        "summary": "Get Run Overview",
+        "operationId": "get_run_overview_api_v1_playthrough_runs__run_id__overview_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignRunOverviewRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/playthrough/campaign/{run_id}": {
       "get": {
         "tags": [
@@ -897,6 +994,168 @@
         "title": "AdventureRunRead",
         "description": "One adventure run, on the wire -- `id, adventureId, status,\nstartedAt` and nothing else (I1): the adventure run's internals\n(`campaignRunId`, `completedAt`, `updatedAt`) stay internal."
       },
+      "CampaignRunAdventureRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "introExcerpt": {
+            "type": "string",
+            "title": "Introexcerpt"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "introExcerpt",
+          "status"
+        ],
+        "title": "CampaignRunAdventureRead",
+        "description": "One of the campaign's adventures, in the campaign's own order\n(WI2, AC3) -- `id, title, introExcerpt, status`. `id` is the campaign's\nadventure id, never the `adventure_runs` row id. `status` is\n`done`/`active`/`unplayed`, mapped from the matching `adventure_runs`\nrow's own `status` (`completed`/`active`) or its absence."
+      },
+      "CampaignRunMemberRead": {
+        "properties": {
+          "userId": {
+            "type": "string",
+            "title": "Userid"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "characterName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charactername"
+          }
+        },
+        "type": "object",
+        "required": [
+          "userId",
+          "username",
+          "role",
+          "ready",
+          "characterName"
+        ],
+        "title": "CampaignRunMemberRead",
+        "description": "One seat in `GET /runs/{runId}/overview` (WI2, AC3) -- `userId,\nusername, role, ready, characterName`. `ready` is `characterName is not\nNone`; a non-player creature never counts, since only a member's own\ncharacter carries `objects.member_id`."
+      },
+      "CampaignRunOverviewRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "campaignId": {
+            "type": "string",
+            "title": "Campaignid"
+          },
+          "contentVersion": {
+            "type": "string",
+            "title": "Contentversion"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "campaignTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaigntitle"
+          },
+          "campaignSummary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaignsummary"
+          },
+          "unavailable": {
+            "type": "boolean",
+            "title": "Unavailable"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/CampaignRunMemberRead"
+            },
+            "type": "array",
+            "title": "Members"
+          },
+          "adventures": {
+            "items": {
+              "$ref": "#/components/schemas/CampaignRunAdventureRead"
+            },
+            "type": "array",
+            "title": "Adventures"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "campaignId",
+          "contentVersion",
+          "title",
+          "status",
+          "createdAt",
+          "campaignTitle",
+          "campaignSummary",
+          "unavailable",
+          "members",
+          "adventures"
+        ],
+        "title": "CampaignRunOverviewRead",
+        "description": "`GET /runs/{runId}/overview`'s whole answer (WI2, AC3): the run\nitself, its members and its adventures, together -- so an overview\nscreen never has to make three calls where one now does. Mirrors\n`CampaignRunSummaryRead`'s unavailable-content contract (AC2): a run\nwhose pinned campaign or version no longer loads answers with\n`campaignTitle`/`campaignSummary` `None`, `unavailable` `True` and\n`adventures` empty; `members` is unaffected, since it never reads\ncontent."
+      },
       "CampaignRunRead": {
         "properties": {
           "id": {
@@ -943,6 +1202,87 @@
         ],
         "title": "CampaignRunRead",
         "description": "The run row, not its state -- `id, campaignId, contentVersion,\ntitle, status, createdAt` and nothing else (I2)."
+      },
+      "CampaignRunSummaryRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "campaignId": {
+            "type": "string",
+            "title": "Campaignid"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "campaignTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaigntitle"
+          },
+          "campaignSummary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaignsummary"
+          },
+          "adventuresCompleted": {
+            "type": "integer",
+            "title": "Adventurescompleted"
+          },
+          "adventuresTotal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adventurestotal"
+          },
+          "playerCount": {
+            "type": "integer",
+            "title": "Playercount"
+          },
+          "unavailable": {
+            "type": "boolean",
+            "title": "Unavailable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "campaignId",
+          "status",
+          "createdAt",
+          "campaignTitle",
+          "campaignSummary",
+          "adventuresCompleted",
+          "adventuresTotal",
+          "playerCount",
+          "unavailable"
+        ],
+        "title": "CampaignRunSummaryRead",
+        "description": "One `GET /runs` row (WI1, AC1/AC2): the run's own facts alongside\nits pinned campaign's copy, enriched with counts no single table\ncarries. `campaignTitle`/`campaignSummary`/`adventuresTotal` are\n`None` and `unavailable` is `true` when the pinned campaign or\nversion can no longer be loaded -- `adventuresCompleted` and\n`playerCount` stay counted either way, since both come from this\nrun's own rows, not from content."
       },
       "CampaignSummaryRead": {
         "properties": {

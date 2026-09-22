@@ -107,6 +107,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playthrough/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Run Summaries */
+        get: operations["list_run_summaries_api_v1_playthrough_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/playthrough/runs/{run_id}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Overview */
+        get: operations["get_run_overview_api_v1_playthrough_runs__run_id__overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playthrough/campaign/{run_id}": {
         parameters: {
             query?: never;
@@ -262,6 +296,81 @@ export interface components {
             startedAt: string;
         };
         /**
+         * CampaignRunAdventureRead
+         * @description One of the campaign's adventures, in the campaign's own order
+         *     (WI2, AC3) -- `id, title, introExcerpt, status`. `id` is the campaign's
+         *     adventure id, never the `adventure_runs` row id. `status` is
+         *     `done`/`active`/`unplayed`, mapped from the matching `adventure_runs`
+         *     row's own `status` (`completed`/`active`) or its absence.
+         */
+        CampaignRunAdventureRead: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Introexcerpt */
+            introExcerpt: string;
+            /** Status */
+            status: string;
+        };
+        /**
+         * CampaignRunMemberRead
+         * @description One seat in `GET /runs/{runId}/overview` (WI2, AC3) -- `userId,
+         *     username, role, ready, characterName`. `ready` is `characterName is not
+         *     None`; a non-player creature never counts, since only a member's own
+         *     character carries `objects.member_id`.
+         */
+        CampaignRunMemberRead: {
+            /** Userid */
+            userId: string;
+            /** Username */
+            username: string;
+            /** Role */
+            role: string;
+            /** Ready */
+            ready: boolean;
+            /** Charactername */
+            characterName: string | null;
+        };
+        /**
+         * CampaignRunOverviewRead
+         * @description `GET /runs/{runId}/overview`'s whole answer (WI2, AC3): the run
+         *     itself, its members and its adventures, together -- so an overview
+         *     screen never has to make three calls where one now does. Mirrors
+         *     `CampaignRunSummaryRead`'s unavailable-content contract (AC2): a run
+         *     whose pinned campaign or version no longer loads answers with
+         *     `campaignTitle`/`campaignSummary` `None`, `unavailable` `True` and
+         *     `adventures` empty; `members` is unaffected, since it never reads
+         *     content.
+         */
+        CampaignRunOverviewRead: {
+            /** Id */
+            id: string;
+            /** Campaignid */
+            campaignId: string;
+            /** Contentversion */
+            contentVersion: string;
+            /** Title */
+            title: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Campaigntitle */
+            campaignTitle: string | null;
+            /** Campaignsummary */
+            campaignSummary: string | null;
+            /** Unavailable */
+            unavailable: boolean;
+            /** Members */
+            members: components["schemas"]["CampaignRunMemberRead"][];
+            /** Adventures */
+            adventures: components["schemas"]["CampaignRunAdventureRead"][];
+        };
+        /**
          * CampaignRunRead
          * @description The run row, not its state -- `id, campaignId, contentVersion,
          *     title, status, createdAt` and nothing else (I2).
@@ -282,6 +391,41 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+        };
+        /**
+         * CampaignRunSummaryRead
+         * @description One `GET /runs` row (WI1, AC1/AC2): the run's own facts alongside
+         *     its pinned campaign's copy, enriched with counts no single table
+         *     carries. `campaignTitle`/`campaignSummary`/`adventuresTotal` are
+         *     `None` and `unavailable` is `true` when the pinned campaign or
+         *     version can no longer be loaded -- `adventuresCompleted` and
+         *     `playerCount` stay counted either way, since both come from this
+         *     run's own rows, not from content.
+         */
+        CampaignRunSummaryRead: {
+            /** Id */
+            id: string;
+            /** Campaignid */
+            campaignId: string;
+            /** Status */
+            status: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Campaigntitle */
+            campaignTitle: string | null;
+            /** Campaignsummary */
+            campaignSummary: string | null;
+            /** Adventurescompleted */
+            adventuresCompleted: number;
+            /** Adventurestotal */
+            adventuresTotal: number | null;
+            /** Playercount */
+            playerCount: number;
+            /** Unavailable */
+            unavailable: boolean;
         };
         /** CampaignSummaryRead */
         CampaignSummaryRead: {
@@ -664,6 +808,84 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_run_summaries_api_v1_playthrough_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignRunSummaryRead"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_run_overview_api_v1_playthrough_runs__run_id__overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignRunOverviewRead"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
