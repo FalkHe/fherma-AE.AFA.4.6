@@ -25,13 +25,16 @@ Dependency-ordered. 01 and 02 have no screen and are checked through the interac
 
 - 01, 02, 03 start together; 06 and 07 run side by side.
 - Not sprints: wiring Start (← D1) · real character creation, invite, sharing, unarchive, rename (← D2–D4, D13) ·
-  the play screen · cover art · adopting the design bundle's compiled components (flagged in 03 for veto).
-- Coverage: D1 → 01, 02, 06 · D2 → 07 · D3 → 08 · D4 → 05 · D5 → 04 · D6 → 09 · D7 → 02, 07 · D8 → 07 · D9 → 06 ·
-  D10 → 09 · D11 → 01–07, 09 · D12 → 07, 08 · D13 → 05 · D14 → 03, 04.
-- Users have a username only, no e-mail: the design's e-mail line (account menu, player card) is omitted and the
-  username is the name (04, 05). Assumption, open to veto.
+  the play screen · cover art · the design bundle's compiled components.
+- Coverage: D1→01,02,06 · D2→07 · D3→08 · D4→05 · D5→04 · D6→09 · D7→02,07 · D8→07 · D9→06 · D10→09 ·
+  D11→01–07,09 · D12→07,08 · D13→05 · D14→03,04.
+- Users have a username only, no e-mail: the design's e-mail line is omitted and the username is the name
+  (04, 05). Assumption, open to veto.
 
 ## Proposals
 
-- The backend has since gained the "enter adventure" write that Start would call. D1 keeps Start disabled here;
-  wiring it would be one small extra sprint after 06 — your call.
+- The backend has since gained the "enter adventure" write that Start would call. D1 keeps Start disabled;
+  wiring it would be one small sprint after 06 — your call.
+- 04 is two sprints' worth and did not start. Suggested split: **04a** one sign-in guard, the shared header and the
+  account menu; **04b** returning to the page you asked for — which cannot be seen working until a second page sits
+  behind sign-in, something 04 currently rules out. Your call.
