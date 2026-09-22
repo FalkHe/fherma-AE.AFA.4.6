@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.modules.character.schemas import CharacterSheet, GearRef
+from app.modules.character.schemas import CharacterSheet, SheetItem
 from app.modules.content.schemas import Abilities
 
 
@@ -26,7 +26,7 @@ def _sheet(**overrides) -> dict:
         "speed": 30,
         "saving_throws": ["intelligence", "wisdom"],
         "skills": ["Arcana", "Investigation"],
-        "equipment": [GearRef(kind="gear", id="spellbook")],
+        "equipment": [SheetItem(kind="gear", id="spellbook", name="Spellbook")],
         "appearance": "Tall, silver-haired",
         "backstory": "A scholar of the arcane.",
     }
