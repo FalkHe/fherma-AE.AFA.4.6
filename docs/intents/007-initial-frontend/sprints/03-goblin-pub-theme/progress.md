@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: draft
+stage: done
 ---
 # Progress: Sprint 03
 
@@ -24,7 +24,11 @@ Status: `open | running | done | failed`
 - No browser acceptance suite exists in this project and the brief does not ask for one; acceptance is covered by the unit-level suite plus a live look at the running app.
 
 ## Backlog proposals
+- The icon package is installed and allow-listed but nothing imports it yet: the three screens carry no icons. It is there for the screens the next sprints build.
 - The sign-out control's focus indicator is a faint fill rather than the design's crisp ring; the header and its account menu are rebuilt next sprint, which is where this belongs.
 - The interactive API page still calls the product by its old name: that title comes from the backend, which this sprint may not touch. One small backend change would finish the rename.
 
 ## Verify
+Round 1: approve, no failed criteria. All five criteria checked live in the browser. The merge request
+could not be approved by button — the reviewing account authored it, so GitLab refuses self-approval; the
+verdict is posted as a note instead (note_437). Human approval on the MR is still outstanding.

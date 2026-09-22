@@ -30,3 +30,9 @@ a visitor can do has changed — only how it looks and what it calls itself.
 Brief: docs/intents/007-initial-frontend/sprints/03-goblin-pub-theme/brief.md
 
 ## Verdict
+Round 1: approve — Signing in, signing up and the landing page all wear the dark tavern look now — amber
+on deep green-black, with the serif and small-caps lettering — and the product calls itself The Goblin's
+Tavern in the header and in the browser tab. Nothing shows the old blue anywhere, and the pages stay dark
+even when the device asks for light mode. Everything still behaves as before: a wrong password still
+explains itself, creating an account still lands you on the welcome page, and signing out still returns
+you to sign-in.
