@@ -26,3 +26,4 @@ had been missing.
 Brief: docs/intents/007-initial-frontend/sprints/01-campaign-catalogue-read/brief.md
 
 ## Verdict
+Round 1: approve — Signed in, the product now returns the list of campaigns a player can choose from: Greenhollow appears with its title, teaser and one adventure, and the same request without a sign-in is refused with the usual authentication error. Nothing is stored for it: the list comes straight from the shipped campaign files, and a broken campaign is quietly left out instead of breaking the list.

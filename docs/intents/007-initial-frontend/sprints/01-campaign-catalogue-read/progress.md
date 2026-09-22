@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: draft
+stage: done
 ---
 # Progress: Sprint 01
 
@@ -24,5 +24,7 @@ Status: `open | running | done | failed`
 - `compose.yaml` turned up modified in the working tree (host ports bound to `${LOCAL_HOST_IP}`, API on 8001) — not done by any sprint agent on record; left uncommitted and out of the sprint.
 
 ## Backlog proposals
+- docs/architecture.md still lists only auth, users, health as backend modules; a one-line docs fix would add playthrough and content.
 
 ## Verify
+Round 1: approve, no failed criteria. MR !40 approved and noted by the verifier (under the f4lkh3 token). Verifier note: docs/architecture.md:24 module list is stale (missing playthrough and content) — pre-existing.
