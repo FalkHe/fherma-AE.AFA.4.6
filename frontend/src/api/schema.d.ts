@@ -388,10 +388,11 @@ export interface components {
         };
         /**
          * CampaignRunMemberRead
-         * @description One seat in `GET /runs/{runId}/overview` (WI2, AC3) -- `userId,
-         *     username, role, ready, characterName`. `ready` is `characterName is not
-         *     None`; a non-player creature never counts, since only a member's own
-         *     character carries `objects.member_id`.
+         * @description One seat in `GET /runs/{runId}/overview` (WI2, AC3; sprint 009-07 --
+         *     the character card rides here whole) -- `userId, username, role, ready,
+         *     character`. `ready` is `character is not None`; a non-player creature
+         *     never counts, since only a member's own character carries
+         *     `objects.member_id`.
          */
         CampaignRunMemberRead: {
             /** Userid */
@@ -402,8 +403,7 @@ export interface components {
             role: string;
             /** Ready */
             ready: boolean;
-            /** Charactername */
-            characterName: string | null;
+            character: components["schemas"]["CharacterRead"] | null;
         };
         /**
          * CampaignRunOverviewRead
@@ -565,7 +565,11 @@ export interface components {
         /**
          * CharacterRead
          * @description The character, on the wire -- `id, name, currentHp, maxHp,
-         *     armourClass` and nothing else (I2): no state, no keys, no ownership.
+         *     armourClass, race, characterClass, level, appearance` and nothing else
+         *     (I2; sprint 009-07 adds the four card facts -- ← research Decision 5):
+         *     no full state, no keys, no ownership. `race`/`characterClass`/`level`/
+         *     `appearance` are read off the object's `state` column
+         *     (`CharacterState`), never stored as columns of their own.
          */
         CharacterRead: {
             /** Id */
@@ -578,6 +582,14 @@ export interface components {
             maxHp: number;
             /** Armourclass */
             armourClass: number;
+            /** Race */
+            race: string;
+            /** Characterclass */
+            characterClass: string;
+            /** Level */
+            level: number;
+            /** Appearance */
+            appearance: string;
         };
         /**
          * CreationReply
