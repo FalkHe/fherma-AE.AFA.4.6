@@ -15,3 +15,18 @@ class CharacterBuildError(Exception):
     def __init__(self, messages: list[str]) -> None:
         self.messages = messages
         super().__init__("; ".join(messages))
+
+
+class CreationConversationNotFoundError(Exception):
+    """No live creation conversation answers `conversation_id` in
+    `app.state` -- an unknown id, one from another caller, or one whose
+    caller has lost membership in the run since starting it, all
+    indistinguishable on purpose (sprint 009-05, ← research Decision 2),
+    the same way `playthrough.errors.CampaignRunNotFoundError` treats an
+    unknown and a foreign run alike."""
+
+    code = ErrorCode.NOT_FOUND
+
+    def __init__(self, conversation_id: str) -> None:
+        self.conversation_id = conversation_id
+        super().__init__(f"creation conversation not found: {conversation_id}")

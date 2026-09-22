@@ -978,6 +978,170 @@
           }
         }
       }
+    },
+    "/api/v1/character/runs/{run_id}/creation": {
+      "post": {
+        "tags": [
+          "character"
+        ],
+        "summary": "Start Creation",
+        "operationId": "start_creation_api_v1_character_runs__run_id__creation_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/character/creation/{conversation_id}/messages": {
+      "post": {
+        "tags": [
+          "character"
+        ],
+        "summary": "Send Creation Message",
+        "operationId": "send_creation_message_api_v1_character_creation__conversation_id__messages_post",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendCreationMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationReply"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1546,6 +1710,65 @@
         "title": "CharacterRead",
         "description": "The character, on the wire -- `id, name, currentHp, maxHp,\narmourClass` and nothing else (I2): no state, no keys, no ownership."
       },
+      "CreationReply": {
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "title": "Conversationid"
+          },
+          "reply": {
+            "type": "string",
+            "title": "Reply"
+          },
+          "sheet": {
+            "$ref": "#/components/schemas/SheetSoFar"
+          },
+          "step": {
+            "type": "string",
+            "enum": [
+              "raceClass",
+              "scores",
+              "identity",
+              "skills",
+              "alignment",
+              "equipment",
+              "review"
+            ],
+            "title": "Step"
+          },
+          "stepNumber": {
+            "type": "integer",
+            "maximum": 7.0,
+            "minimum": 1.0,
+            "title": "Stepnumber"
+          },
+          "canSave": {
+            "type": "boolean",
+            "title": "Cansave"
+          },
+          "saved": {
+            "type": "boolean",
+            "title": "Saved"
+          },
+          "error": {
+            "type": "boolean",
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversationId",
+          "reply",
+          "sheet",
+          "step",
+          "stepNumber",
+          "canSave",
+          "saved",
+          "error"
+        ],
+        "title": "CreationReply",
+        "description": "Both creation-chat routes answer this (sprint 009-05, WI1): the\nKeeper's words plus everything the sheet-so-far panel needs, so the\npage never makes a second read (\u2190 AC3)."
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -1717,6 +1940,218 @@
           "title"
         ],
         "title": "RenameCampaignRunRequest"
+      },
+      "SendCreationMessageRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "SendCreationMessageRequest"
+      },
+      "SheetSoFar": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "race": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Dragonborn",
+                  "Dwarf",
+                  "Elf",
+                  "Gnome",
+                  "Half-Elf",
+                  "Half-Orc",
+                  "Halfling",
+                  "Human",
+                  "Tiefling"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Race"
+          },
+          "characterClass": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Barbarian",
+                  "Bard",
+                  "Cleric",
+                  "Druid",
+                  "Fighter",
+                  "Monk",
+                  "Paladin",
+                  "Ranger",
+                  "Rogue",
+                  "Sorcerer",
+                  "Warlock",
+                  "Wizard"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Characterclass"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "const": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "alignment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Lawful Good",
+                  "Neutral Good",
+                  "Chaotic Good",
+                  "Lawful Neutral",
+                  "Neutral",
+                  "Chaotic Neutral",
+                  "Lawful Evil",
+                  "Neutral Evil",
+                  "Chaotic Evil"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alignment"
+          },
+          "abilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Abilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxHp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxhp"
+          },
+          "armourClass": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Armourclass"
+          },
+          "speed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speed"
+          },
+          "skills": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "Acrobatics",
+                "Animal Handling",
+                "Arcana",
+                "Athletics",
+                "Deception",
+                "History",
+                "Insight",
+                "Intimidation",
+                "Investigation",
+                "Medicine",
+                "Nature",
+                "Perception",
+                "Performance",
+                "Persuasion",
+                "Religion",
+                "Sleight of Hand",
+                "Stealth",
+                "Survival"
+              ]
+            },
+            "type": "array",
+            "title": "Skills"
+          },
+          "equipment": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Equipment"
+          },
+          "appearance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appearance"
+          },
+          "backstory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backstory"
+          }
+        },
+        "type": "object",
+        "title": "SheetSoFar",
+        "description": "The draft as it stands, on the wire (sprint 009-05, WI1): every\nfield nullable, filled in only as the conversation settles it.\n`maxHp`, `armourClass`, `speed`, `skills` and `equipment` only ever\ncome from a successful `service.build_sheet` -- everything else is\nread straight off the draft (\u2190 research Decision 3)."
       },
       "SignInRequest": {
         "properties": {

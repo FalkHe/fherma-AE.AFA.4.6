@@ -279,6 +279,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/character/runs/{run_id}/creation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Creation */
+        post: operations["start_creation_api_v1_character_runs__run_id__creation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/character/creation/{conversation_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Creation Message */
+        post: operations["send_creation_message_api_v1_character_creation__conversation_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -528,6 +562,32 @@ export interface components {
             /** Armourclass */
             armourClass: number;
         };
+        /**
+         * CreationReply
+         * @description Both creation-chat routes answer this (sprint 009-05, WI1): the
+         *     Keeper's words plus everything the sheet-so-far panel needs, so the
+         *     page never makes a second read (← AC3).
+         */
+        CreationReply: {
+            /** Conversationid */
+            conversationId: string;
+            /** Reply */
+            reply: string;
+            sheet: components["schemas"]["SheetSoFar"];
+            /**
+             * Step
+             * @enum {string}
+             */
+            step: "raceClass" | "scores" | "identity" | "skills" | "alignment" | "equipment" | "review";
+            /** Stepnumber */
+            stepNumber: number;
+            /** Cansave */
+            canSave: boolean;
+            /** Saved */
+            saved: boolean;
+            /** Error */
+            error: boolean;
+        };
         /** ErrorBody */
         ErrorBody: {
             /** Code */
@@ -603,6 +663,46 @@ export interface components {
         RenameCampaignRunRequest: {
             /** Title */
             title: string;
+        };
+        /** SendCreationMessageRequest */
+        SendCreationMessageRequest: {
+            /** Text */
+            text: string;
+        };
+        /**
+         * SheetSoFar
+         * @description The draft as it stands, on the wire (sprint 009-05, WI1): every
+         *     field nullable, filled in only as the conversation settles it.
+         *     `maxHp`, `armourClass`, `speed`, `skills` and `equipment` only ever
+         *     come from a successful `service.build_sheet` -- everything else is
+         *     read straight off the draft (← research Decision 3).
+         */
+        SheetSoFar: {
+            /** Name */
+            name?: string | null;
+            /** Race */
+            race?: ("Dragonborn" | "Dwarf" | "Elf" | "Gnome" | "Half-Elf" | "Half-Orc" | "Halfling" | "Human" | "Tiefling") | null;
+            /** Characterclass */
+            characterClass?: ("Barbarian" | "Bard" | "Cleric" | "Druid" | "Fighter" | "Monk" | "Paladin" | "Ranger" | "Rogue" | "Sorcerer" | "Warlock" | "Wizard") | null;
+            /** Level */
+            level?: 1 | null;
+            /** Alignment */
+            alignment?: ("Lawful Good" | "Neutral Good" | "Chaotic Good" | "Lawful Neutral" | "Neutral" | "Chaotic Neutral" | "Lawful Evil" | "Neutral Evil" | "Chaotic Evil") | null;
+            abilities?: components["schemas"]["Abilities"] | null;
+            /** Maxhp */
+            maxHp?: number | null;
+            /** Armourclass */
+            armourClass?: number | null;
+            /** Speed */
+            speed?: number | null;
+            /** Skills */
+            skills?: ("Acrobatics" | "Animal Handling" | "Arcana" | "Athletics" | "Deception" | "History" | "Insight" | "Intimidation" | "Investigation" | "Medicine" | "Nature" | "Perception" | "Performance" | "Persuasion" | "Religion" | "Sleight of Hand" | "Stealth" | "Survival")[];
+            /** Equipment */
+            equipment?: string[];
+            /** Appearance */
+            appearance?: string | null;
+            /** Backstory */
+            backstory?: string | null;
         };
         /** SignInRequest */
         SignInRequest: {
@@ -1421,6 +1521,135 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    start_creation_api_v1_character_runs__run_id__creation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationReply"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_creation_message_api_v1_character_creation__conversation_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendCreationMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationReply"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

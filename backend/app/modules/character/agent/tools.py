@@ -327,10 +327,11 @@ def pick_equipment(
 
 
 @tool("take_default_equipment")
-def take_default_equipment(runtime: ToolRuntime[CreationContext]) -> str:
+def take_default_equipment(runtime: ToolRuntime[CreationContext]) -> Command:
     """Take the class default for every equipment choice still unset --
-    writes nothing, since an unset choice already resolves to its default
-    option (a)."""
+    an unset choice already resolves to its default option (a), so this
+    writes only an `equipment_defaults` marker (← research Decision 3, so
+    the sheet-so-far's equipment step can tell it is complete)."""
     draft = runtime.state.get("draft", {})
     character_class = _class_from_draft(draft)
     labels = [
@@ -338,9 +339,17 @@ def take_default_equipment(runtime: ToolRuntime[CreationContext]) -> str:
         for index, choice in enumerate(character_class.equipment)
         if f"equipment_pick_{index}" not in draft
     ]
-    if not labels:
-        return "Every equipment choice is already made."
-    return "Defaults taken: " + ", ".join(labels)
+    content = (
+        "Every equipment choice is already made."
+        if not labels
+        else "Defaults taken: " + ", ".join(labels)
+    )
+    return Command(
+        update={
+            "draft": {"equipment_defaults": True},
+            "messages": [ToolMessage(content=content, tool_call_id=runtime.tool_call_id)],
+        }
+    )
 
 
 @tool("show_sheet")

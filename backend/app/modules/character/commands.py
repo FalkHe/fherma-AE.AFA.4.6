@@ -23,13 +23,13 @@ from app.core.llm.errors import LlmError
 from app.modules.character import service as character_service
 from app.modules.character.agent.state import CreationContext
 from app.modules.character.schemas import CharacterClass, Race
+from app.modules.character.service import MODEL_ERROR_REPLY
 from app.modules.content import service as content_service
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import PlaythroughError
 
 character_app = typer.Typer()
 
-MODEL_ERROR_REPLY = "The tavern is noisy, I did not catch that. Say it again?"
 FINALITY_LINE = "Written in the ledger. This one is final for this run."
 _FAREWELL = "Suit yourself -- the stool's still warm if you change your mind."
 _QUIT_WORDS = {"quit", "exit", ":q", ""}
