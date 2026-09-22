@@ -9,6 +9,7 @@ from app.core.prompts.commands import prompt_app
 from app.core.tracing import service as tracing
 from app.main import create_app
 from app.modules.content.commands import content_app
+from app.modules.game.commands import game_app
 from app.modules.playthrough.commands import playthrough_app
 from app.modules.srd.commands import srd_app
 
@@ -34,6 +35,7 @@ def export() -> None:
 
 
 cli.add_typer(content_app, name="content")
+cli.add_typer(game_app, name="game")
 cli.add_typer(checkpoint_app, name="checkpoint")
 cli.add_typer(llm_app, name="llm")
 cli.add_typer(prompt_app, name="prompt")
