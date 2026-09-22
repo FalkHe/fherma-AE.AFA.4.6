@@ -2,9 +2,10 @@ import json
 import re
 from pathlib import Path
 
+import structlog
 from pydantic import BaseModel, ValidationError
 
-from app.modules.content.errors import ContentInvalidError, ContentNotFoundError
+from app.modules.content.errors import ContentError, ContentInvalidError, ContentNotFoundError
 from app.modules.content.schemas import (
     Adventure,
     Campaign,
@@ -17,6 +18,8 @@ CONTENT_ROOT: Path = Path(__file__).resolve().parents[3] / "content"
 VERSION_PATTERN: re.Pattern[str] = re.compile(r"^v[0-9]+$")
 
 _CONTENT_ID_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+logger = structlog.get_logger()
 
 
 def _is_content_id(value: str) -> bool:
@@ -359,6 +362,27 @@ def load_scene(campaign_id: str, version: str, scene_id: str) -> Scene:
     if scene_id not in loaded.scenes:
         raise ContentNotFoundError(f"campaigns/{campaign_id}/{version}/scene/{scene_id}")
     return loaded.scenes[scene_id]
+
+
+def list_catalogue() -> list[LoadedCampaign]:
+    """Every campaign at its newest version, skipping campaigns with no
+    version directories and campaigns whose newest version fails to load."""
+    catalogue: list[LoadedCampaign] = []
+    for campaign_id in list_campaign_ids():
+        versions = list_versions(campaign_id)
+        if not versions:
+            continue
+        newest = versions[-1]
+        try:
+            catalogue.append(load_campaign(campaign_id, newest))
+        except ContentError as exc:
+            logger.warning(
+                "content_catalogue_campaign_skipped",
+                campaign_id=campaign_id,
+                version=newest,
+                error=str(exc),
+            )
+    return catalogue
 
 
 def load_object_template(campaign_id: str, version: str, template_id: str) -> ObjectTemplate:
