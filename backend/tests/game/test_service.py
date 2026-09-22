@@ -937,6 +937,20 @@ def test_cli_play_loop_maintains_history_across_turns(monkeypatch, prompt):
     monkeypatch.setattr(service, "chat_model", lambda: scripted)
     monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
 
+    # No --actor: `play` resolves the seated hero itself. Incidental to this
+    # test (about history across turns), so the resolution is stubbed rather
+    # than made to answer through the fake db.
+    @dataclass
+    class _FakeCharacter:
+        id: str = "actor-1"
+
+    async def fake_get_member_character(db, *, user_id, run_id):
+        return _FakeCharacter()
+
+    monkeypatch.setattr(
+        commands.playthrough_service, "get_member_character", fake_get_member_character
+    )
+
     result = runner.invoke(
         cli,
         ["game", "play", "--user", "user-1", "--run-id", "run-1", "--thread-id", "test-thread"],
