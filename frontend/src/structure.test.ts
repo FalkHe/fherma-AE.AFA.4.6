@@ -151,7 +151,7 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
     }
   });
 
-  it("UI-43: core/ holds exactly the pinned files, none of them .tsx, and none imports from modules/", () => {
+  it("UI-43: core/ holds exactly the pinned files, .tsx only under layout/, and none imports from modules/", () => {
     const coreDir = path.join(srcDir, "core");
     const expected = [
       // Pre-existing, unrelated to this sprint's theme work — kept as-is.
@@ -185,6 +185,19 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
       "theme/tokens/typography.css",
       "theme.test.ts",
       "theme/index.test.ts",
+      // Sprint 007/04: the guarded app frame used to be a `home` component
+      // (`modules/home/components/AppShell.tsx`), but once `App.tsx` also
+      // needed to render it — wrapping the signed-in routes from outside,
+      // so the guard's pending/error states never flash a header — it had
+      // two callers and neither one owned it, so it moved to `core/` like
+      // any other twice-called module (AGENTS.md "a helper is promoted to
+      // core/ only once a second module calls it, unchanged"). It stays a
+      // component (not a hook or plain function), which is exactly why the
+      // blanket "no .tsx under core/" ban below had to narrow rather than
+      // just drop — this is the one legitimate exception, not a licence for
+      // any component to land in `core/`.
+      "layout/AppShell.tsx",
+      "layout/AppShell.test.tsx",
     ].sort();
 
     const actual = listFilesRecursively(coreDir)
@@ -193,11 +206,34 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
 
     expect(actual).toEqual(expected);
 
+    const layoutDir = path.join(coreDir, "layout");
     for (const file of listFilesRecursively(coreDir)) {
-      expect(file.endsWith(".tsx"), `${file} must not be a .tsx file — core/ is infrastructure only`).toBe(false);
-      if (file.endsWith(".ts")) {
-        const content = fs.readFileSync(file, "utf8");
-        expect(content, `${file} must not import from src/modules/`).not.toMatch(/modules\//);
+      // `.tsx` anywhere else in `core/` would mean a component picked up a
+      // module-shaped concern under the infrastructure tree instead of
+      // living in the module that needs it — `layout/` is pinned above as
+      // the one place that already earned the exception (see the comment
+      // on `layout/AppShell.tsx`).
+      if (file.endsWith(".tsx")) {
+        expect(
+          file.startsWith(layoutDir + path.sep),
+          `${file} must not be a .tsx file — only core/layout/ may hold a component`,
+        ).toBe(true);
+      }
+      // Widened to `.tsx` alongside `.ts`: `AppShell.tsx` is the first file
+      // under `core/` that could actually reach into `modules/` (a plain
+      // `.ts` scan would silently miss it), and the whole point of `core/`
+      // is that it never depends downward on a module. Scoped to actual
+      // `import` declaration lines, not the whole file, because
+      // `layout/AppShell.test.tsx` legitimately *talks about* a
+      // `modules/home/…` path in prose (explaining why it avoids a shared
+      // test helper) without ever importing it — a whole-content scan would
+      // fail that file for a sentence, not an import.
+      if (file.endsWith(".ts") || file.endsWith(".tsx")) {
+        const lines = fs.readFileSync(file, "utf8").split("\n");
+        for (const line of lines) {
+          if (!/^\s*import\b/.test(line)) continue;
+          expect(line, `${file} must not import from src/modules/`).not.toMatch(/modules\//);
+        }
       }
     }
   });
@@ -208,8 +244,13 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
     expect(tsFiles).toEqual([]);
   });
 
-  it("criterion 42(b): AppShell.tsx lives at modules/home/components/ and imports nothing from any module", () => {
-    const appShellPath = path.join(srcDir, "modules", "home", "components", "AppShell.tsx");
+  it("criterion 42(b): AppShell.tsx lives at core/layout/ and imports nothing from any module", () => {
+    // Retargeted from `modules/home/components/` (sprint 007/04 WI2): the
+    // frame now has two callers — `App.tsx` and, previously, `home`'s own
+    // routes — so it moved to `core/`, the one place either side may import
+    // from without creating a module-to-module edge (see the `layout/`
+    // comment on the UI-43 pin list above).
+    const appShellPath = path.join(srcDir, "core", "layout", "AppShell.tsx");
     const content = fs.readFileSync(appShellPath, "utf8");
     const importLines = content.split("\n").filter((line) => /^\s*import\b/.test(line));
     for (const line of importLines) {
@@ -217,7 +258,7 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
     }
   });
 
-  it("criterion 42(c): the one permitted cross-module import is home -> auth's SignOutButton/useSignOut/useCurrentUser, never the reverse", () => {
+  it("criterion 42(c): the one permitted cross-module import is home -> auth's useCurrentUser, never the reverse", () => {
     // Scoped to actual `import … from "…/auth/…"` / `"…/home/…"` declaration
     // lines, not every line containing the substring "auth/" or "home/" —
     // that substring also occurs in API route path literals
@@ -225,7 +266,14 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
     // comments (`// modules/auth/csrf.test.tsx, next to …`), neither of which
     // is a module import and both of which are false positives for this
     // criterion under the wider scan.
-    const allowedNames = ["SignOutButton", "useSignOut", "useCurrentUser"];
+    //
+    // `SignOutButton` and `useSignOut` dropped off the allow-list this
+    // sprint: sign-out moved entirely into `auth`'s own `AccountMenu`, which
+    // owns `useSignOut` itself, so `home` no longer has any reason to reach
+    // for either — keeping them allowed would hide a real regression if
+    // `home` ever imported sign-out machinery again instead of just the
+    // current user it actually needs for the greeting.
+    const allowedNames = ["useCurrentUser"];
     const homeDir = path.join(srcDir, "modules", "home");
     const authDir = path.join(srcDir, "modules", "auth");
     const importFromAuth = /^\s*import\b.*["'][^"']*auth\/[^"']*["']/;
@@ -252,6 +300,14 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
     }
 
     expect(fs.existsSync(path.join(authDir, "api.ts"))).toBe(false);
+
+    // The two files this sprint deleted must stay deleted: `AppShell` moved
+    // out of `home` entirely (see criterion 42(b) above), and `SignOutButton`
+    // was folded into `AccountMenu`. Either quietly returning would put a
+    // component back exactly where the rest of this suite now assumes it
+    // is gone from, without any other check here noticing.
+    expect(fs.existsSync(path.join(homeDir, "components", "AppShell.tsx"))).toBe(false);
+    expect(fs.existsSync(path.join(authDir, "components", "SignOutButton.tsx"))).toBe(false);
   });
 
   it("UI-15's JSON half: the rule numbers never appear literally in auth.json — only {{min}}/{{max}} placeholders do", () => {

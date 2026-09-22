@@ -24,7 +24,7 @@ skeletons and username/password authentication exist. The game agent does not.
 - `backend/app/modules/<module>/` → `models.py schemas.py routes.py service.py` (today: `auth`, `users`, `health`)
 - `backend/tests/<module>/` → mirrors `modules/` one-to-one
 - `backend/alembic/` → migrations; `app-web` runs `alembic upgrade head` on boot
-- `frontend/src/core/` → theme, config, api client, i18n setup
+- `frontend/src/core/` → theme, config, api client, i18n setup, the shared app frame (`layout/`)
 - `frontend/src/modules/<module>/` → `components/ hooks/ routes/` (today: `auth`, `home`)
 - `frontend/src/api/schema.d.ts` → generated from the backend's OpenAPI, committed
 - `docs/general/` → system-wide docs · `docs/modules/` → one subsystem each · `docs/roadmap/` → history

@@ -1,7 +1,3 @@
-// Deliberate ordering (step-0.1.md §6.2): write the cache, then navigate to
-// the attempted location (`from`) or `/`. See shared-knowledge.md "Known
-// future work" — the step that adds a second protected route must flip this
-// to navigate-then-write, the way useSignOut already does.
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router";
 
@@ -23,9 +19,9 @@ export function useSignIn() {
   return useMutation<CurrentUser, ApiFailure, Credentials>({
     mutationFn: (credentials) => unwrap(api.POST("/api/v1/auth/sign-in", { body: credentials })),
     onSuccess: (user) => {
-      queryClient.setQueryData<CurrentUserState>(["currentUser"], { user, sessionExpired: false });
       const state = location.state as AuthRedirectState | null;
       navigate(state?.from ?? "/", { replace: true });
+      queryClient.setQueryData<CurrentUserState>(["currentUser"], { user, sessionExpired: false });
     },
   });
 }

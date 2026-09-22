@@ -1,0 +1,98 @@
+// The app frame every route renders inside (docs/design/dnd-app-dashboard-
+// design/project/Dashboard.dc.html:15-34). Lives in `core/` because two
+// modules now render it — `core/` may import only other `core/` code plus
+// third-party packages, never a module (structure test, sprint 007/04 WI2).
+// Its only inputs are `action` and `children`: the product name is read
+// straight off the `common:app.title` i18next key, so no caller passes a
+// title anymore.
+import type { ReactElement, ReactNode } from "react";
+import AppBar from "@mui/material/AppBar";
+import Box from "@mui/material/Box";
+import Container from "@mui/material/Container";
+import Stack from "@mui/material/Stack";
+import Toolbar from "@mui/material/Toolbar";
+import Typography from "@mui/material/Typography";
+import { Flame } from "lucide-react";
+import { useTranslation } from "react-i18next";
+
+export interface AppShellProps {
+  action?: ReactNode;
+  children: ReactNode;
+}
+
+export function AppShell({ action, children }: AppShellProps): ReactElement {
+  const { t } = useTranslation("common");
+
+  return (
+    <>
+      {/* `AppBar` defaults its root to a `<header>` (MUI source), which the
+          browser exposes as the `banner` landmark as long as it isn't nested
+          inside `article`/`aside`/`main`/`nav`/`section` — true here, so no
+          explicit `role` is needed. `position="sticky"` matches the design's
+          sticky hairline bar; MUI's own sticky styles already pin `top: 0`. */}
+      <AppBar
+        position="sticky"
+        elevation={0}
+        // Dark mode already keeps `color` off the default "primary" fill
+        // (Material Design guidance MUI follows unless `enableColorOnDark`
+        // is set), so the bar reads as a neutral raised surface rather than
+        // a flood of the lantern accent — no override needed here. The
+        // hairline + shadow + uneven bottom edge are this system's own
+        // panel treatment (design readme.md "Cards" / "Corners").
+        sx={(theme) => ({
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          borderRadius: theme.shape.borderRadiusOrganicSoft,
+          boxShadow: theme.shadows[2],
+        })}
+      >
+        <Toolbar>
+          <Stack direction="row" spacing={4} sx={{ alignItems: "center", flexGrow: 1, minWidth: 0 }}>
+            {/* The flame mark: a pill badge in the quiet accent fill,
+                carrying the house "flame" glyph (design readme.md
+                "Iconography" — flame is the DM / lantern icon; "Buttons and
+                badges are full pills" — "Corners"). Decorative only, the
+                wordmark beside it already names the product, so it is
+                hidden from the accessibility tree. */}
+            <Box
+              aria-hidden
+              sx={(theme) => ({
+                display: "grid",
+                placeItems: "center",
+                width: theme.spacing(8),
+                height: theme.spacing(8),
+                flexShrink: 0,
+                borderRadius: theme.shape.borderRadiusPill,
+                backgroundColor: theme.palette.action.selected,
+                color: theme.palette.primary.light,
+              })}
+            >
+              <Flame size={18} />
+            </Box>
+            <Typography
+              // Branding, not the document heading (ui-spec.md §3.3): a
+              // screen-reader user must not meet a stray heading on every
+              // page just because the brand name sits in the bar.
+              component="p"
+              noWrap
+              sx={{
+                // The brand name is set in the small-caps face wherever a
+                // mark would go — there is no logo (design readme.md
+                // "Iconography").
+                fontFamily: "var(--font-smallcaps)",
+                letterSpacing: "var(--ls-label)",
+              }}
+            >
+              {t("app.title")}
+            </Typography>
+          </Stack>
+          {action}
+        </Toolbar>
+      </AppBar>
+      <Box component="main">
+        <Container maxWidth="sm" sx={{ py: 4 }}>
+          {children}
+        </Container>
+      </Box>
+    </>
+  );
+}

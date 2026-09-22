@@ -11,8 +11,10 @@ knowing who the current user is and getting them in or out of a session.
 
 ## Surface
 
-- `home` imports `SignOutButton`, `useSignOut` and `useCurrentUser` — the
-  only permitted cross-module edge in this app. Everything else is internal.
+- `home` imports `useCurrentUser` — the only permitted cross-module edge in
+  this app. `AccountMenu` (header account control, sign-out included) owns
+  `useSignOut` itself and is not imported by `home`. Everything else is
+  internal.
 
 ## Notes
 

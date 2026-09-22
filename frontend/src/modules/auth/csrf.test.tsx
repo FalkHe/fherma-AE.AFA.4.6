@@ -30,7 +30,8 @@ describe("CSRF token handling and credentialed requests", () => {
     expect(getRequestsForMe[0].headers["x-csrf-token"]).toBeUndefined(); // UI-38: no GET carries the header
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /sign out/i }));
+    await user.click(screen.getByRole("button", { name: "Account" }));
+    await user.click(await screen.findByRole("menuitem", { name: /sign out/i }));
 
     await waitFor(() => expect(app.getPathname()).toBe("/signin"));
 
