@@ -3,7 +3,7 @@ author: sprint
 owner: human
 created: 2026-09-22
 updated: 2026-09-22
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/53
 ---
 # Review: Sprint 08 — The dashboard sorts runs under "In progress", "New" and "Archived" and opens on the one that matters
 
@@ -37,3 +37,6 @@ under a line saying they are kept as they are.
 Brief: docs/intents/007-initial-frontend/sprints/08-dashboard-tags/brief.md
 
 ## Verdict
+Round 1: changes requested — every acceptance criterion passed and nothing a player sees needed to change, but the
+screen's own written description still claimed every campaign card carries a Begin or Resume button and that the
+dashboard shows all campaigns at once, which would have misled whoever picked the screen up next.

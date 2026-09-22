@@ -22,3 +22,4 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+- The sprint lead had been assigning merge requests to the agent account, following the provider skill's default; AGENTS.md says merge requests always go to `f4lkh3`. Corrected on !50, !51, !52 and !53.
