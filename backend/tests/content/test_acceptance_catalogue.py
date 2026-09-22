@@ -16,7 +16,13 @@ work lands.
 from app.core.ids import generate_id
 from app.modules.auth import service as auth_service
 from app.modules.users import service as users_service
-from tests.content.conftest import build_version_dir
+from tests.content.conftest import (
+    adventure,
+    build_version_dir,
+    campaign,
+    scene_approach,
+    scene_floor,
+)
 from tests.factories import make_session, make_user
 
 USER_ID = generate_id()
@@ -44,93 +50,68 @@ def test_ac1_lists_each_campaign_at_its_newest_version(
     version, with exactly id/title/summary/adventureCount in camelCase."""
     _sign_in(monkeypatch)
 
-    # A single-version campaign.
+    # A single-version campaign: default valid content (seed character,
+    # object templates, one adventure) from `tests/content/conftest.py`,
+    # only the id/title/summary/adventure-set varied.
     build_version_dir(
         content_root,
         campaign_id="riverwatch",
         version="v1",
-        campaign={
-            "id": "riverwatch",
-            "title": "Riverwatch",
-            "summary": "A quiet watch on a river that is no longer quiet.",
-            "adventures": ["the-first-watch"],
-            "seed_character": None,
-            "object_templates": [],
-        },
-        adventures={
-            "the-first-watch": {
-                "id": "the-first-watch",
-                "title": "The First Watch",
-                "intro": "intro",
-                "entry_scene": "start",
-                "scenes": [
-                    {
-                        "id": "start",
-                        "title": "Start",
-                        "truth": ["nothing yet"],
-                        "exits": [],
-                    }
-                ],
-            }
-        },
+        campaign=campaign(
+            id="riverwatch",
+            title="Riverwatch",
+            summary="A quiet watch on a river that is no longer quiet.",
+        ),
     )
 
-    # A two-version campaign; v1 and v2 differ in title/summary/adventure count.
+    # A two-version campaign; v1 and v2 differ in title/summary/adventure
+    # count. Both versions reuse the same valid scene/template content, only
+    # varying which adventures are present.
     build_version_dir(
         content_root,
         campaign_id="greenhollow",
         version="v1",
-        campaign={
-            "id": "greenhollow",
-            "title": "Greenhollow (old)",
-            "summary": "An older, shorter teaser.",
-            "adventures": ["old-adventure"],
-            "seed_character": None,
-            "object_templates": [],
-        },
-        adventures={
-            "old-adventure": {
-                "id": "old-adventure",
-                "title": "Old Adventure",
-                "intro": "intro",
-                "entry_scene": "start",
-                "scenes": [
-                    {"id": "start", "title": "Start", "truth": ["nothing yet"], "exits": []}
-                ],
-            }
-        },
+        campaign=campaign(
+            id="greenhollow",
+            title="Greenhollow (old)",
+            summary="An older, shorter teaser.",
+        ),
     )
     build_version_dir(
         content_root,
         campaign_id="greenhollow",
         version="v2",
-        campaign={
-            "id": "greenhollow",
-            "title": "Greenhollow",
-            "summary": "The newest teaser for Greenhollow.",
-            "adventures": ["adventure-one", "adventure-two"],
-            "seed_character": None,
-            "object_templates": [],
-        },
+        campaign=campaign(
+            id="greenhollow",
+            title="Greenhollow",
+            summary="The newest teaser for Greenhollow.",
+            adventures=["the-sunken-mill", "the-second-mill"],
+        ),
         adventures={
-            "adventure-one": {
-                "id": "adventure-one",
-                "title": "Adventure One",
-                "intro": "intro",
-                "entry_scene": "start",
-                "scenes": [
-                    {"id": "start", "title": "Start", "truth": ["nothing yet"], "exits": []}
+            "the-sunken-mill": adventure(),
+            # Distinct scene ids from "the-sunken-mill" -- the same ids
+            # reused across adventures confuse the reachability check.
+            "the-second-mill": adventure(
+                id="the-second-mill",
+                title="The Second Mill",
+                entry_scene="second-mill-approach",
+                scenes=[
+                    scene_approach(
+                        id="second-mill-approach",
+                        exits=[
+                            {
+                                "id": "into-the-mill",
+                                "to": "second-mill-floor",
+                                "description": "The mill door, barred from within.",
+                                "condition": (
+                                    "the bar has been broken, forced, or lifted from outside"
+                                ),
+                            }
+                        ],
+                    ),
+                    scene_floor(id="second-mill-floor"),
                 ],
-            },
-            "adventure-two": {
-                "id": "adventure-two",
-                "title": "Adventure Two",
-                "intro": "intro",
-                "entry_scene": "start",
-                "scenes": [
-                    {"id": "start", "title": "Start", "truth": ["nothing yet"], "exits": []}
-                ],
-            },
+            ),
         },
     )
 
