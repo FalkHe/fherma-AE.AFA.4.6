@@ -38,6 +38,12 @@
     "greeting": "Welcome back, {{username}}.",
     "subtitle_one": "{{count}} campaign is waiting on you. The lantern is still lit.",
     "subtitle_other": "{{count}} campaigns are waiting on you. The lantern is still lit.",
+    "tags": {
+      "heading": "My campaigns",
+      "groupLabel": "Filter campaigns by status",
+      "empty": "Nothing here yet.",
+      "archivedNote": "Archived runs are kept as they are and are view-only."
+    },
     "card": {
       "coverArtPlaceholder": "Art",
       "meta": "Adventure {{current}} of {{total}} · {{players}} · Created {{date}}",

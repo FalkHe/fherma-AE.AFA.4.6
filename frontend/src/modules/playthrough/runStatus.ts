@@ -18,10 +18,16 @@ export function runStatusKey(status: string): RunStatusKey {
   }
 }
 
-// The dashboard's own "Begin" vs "Resume" wording (sprint 007/07 WI1, AC2):
-// only a run still reading "New" (i.e. never started) offers to "Begin" it;
-// anything already under way, archived or finished opens to "Resume" —
-// there is no separate "Unarchive" affordance in this sprint's contract.
-export function runActionKey(status: string): "dashboard.card.begin" | "dashboard.card.resume" {
-  return runStatusKey(status) === "run.status.new" ? "dashboard.card.begin" : "dashboard.card.resume";
+// The dashboard's own "Begin" vs "Resume" wording (sprint 007/07 WI1, AC2;
+// narrowed sprint 007/08 WI1 AC3): a run still reading "New" (never
+// started) offers to "Begin" it, one already under way offers to "Resume"
+// it, and an archived run (status `archived` or `finished`) offers nothing
+// at all — `null` tells the one caller, `CampaignCard.tsx`, to render no
+// action block, since nothing can unarchive a run in this sprint's contract.
+export function runActionKey(status: string): "dashboard.card.begin" | "dashboard.card.resume" | null {
+  const key = runStatusKey(status);
+  if (key === "run.status.archived") {
+    return null;
+  }
+  return key === "run.status.new" ? "dashboard.card.begin" : "dashboard.card.resume";
 }
