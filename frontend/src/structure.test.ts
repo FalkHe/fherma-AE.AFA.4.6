@@ -70,7 +70,19 @@ function isNotATestFile(file: string): boolean {
 const forbiddenStorageTerms = ["local" + "Storage", "session" + "Storage", "document" + "." + "cookie"];
 
 describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
-  it("UI-33: no icon package is a dependency, and no component imports one", () => {
+  it("UI-33: lucide-react is the one allowed icon package; every other icon package is forbidden", () => {
+    // step-0.1.md's original ban targets MUI's own icon package specifically
+    // (it ships thousands of pre-styled SVGs the design system doesn't
+    // control). Sprint 007/03's Goblin Pub theme then names `lucide-react`
+    // as the one icon package this app is allowed to add, so the claim can
+    // no longer be "no icon package at all" — it has to be "exactly this
+    // one, nothing else". The two checks below still guard the original,
+    // narrower ban directly (a dependency or import literally naming MUI's
+    // icon package — spelled out below, not here, so this comment doesn't
+    // itself trip the regex it's describing); the allow-list check after
+    // them is what makes a *different* icon package (react-icons,
+    // @heroicons/react, @ant-design/icons, …) fail too, which neither of
+    // those two would catch on its own.
     const packageJson = readJson("package.json") as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
@@ -85,6 +97,17 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
       const content = fs.readFileSync(file, "utf8");
       expect(content, `${file} must not import an icon package`).not.toMatch(/@mui\/icons-material/);
     }
+
+    // Allow-list: any dependency whose name reads as an icon package (the
+    // "icon(s)" token, or "lucide" itself) must be exactly the one this
+    // sprint approved. A stray second icon package added later would carry
+    // one of these tokens in its name almost always (react-icons,
+    // @heroicons/react, @ant-design/icons, @tabler/icons-react, …) and
+    // would show up here even though it has nothing to do with MUI.
+    const allowedIconPackages = ["lucide-react"];
+    const looksLikeIconPackage = /icons?|lucide/i;
+    const iconDependencies = Object.keys(allDeps).filter((name) => looksLikeIconPackage.test(name));
+    expect(iconDependencies.sort()).toEqual([...allowedIconPackages].sort());
   });
 
   it("UI-34: no hex / rgb() / hsl() colour literal anywhere under src", () => {
@@ -93,6 +116,28 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
       if (!/\.(ts|tsx|json)$/.test(file) || !isNotATestFile(file)) continue;
       const content = fs.readFileSync(file, "utf8");
       expect(content, `${file} must not contain a colour literal`).not.toMatch(hexOrFunctionColour);
+    }
+  });
+
+  it("AC1: no .css file outside src/core/theme/tokens/ holds a colour literal", () => {
+    // UI-34 above is deliberately left untouched (its own scan is scoped to
+    // `.ts|.tsx|.json` and never looks at `.css` — AC1 requires that rule to
+    // keep passing exactly as it was written). But AC1 also says the design
+    // system's token files are the *only* place a colour value is written,
+    // and a `.css` file is exactly the kind of place a colour could leak
+    // into without either of UI-34's checks ever seeing it. This is that
+    // other half: every stylesheet under src, except the token files
+    // themselves (`core/theme/tokens/*.css`, the one designated exception),
+    // is held to the same hex/rgb()/hsl() ban.
+    const hexOrFunctionColour = /#[0-9a-fA-F]{3,8}\b|(?:rgb|hsl)a?\(/;
+    const tokensDir = path.join(srcDir, "core", "theme", "tokens");
+    for (const file of listFilesRecursively(srcDir)) {
+      if (!file.endsWith(".css")) continue;
+      if (file.startsWith(tokensDir + path.sep)) continue;
+      const content = fs.readFileSync(file, "utf8");
+      expect(content, `${file} must not contain a colour literal — move it into core/theme/tokens/`).not.toMatch(
+        hexOrFunctionColour,
+      );
     }
   });
 
@@ -109,6 +154,7 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
   it("UI-43: core/ holds exactly the pinned files, none of them .tsx, and none imports from modules/", () => {
     const coreDir = path.join(srcDir, "core");
     const expected = [
+      // Pre-existing, unrelated to this sprint's theme work — kept as-is.
       "api/client.ts",
       "api/errors.ts",
       "i18n/index.ts",
@@ -117,7 +163,28 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
       "i18n/locales/en/auth.json",
       "i18n/locales/en/home.json",
       "queryClient.ts",
-      "theme.ts",
+      // Sprint 007/03: the theme grew from a single `theme.ts` (removed)
+      // into a directory, because AC1 needs somewhere to hold the design
+      // system's token *stylesheets* — a single .ts file can't export CSS
+      // custom properties. `theme/index.ts` is the same "build the MUI
+      // theme object" module as before, just relocated; `theme/tokens.css`
+      // is the aggregator `index.ts` imports, which in turn `@import`s the
+      // seven per-category token files below — the actual, and only, place
+      // a colour/font/spacing/motion value is written (AC1). The two test
+      // files (`theme.test.ts`, `theme/index.test.ts`) cover the acceptance
+      // criteria and the token-reference contract respectively; both live
+      // under `core/` because the module they test does.
+      "theme/index.ts",
+      "theme/tokens.css",
+      "theme/tokens/base.css",
+      "theme/tokens/colors.css",
+      "theme/tokens/fonts.css",
+      "theme/tokens/motion.css",
+      "theme/tokens/spacing.css",
+      "theme/tokens/surfaces.css",
+      "theme/tokens/typography.css",
+      "theme.test.ts",
+      "theme/index.test.ts",
     ].sort();
 
     const actual = listFilesRecursively(coreDir)
