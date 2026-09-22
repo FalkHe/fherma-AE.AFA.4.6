@@ -82,12 +82,45 @@ def test_status_on_vector_width_mismatch_exits_1_with_stderr_naming_both_widths(
     assert "1536" in result.stderr
 
 
-def test_ingest_without_dry_run_exits_1_naming_sprint_03(monkeypatch):
+def test_ingest_prints_the_report(monkeypatch):
+    from app.modules.srd.schemas import IngestReport
+
+    async def fake_ingest(db, **kwargs):
+        return IngestReport(
+            source_version="v1",
+            source_bytes=1024,
+            chunk_count=10,
+            token_count=5000,
+            cost_usd=0.01,
+            cost_complete=True,
+        )
+
+    monkeypatch.setattr(srd_service, "ingest", fake_ingest)
+
+    result = runner.invoke(cli, ["srd", "ingest"])
+
+    assert result.exit_code == 0, result.output
+    assert "v1" in result.stdout
+    assert "1024" in result.stdout
+    assert "10" in result.stdout
+    assert "5000" in result.stdout
+    assert "0.01" in result.stdout
+
+
+def test_ingest_on_llm_error_exits_1_with_its_message(monkeypatch):
+    from app.core.errors import LLM_FAILURE_MESSAGE
+    from app.core.llm.errors import LlmError
+
+    async def failing_ingest(db, **kwargs):
+        raise LlmError("provider detail, not shown")
+
+    monkeypatch.setattr(srd_service, "ingest", failing_ingest)
+
     result = runner.invoke(cli, ["srd", "ingest"])
 
     assert result.exit_code == 1, result.output
     assert result.stdout == ""
-    assert "sprint 03" in result.stderr
+    assert LLM_FAILURE_MESSAGE in result.stderr
 
 
 def test_ingest_dry_run_prints_path_byte_count_chunk_count_tokens_and_sample_headings(
