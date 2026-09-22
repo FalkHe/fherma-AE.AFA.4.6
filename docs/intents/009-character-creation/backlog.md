@@ -16,7 +16,7 @@ the browser. 06 and 07 also need the run screen of intent 007, sprint 05, which 
 | 02 | A character built from those facts gets correct ability scores, hit points, armour class and usable gear, and can be saved to a run in place of the ready-made hero | 01 | #46 | done |
 | 03 | In the terminal the Tavern Keeper greets the player, offers the campaign's ready-made hero or turns free words into a race and class, and saves the confirmed character | 02 | #47 | done |
 | 04 | The Tavern Keeper covers the whole sheet: ability scores by suggestion, dice or by hand, the story retold in the campaign's voice, two skills, an alignment and the class's equipment choices | 03 | #48 | done |
-| 05 | The same conversation can be held over the network, one message at a time, returning the reply and the sheet so far | 03 | #49 | open |
+| 05 | The same conversation can be held over the network, one message at a time, returning the reply and the sheet so far | 03 | #49 | running |
 | 06 | Character creation opens as its own page where the player talks to the Tavern Keeper and watches the sheet fill beside the transcript | 05, 007/05 | #50 | open |
 | 07 | The player reviews the finished character, saves it, and finds it as a card on the run screen with the party ready | 06, 007/05 | #51 | open |
 
