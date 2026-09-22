@@ -22,7 +22,15 @@ fetches and chunks the source and reports the counts on stdout; no DB
 access, no embedding call. Without `--dry-run` it opens its own session
 (same pattern as `status`) and runs `service.ingest`, then prints the
 report. `SrdSourceError`, `SrdVectorWidthError` and `LlmError` each map to
-one stderr line plus `typer.Exit(1)`, never a traceback."""
+one stderr line plus `typer.Exit(1)`, never a traceback.
+
+`app srd search` -- sprint 004-05 WI1, sprint 004-06 WI1. `service.
+search_rules` (sprint 06) drops every match past `RELEVANCE_FLOOR` itself,
+so an empty list means "nothing in the rules covers this", a real,
+successful answer rather than a failure: that case prints
+`NO_RELEVANT_RULE_MESSAGE` to stdout and exits 0, never stderr, so it can
+never be confused with the `SrdCorpusEmptyError` branch, which stays on
+stderr with exit 1 (AC5)."""
 
 import asyncio
 
@@ -37,6 +45,7 @@ from app.modules.srd.schemas import CorpusStatus, IngestReport, RuleMatch
 srd_app = typer.Typer()
 
 EMPTY_CORPUS_MESSAGE = "SRD corpus is empty: 0 rules ingested; run `app srd ingest` to load it."
+NO_RELEVANT_RULE_MESSAGE = "no relevant rule"
 
 
 async def _fetch_status() -> CorpusStatus:
@@ -146,6 +155,10 @@ def search(
     except (SrdVectorWidthError, LlmError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+
+    if not matches:
+        typer.echo(NO_RELEVANT_RULE_MESSAGE)
+        return
 
     for position, match in enumerate(matches, start=1):
         _print_match(position, match)

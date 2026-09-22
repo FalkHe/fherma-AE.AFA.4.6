@@ -31,7 +31,8 @@ class RuleMatch(CamelModel):
     which stored `SrdRule` row this is. `score` is the raw pgvector cosine
     distance (`<=>`) between the query and the passage, 0..2, LOWER IS
     CLOSER -- not a similarity score. Results are ordered best-first
-    (ascending distance); no relevance floor is applied here (sprint 06)."""
+    (ascending distance); `service.search_rules` drops any row past
+    `RELEVANCE_FLOOR` before returning (sprint 06)."""
 
     heading_path: str
     ordinal: int
