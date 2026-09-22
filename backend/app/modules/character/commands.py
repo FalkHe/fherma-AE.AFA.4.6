@@ -78,20 +78,28 @@ async def _load_greeting(*, user_id: str, run_id: str):
     async with sessionmaker() as db:
         run = await playthrough_service.get_campaign_run(db, user_id=user_id, run_id=run_id)
         loaded = content_service.load_campaign(run.campaign_id, run.content_version)
-    return loaded.campaign.title, loaded.campaign.seed_character
+    seed = loaded.campaign.seed_character
+    ready_made_items = [loaded.object_templates[item_id].name for item_id in seed.inventory]
+    return loaded.campaign.title, seed, ready_made_items
 
 
-async def _play_turn(agent, *, thread_id, user_id, run_id, seed, text):
+async def _play_turn(agent, *, thread_id, user_id, run_id, seed, ready_made_items, text):
     sessionmaker = get_sessionmaker()
     async with sessionmaker() as db:
-        context = CreationContext(db=db, user_id=user_id, run_id=run_id, ready_made=seed)
+        context = CreationContext(
+            db=db,
+            user_id=user_id,
+            run_id=run_id,
+            ready_made=seed,
+            ready_made_items=ready_made_items,
+        )
         return await character_service.turn(
             agent, thread_id=thread_id, context=context, player_text=text
         )
 
 
 async def _create_session(*, user_id: str, run_id: str) -> None:
-    campaign_title, seed = await _load_greeting(user_id=user_id, run_id=run_id)
+    campaign_title, seed, ready_made_items = await _load_greeting(user_id=user_id, run_id=run_id)
     typer.echo(character_service.render_greeting(campaign_title, seed))
 
     agent = character_service.build_creation_agent()
@@ -116,6 +124,7 @@ async def _create_session(*, user_id: str, run_id: str) -> None:
                 user_id=user_id,
                 run_id=run_id,
                 seed=seed,
+                ready_made_items=ready_made_items,
                 text=stripped,
             )
         except Exception:  # noqa: BLE001 -- one turn misbehaving must never surface a
