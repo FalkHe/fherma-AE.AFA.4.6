@@ -587,6 +587,8 @@ export interface components {
             saved: boolean;
             /** Error */
             error: boolean;
+            /** Readymadename */
+            readyMadeName?: string | null;
         };
         /** ErrorBody */
         ErrorBody: {

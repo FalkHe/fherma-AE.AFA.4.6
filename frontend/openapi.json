@@ -1753,6 +1753,17 @@
           "error": {
             "type": "boolean",
             "title": "Error"
+          },
+          "readyMadeName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readymadename"
           }
         },
         "type": "object",
