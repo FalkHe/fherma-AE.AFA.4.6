@@ -9,8 +9,8 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
-| 2 | running | |
+| 1 | done | two-node graph, six tools, prompt character/system/creator |
+| 2 | done | `app character create` + six scenario tests |
 
 Status: `open | running | done | failed`
 
