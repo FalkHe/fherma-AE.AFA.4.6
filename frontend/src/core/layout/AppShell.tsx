@@ -89,7 +89,14 @@ export function AppShell({ action, children }: AppShellProps): ReactElement {
         </Toolbar>
       </AppBar>
       <Box component="main">
-        <Container maxWidth="sm" sx={{ py: 4 }}>
+        {/* No token in `theme/tokens/spacing.css` matches the design's 1080px
+            content width (`--width-prose`/`--width-chat`/`--width-rail` are
+            64ch/760px/296px, none of them this), so the pixel value is set
+            directly here rather than invented as a new token — MUI's
+            `maxWidth` prop only accepts a breakpoint key, not an arbitrary
+            length, hence `false` plus an `sx` override
+            (docs/design/.../CampaignRun.dc.html:23; sprint 007/05 WI1). */}
+        <Container maxWidth={false} sx={{ py: 4, maxWidth: 1080 }}>
           {children}
         </Container>
       </Box>

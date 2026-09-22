@@ -1,0 +1,26 @@
+{
+  "run": {
+    "back": "Campaigns",
+    "notFound": "This run could not be found.",
+    "status": {
+      "new": "New",
+      "inProgress": "In progress",
+      "archived": "Archived"
+    }
+  },
+  "party": {
+    "heading": "Party",
+    "readyLabel": "{{ready}} of {{total}} characters ready",
+    "roles": {
+      "owner": "Owner"
+    },
+    "card": {
+      "noCharacter": "No character yet",
+      "createCharacter": "Create character"
+    },
+    "invite": {
+      "title": "Invite a player",
+      "subtitle": "Up to six at the table"
+    }
+  }
+}

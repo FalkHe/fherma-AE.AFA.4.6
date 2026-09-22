@@ -9,5 +9,10 @@
   "errors": {
     "network": "Cannot reach the server. Check your connection and try again.",
     "unexpected": "Something went wrong. Please try again."
+  },
+  "inDevelopment": {
+    "title": "Be brave",
+    "body": "This feature is in development.",
+    "close": "Close"
   }
 }
