@@ -53,17 +53,67 @@ this module reaches the corpus directly (D1).
   reported token count understates what was actually embedded by the
   heading trail's own length.
 - `app srd search "<query>" [--limit N]` (`commands.py` / `service.search_rules`,
-  sprint 004-05 WI1): embeds `query` through the shared gateway seam and
-  returns up to `--limit` (default `DEFAULT_LIMIT = 5`) closest `srd_rules`
-  passages, best first, ordered by pgvector cosine distance. Prints one
-  numbered block per match — citation, ordinal and raw distance on the
-  heading line, the passage text indented below it. `SrdCorpusEmptyError`
-  (checked before any gateway call) prints the same empty-corpus message as
-  `status`; a non-positive `--limit` is rejected before any call; any other
-  `SrdError` or an LLM gateway failure prints one stderr line — each case
-  exits 1 with no traceback. `RuleMatch.score` is the raw cosine distance
-  (`<=>`), 0..2, lower is closer — not a similarity score; no relevance
-  floor is applied yet (sprint 06).
+  sprint 004-05 WI1, sprint 004-06 WI1): embeds `query` through the shared
+  gateway seam and returns up to `--limit` (default `DEFAULT_LIMIT = 5`)
+  closest `srd_rules` passages at or below `RELEVANCE_FLOOR` (see
+  "Relevance floor" below), best first, ordered by pgvector cosine
+  distance. Prints one numbered block per match — citation, ordinal and
+  raw distance on the heading line, the passage text indented below it. An
+  empty result (every candidate past the floor) prints `no relevant rule`
+  to stdout and exits 0 — a real, successful answer, not a failure.
+  `SrdCorpusEmptyError` (checked before any gateway call) prints the same
+  empty-corpus message as `status` to stderr and exits 1 — distinguishable
+  from the no-relevant-rule case by both stream and exit code; a
+  non-positive `--limit` is rejected before any call; `SrdVectorWidthError`
+  or an LLM gateway failure prints one stderr line — each case exits 1 with
+  no traceback. `RuleMatch.score` is the raw cosine distance (`<=>`), 0..2,
+  lower is closer — not a similarity score.
+
+## Relevance floor
+
+- `RELEVANCE_FLOOR = 0.60` (`service.py`) is a pinned module constant, not
+  a setting — it carries no field on `Settings` and is never read from the
+  environment, because it moves with the pinned embedding model
+  (`EMBEDDING_MODEL`), not with a deployment; a model swap re-measures it.
+  `score` is a cosine **distance** (lower is closer), so the floor is a
+  **maximum**: a row with `distance > RELEVANCE_FLOOR` is dropped.
+  `search_rules` applies it in Python, after the query is already ordered
+  and `LIMIT`-applied, never as a SQL `WHERE` on the distance — a condition
+  on the ordering expression itself would stop Postgres reaching for the
+  `hnsw` index (`ix_srd_rules_embedding`) and fall back to a sequential
+  scan plus sort, while filtering after the same ordered, limited query
+  keeps the index scan. Consequence: `DEFAULT_LIMIT` (and any `--limit`)
+  caps what a search *may* return, not a count of what it *will* — a
+  past-the-floor row is dropped outright, so the result can be shorter
+  than `limit`, including empty.
+- **How 0.60 was chosen**: six in-corpus and five out-of-corpus questions,
+  each measured with `docker compose run --rm app-cli app srd search
+  "<query>" --limit 3` against the real ingested corpus
+  (`openai/text-embedding-3-small`, 1,750 rules, each chunk embedded as
+  its heading trail plus body). The worst in-corpus best-match distance
+  was `0.515`; the best out-of-corpus best-match distance was `0.686` — no
+  overlap, so `0.60` sits in the gap with a `0.085` margin on both sides.
+
+  In-corpus (every one the correct passage):
+
+  | query | best distance | best match |
+  |---|---|---|
+  | how does half cover work | 0.515 | Combat › Cover |
+  | what happens when a creature is frightened | 0.389 | Adventuring › Conditions › Blinded › Frightened |
+  | what does fire bolt do | 0.486 | Spell Lists › Spell Descriptions › Acid Arrow › Fire Bolt |
+  | how does grappling work | 0.362 | Combat › Making an Attack › Melee Attacks › Grappling |
+  | what is a saving throw | 0.297 | Using Ability Scores › Saving Throws |
+  | how much does a longsword cost | 0.511 | Equipment › Weapons › Weapon Properties › Special Weapons |
+
+  Out-of-corpus (none of these leak through; all print `no relevant rule`):
+
+  | query | best distance | best match |
+  |---|---|---|
+  | how do I reload a plasma rifle | 0.686 | Equipment › Weapons › Weapon Properties › Special Weapons |
+  | what is the capital of France | 0.857 | Classes › Bard › Spellcasting › Spellcasting Ability |
+  | how do I file my taxes | 0.867 | Using Ability Scores › Saving Throws |
+  | best pizza toppings | 0.813 | Spell Lists › Sorcerer Spells › 8th Level |
+  | how to change a car tyre | 0.825 | Combat › Mounted Combat › Mounting and Dismounting |
 
 ## Notes
 

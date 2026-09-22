@@ -405,12 +405,24 @@ async def ingest(
 # narration or rules check; callers that need more can pass `limit`.
 DEFAULT_LIMIT = 5
 
+# Measured against the real ingested corpus (openai/text-embedding-3-small,
+# 1,750 rules, heading trail + body embedded, sprint 06 measurement table
+# in README.md "Relevance floor"): the worst in-corpus best-match distance
+# was 0.515 ("how does half cover work"), the best out-of-corpus best-match
+# distance was 0.686 ("how do I reload a plasma rifle"). 0.60 sits in that
+# gap with a 0.085 margin on both sides -- every measured in-corpus
+# question stays answered, every measured out-of-corpus one is rejected.
+# `score` is a cosine DISTANCE (lower is closer), so this is a MAXIMUM: a
+# row with `distance > RELEVANCE_FLOOR` is not a relevant match.
+RELEVANCE_FLOOR: float = 0.60
+
 
 async def search_rules(
     db: AsyncSession, query: str, *, limit: int = DEFAULT_LIMIT
 ) -> list[RuleMatch]:
     """Answers `query` with up to `limit` closest `SrdRule` passages, best
-    (closest) first.
+    (closest) first, every one of them at or below `RELEVANCE_FLOOR`
+    (AC2, AC4, AC5).
 
     Checks the embedding width first (AC3), then `require_corpus` -- an
     empty corpus raises `SrdCorpusEmptyError` before `query` is ever sent
@@ -427,8 +439,23 @@ async def search_rules(
     index (`ix_srd_rules_embedding`) instead of a full sequential scan plus
     sort; the distance expression is selected alongside each row, once, so
     it does not have to be recomputed to derive `score`. `score` is the raw
-    cosine distance (pgvector's `<=>`), 0..2, lower is closer -- no floor,
-    no re-ranking (sprint 06). Nothing commits; errors travel unwrapped.
+    cosine distance (pgvector's `<=>`), 0..2, lower is closer.
+
+    `RELEVANCE_FLOOR` is applied *after* that query returns, in Python, on
+    the already-ordered, already-limited rows -- never as a SQL `WHERE` on
+    the distance, so the `LIMIT`+`ORDER BY` combination above still lets
+    the planner reach for the HNSW index instead of falling back to a
+    sequential scan plus sort. A row past the floor is dropped outright,
+    never returned with a warning and never as a best effort (AC4): a
+    query whose every match falls past the floor returns an empty list,
+    not a lower-confidence guess.
+
+    Consequence of filtering after the `LIMIT` rather than before it:
+    `limit` (`DEFAULT_LIMIT` when the caller does not pass one) caps what
+    *may* come back, not a count of what *will* -- some, or all, of the
+    `limit` rows the query fetched can still fall past the floor and be
+    dropped, and the result can be shorter than `limit`, including empty.
+    Nothing commits; errors travel unwrapped.
     """
     check_vector_width()
     await require_corpus(db)
@@ -444,7 +471,8 @@ async def search_rules(
         .limit(limit)
     )
 
-    return [
+    matches = [
         RuleMatch(heading_path=heading_path, ordinal=ordinal, text=text, score=rule_distance)
         for heading_path, ordinal, text, rule_distance in result.all()
     ]
+    return [match for match in matches if match.score <= RELEVANCE_FLOOR]
