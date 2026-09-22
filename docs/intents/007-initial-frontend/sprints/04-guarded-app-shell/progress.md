@@ -9,12 +9,12 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | |
-| 2 | running | |
-| 3 | running | |
-| 4 | open | |
+| 1 | done | `App.tsx` is two pathless layout routes, guard outside the shell; `/dashboard` added as a heading-only page. Typecheck and lint green; the account-menu acceptance test now passes. Also fixed two stale tests that still asserted a bare sign-out button |
+| 2 | done | `core/layout/AppShell.tsx` renders the wordmark itself from `common:app.title` as a `<p>`, a pill badge with lucide's `Flame`, the `action` slot kept; banner landmark verified, all styling from theme tokens, no `modules/` import |
+| 3 | done | `AccountMenu` owns both hooks; trigger named "Account" with the initial, menu of username/divider/sign out, in-menu `role="alert"` on refusal, silent 401. `SignOutButton` gone, `HomeRoute` unwired, cases migrated. Also touched both module READMEs (WI5's file) |
+| 4 | running | |
 | 5 | open | |
-| qa | running | |
+| qa | done | 2 acceptance tests, both red on feature absence as expected: no dashboard address yet, no account menu yet (`frontend/src/returnToRequestedPage.test.tsx`, `frontend/src/accountMenu.test.tsx`) |
 
 Status: `open | running | done | failed`
 

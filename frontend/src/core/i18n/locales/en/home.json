@@ -1,3 +1,6 @@
 {
-  "greeting": "Welcome, {{username}}."
+  "greeting": "Welcome, {{username}}.",
+  "dashboard": {
+    "title": "Dashboard"
+  }
 }
