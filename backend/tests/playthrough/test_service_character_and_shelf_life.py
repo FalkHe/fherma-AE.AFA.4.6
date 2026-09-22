@@ -166,6 +166,15 @@ def test_create_character_writes_state_whole_from_the_sheet():
         "background": GREENHOLLOW_SEED.background,
         "appearance": GREENHOLLOW_SEED.appearance,
         "down": False,  # sprint 09, WI1: a character starts not down.
+        # sprint 009-02, WI2: a built sheet's own fields, defaulted here --
+        # the seed path writes exactly what it wrote before.
+        "level": 1,
+        "alignment": None,
+        "speed": 30,
+        "proficiency_bonus": 2,
+        "saving_throws": [],
+        "skills": [],
+        "equipment": [],
     }
 
 

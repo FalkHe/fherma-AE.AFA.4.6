@@ -134,11 +134,23 @@ def _select_attack(attacks: list[Attack], name: str | None) -> Attack:
 
 
 def _attacks_for(
-    actor: GameObject, *, item_id: str | None, campaign_id: str, version: str
+    actor: GameObject,
+    *,
+    item_id: str | None,
+    campaign_id: str,
+    version: str,
+    item: GameObject | None = None,
 ) -> list[Attack]:
-    """An item template's attacks when `item_id` is given; otherwise the
-    actor's own stat block -- a monster's attack is not an item (brief
+    """A carried row's own attacks when `item` is given (sprint 009-02,
+    WI2, AC5 -- a sheet-born weapon row has no content template to read),
+    otherwise an item template's attacks when `item_id` names one, otherwise
+    the actor's own stat block -- a monster's attack is not an item (brief
     WI1)."""
+    if item is not None:
+        attacks = item.state.get("attacks", [])
+        if not attacks:
+            raise ValueError(f"object has no attacks: {item.id}")
+        return [Attack.model_validate(a) for a in attacks]
     if item_id is not None:
         template = content_service.load_object_template(campaign_id, version, item_id)
         if not isinstance(template, ItemTemplate):
@@ -159,13 +171,15 @@ def derive_formula(
     *,
     campaign_id: str,
     version: str,
+    item: GameObject | None = None,
 ) -> str:
     """The server's own derivation, `kind` by `kind` (AC1, ← D6):
 
     - `attack` / `damage` -- the chosen attack's `to_hit` / `damage`, from
-      `context["item_id"]`'s template when given, otherwise the actor's
-      own stat block; `context["attack"]` names which one when there is
-      more than one to choose from.
+      `item`'s own carried-row state when given (sprint 009-02, WI2,
+      AC5), otherwise `context["item_id"]`'s template when given,
+      otherwise the actor's own stat block; `context["attack"]` names
+      which one when there is more than one to choose from.
     - `ability_check` / `saving_throw` -- the modifier of the ability
       named in `context["ability"]`.
     - `initiative` -- the actor's own Dexterity modifier.
@@ -180,7 +194,11 @@ def derive_formula(
 
     if kind in ("attack", "damage"):
         attacks = _attacks_for(
-            actor, item_id=context.get("item_id"), campaign_id=campaign_id, version=version
+            actor,
+            item_id=context.get("item_id"),
+            campaign_id=campaign_id,
+            version=version,
+            item=item,
         )
         attack = _select_attack(attacks, context.get("attack"))
         return _signed_d20(attack.to_hit) if kind == "attack" else attack.damage

@@ -178,6 +178,15 @@ EXPECTED_STATE_KEYS = {
     "background",
     "appearance",
     "down",
+    # sprint 009-02, WI2: a built sheet's full state, defaulted on the
+    # seed-hero path this sprint still exercises.
+    "level",
+    "alignment",
+    "speed",
+    "proficiency_bonus",
+    "saving_throws",
+    "skills",
+    "equipment",
 }
 
 

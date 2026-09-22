@@ -28,3 +28,12 @@ same "content lives in git" approach as the `content` module.
 - `app character options` (`commands.py`) — prints every race and class
   with its key stats to stdout, for a quick look at the option set without
   starting the API.
+- `service.build_sheet(request)` (`builder.py`, WI1) — turns a
+  `CharacterCreateRequest` into a finished `CharacterSheet`: validates the
+  point-buy spread, applies the race, and derives hit points, armour
+  class, saving throws and each weapon's to-hit/damage rather than
+  accepting any of them from the caller. Raises `CharacterBuildError` on
+  an illegal spread or an unknown equipment pick. Starting gear is always
+  proficient by definition — the SRD's prose proficiency lists are never
+  parsed. `roll_scores()` rolls through `playthrough.dice`, never a
+  caller-supplied number.

@@ -78,14 +78,18 @@ Owns a player's playthrough of a campaign and who may act in it.
   faces), capped at 20 dice of at most 100 faces, raising
   `InvalidDiceExpressionError` (`VALIDATION_ERROR`) naming the offending
   expression on anything else. `derive_formula(kind, actor, context, *,
-  campaign_id, version)` maps a `RollKind` and an actor to the formula that
-  kind implies: an item's or a stat block's own attack (chosen by name
-  through `context["attack"]`, never by position), an ability's own
-  modifier (SRD floor division) for `ability_check` / `saving_throw`,
-  Dexterity for `initiative`, or, for `custom` alone, `context["expression"]`
-  verbatim. Neither function has a `formula`, `modifier`, `bonus`, `faces`
-  or `total` parameter — there is no argument through which a caller could
-  pass one in.
+  campaign_id, version, item=None)` maps a `RollKind` and an actor to the
+  formula that kind implies: an item's or a stat block's own attack
+  (chosen by name through `context["attack"]`, never by position), an
+  ability's own modifier (SRD floor division) for `ability_check` /
+  `saving_throw`, Dexterity for `initiative`, or, for `custom` alone,
+  `context["expression"]` verbatim. For `attack`/`damage`, an `item` row
+  (sprint 009-02, WI2, AC5 — a sheet-born weapon row with no content
+  template) reads its attacks from its own `state["attacks"]`; otherwise
+  `context["item_id"]`'s content template, when given, or the actor's own
+  stat block, exactly as before. Neither function has a `formula`,
+  `modifier`, `bonus`, `faces` or `total` parameter — there is no argument
+  through which a caller could pass one in.
 
 ## Surface
 
@@ -118,9 +122,12 @@ commands and the notes below the service list.
 - `GET /api/v1/playthrough/campaign/{runId}` — one of the caller's runs.
 - `PATCH /api/v1/playthrough/campaign/{runId}` with `{"title": …}` —
   renames the run, answering `200` and the run.
-- `POST /api/v1/playthrough/campaign/{runId}/character` — creates the run's
-  one player character from its pinned campaign's seed sheet and moves the
-  run to `ready`, answering `201` and the character.
+- `POST /api/v1/playthrough/campaign/{runId}/character` — with no body,
+  creates the run's one player character from its pinned campaign's seed
+  sheet; with a `CharacterCreateRequest` body, builds it through
+  `character_service.build_sheet` first (`VALIDATION_ERROR` on an illegal
+  spread or pick) — either way moves the run to `ready`, answering `201`
+  and the character.
 - `POST /api/v1/playthrough/campaign/{runId}/adventure` — enters the next
   adventure the campaign's own list names that this run has no record of
   yet, positions that adventure's cast and every member's character, and
@@ -214,7 +221,11 @@ Service functions (`service.py`), called as `service.f(...)`:
   the same template-driven `_build_object` sprint 03 built, then moves the
   run `setup → ready`. Refuses a second character on the run
   (`CharacterExistsError`) and refuses an archived run (`RunArchivedError`).
-  Appends no event; one commit.
+  Appends no event; one commit. A `CharacterSheet` (sprint 009-02, WI2)
+  writes its full state instead (`level`, `alignment`, `speed`,
+  `proficiency_bonus`, `saving_throws`, `skills`, `equipment`) and one
+  carried `item` row per unit of quantity of each `SheetItem`, with no
+  content template of its own — same single commit boundary.
 - `rename_campaign_run` — sets the run's title. Refuses an archived run
   (`RunArchivedError`).
 - `archive_campaign_run` — `ready` / `active` / `finished` move to

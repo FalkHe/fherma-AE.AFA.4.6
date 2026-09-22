@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import ConfigDict, Field
 
 from app.core.schemas import CamelModel
-from app.modules.content.schemas import Abilities
+from app.modules.content.schemas import Abilities, Attack
 
 Ability = Literal["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
 
@@ -140,6 +140,16 @@ class GearRef(SrdContent):
     quantity: int = Field(default=1, ge=1)
 
 
+class SheetItem(GearRef):
+    """A resolved piece of a finished sheet's equipment -- a `GearRef` with
+    its display name and, for a weapon, its derived attack(s) already
+    worked out, so `playthrough.create_character` can write it straight
+    into a carried row's state without calling back into this module."""
+
+    name: str
+    attacks: list[Attack] = []
+
+
 class EquipmentOption(SrdContent):
     label: str
     items: list[GearRef]
@@ -185,6 +195,24 @@ class CharacterSheet(CamelModel):
     speed: int = Field(ge=0)
     saving_throws: list[Ability]
     skills: list[SkillName]
-    equipment: list[GearRef]
+    equipment: list[SheetItem]
+    proficiency_bonus: int = 2
     appearance: str
     backstory: str
+
+
+class CharacterCreateRequest(CamelModel):
+    """What a player submits to build a level-1 character; `builder.py`
+    turns this into a `CharacterSheet` (validating and deriving everything
+    the caller must not hand in directly)."""
+
+    name: str
+    race: RaceName
+    character_class: ClassName
+    alignment: AlignmentName
+    abilities: Abilities
+    free_ability_bonuses: list[Ability] = []
+    skills: list[SkillName] = []
+    equipment_picks: list[int] = []
+    appearance: str = ""
+    backstory: str = ""

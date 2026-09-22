@@ -552,6 +552,7 @@
           "playthrough"
         ],
         "summary": "Create Character",
+        "description": "`payload` omitted -- the campaign's seed hero (today's behaviour);\ngiven -- built through `character_service.build_sheet` first (sprint\n009-02, WI2, AC6). An illegal spread or an unknown equipment pick\n(`CharacterBuildError`) reaches the wire as `VALIDATION_ERROR` with\nevery message `build_sheet` found, not just the first.",
         "operationId": "create_character_api_v1_playthrough_campaign__run_id__character_post",
         "parameters": [
           {
@@ -564,6 +565,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CharacterCreateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Successful Response",
@@ -616,14 +634,14 @@
             "description": "Conflict"
           },
           "422": {
-            "description": "Validation Error",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
-            }
+            },
+            "description": "Unprocessable Entity"
           }
         }
       }
@@ -964,6 +982,57 @@
   },
   "components": {
     "schemas": {
+      "Abilities": {
+        "properties": {
+          "strength": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Strength"
+          },
+          "dexterity": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Dexterity"
+          },
+          "constitution": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Constitution"
+          },
+          "intelligence": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Intelligence"
+          },
+          "wisdom": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Wisdom"
+          },
+          "charisma": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Charisma"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "strength",
+          "dexterity",
+          "constitution",
+          "intelligence",
+          "wisdom",
+          "charisma"
+        ],
+        "title": "Abilities"
+      },
       "AdventureRunRead": {
         "properties": {
           "id": {
@@ -1311,6 +1380,137 @@
           "adventureCount"
         ],
         "title": "CampaignSummaryRead"
+      },
+      "CharacterCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "race": {
+            "type": "string",
+            "enum": [
+              "Dragonborn",
+              "Dwarf",
+              "Elf",
+              "Gnome",
+              "Half-Elf",
+              "Half-Orc",
+              "Halfling",
+              "Human",
+              "Tiefling"
+            ],
+            "title": "Race"
+          },
+          "characterClass": {
+            "type": "string",
+            "enum": [
+              "Barbarian",
+              "Bard",
+              "Cleric",
+              "Druid",
+              "Fighter",
+              "Monk",
+              "Paladin",
+              "Ranger",
+              "Rogue",
+              "Sorcerer",
+              "Warlock",
+              "Wizard"
+            ],
+            "title": "Characterclass"
+          },
+          "alignment": {
+            "type": "string",
+            "enum": [
+              "Lawful Good",
+              "Neutral Good",
+              "Chaotic Good",
+              "Lawful Neutral",
+              "Neutral",
+              "Chaotic Neutral",
+              "Lawful Evil",
+              "Neutral Evil",
+              "Chaotic Evil"
+            ],
+            "title": "Alignment"
+          },
+          "abilities": {
+            "$ref": "#/components/schemas/Abilities"
+          },
+          "freeAbilityBonuses": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "strength",
+                "dexterity",
+                "constitution",
+                "intelligence",
+                "wisdom",
+                "charisma"
+              ]
+            },
+            "type": "array",
+            "title": "Freeabilitybonuses",
+            "default": []
+          },
+          "skills": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "Acrobatics",
+                "Animal Handling",
+                "Arcana",
+                "Athletics",
+                "Deception",
+                "History",
+                "Insight",
+                "Intimidation",
+                "Investigation",
+                "Medicine",
+                "Nature",
+                "Perception",
+                "Performance",
+                "Persuasion",
+                "Religion",
+                "Sleight of Hand",
+                "Stealth",
+                "Survival"
+              ]
+            },
+            "type": "array",
+            "title": "Skills",
+            "default": []
+          },
+          "equipmentPicks": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Equipmentpicks",
+            "default": []
+          },
+          "appearance": {
+            "type": "string",
+            "title": "Appearance",
+            "default": ""
+          },
+          "backstory": {
+            "type": "string",
+            "title": "Backstory",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "race",
+          "characterClass",
+          "alignment",
+          "abilities"
+        ],
+        "title": "CharacterCreateRequest",
+        "description": "What a player submits to build a level-1 character; `builder.py`\nturns this into a `CharacterSheet` (validating and deriving everything\nthe caller must not hand in directly)."
       },
       "CharacterRead": {
         "properties": {

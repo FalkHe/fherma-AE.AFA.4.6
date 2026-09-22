@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.schemas import CamelModel
+from app.modules.character.schemas import SheetItem
 from app.modules.content.schemas import Abilities
 
 
@@ -169,7 +170,14 @@ class CharacterState(BaseModel):
     character with a member stays `is_alive=True` at zero, this field
     alone records that it is down. The column is always reassigned whole
     from this model (`model_copy(update=...)`), never mutated in place:
-    plain JSONB tracks no in-place key set."""
+    plain JSONB tracks no in-place key set.
+
+    `level`, `alignment`, `speed`, `proficiency_bonus`, `saving_throws`,
+    `skills` and `equipment` (sprint 009-02, WI2, AC4) carry a built
+    character's full sheet alongside `abilities`/`race`/`character_class`
+    -- every field defaults so the seed hero's path writes exactly what
+    it wrote before. `background` keeps its name here and takes a built
+    sheet's own `backstory`."""
 
     abilities: Abilities
     race: str
@@ -177,6 +185,13 @@ class CharacterState(BaseModel):
     background: str
     appearance: str
     down: bool = False
+    level: int = 1
+    alignment: str | None = None
+    speed: int = 30
+    proficiency_bonus: int = 2
+    saving_throws: list[str] = []
+    skills: list[str] = []
+    equipment: list[SheetItem] = []
 
 
 class TurnCost(BaseModel):

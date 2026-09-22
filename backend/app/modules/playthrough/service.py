@@ -20,6 +20,7 @@ from app.core.ids import generate_id
 from app.core.llm import service as llm_service
 from app.core.llm.service import Usage
 from app.core.settings import get_settings
+from app.modules.character.schemas import CharacterSheet
 from app.modules.content import service as content_service
 from app.modules.content.errors import ContentError, ContentNotFoundError
 from app.modules.content.schemas import LoadedCampaign, ObjectTemplate, SeedCharacter
@@ -454,21 +455,30 @@ async def get_run_overview(
 
 
 async def create_character(
-    db: AsyncSession, *, user_id: str, run_id: str, sheet: SeedCharacter | None = None
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    sheet: CharacterSheet | SeedCharacter | None = None,
 ) -> GameObject:
     """The run's one player character, built from `sheet` -- or, when
     `sheet` is `None`, from the seed character the run's pinned campaign
-    declares (← D4; phase 7 will pass a sheet of its own without changing
-    this signature).
+    declares (← D4). A built `CharacterSheet` (sprint 009-02, WI2, AC4/AC5)
+    writes its full state (`level`, `alignment`, `speed`,
+    `proficiency_bonus`, `saving_throws`, `skills`, `equipment` alongside
+    the fields the seed path already wrote) and one carried `item` row per
+    *unit of quantity* of each `SheetItem` -- `template_id=None`, its own
+    `name`, `state={"srd_id", "attacks"}` -- rather than the seed path's
+    one row per template-driven inventory entry.
 
     Refuses a second character on this run (`CharacterExistsError`, a
     Stage-01 game rule, not a schema constraint -- ← 003-D13) and refuses
     an archived run (`RunArchivedError`). Builds the creature, flushes,
-    builds one carried `item` row per inventory entry through the
-    template-driven `_build_object`, flushes, moves the run to `ready`,
-    and commits once. Appends no event. Catches nothing else: any other
-    failure (a stat outside its check constraint, a bad foreign key) is a
-    bug, not a domain error, and travels to the 500 envelope.
+    builds the carried rows, flushes, moves the run to `ready`, and
+    commits once -- the same single commit boundary either path takes.
+    Appends no event. Catches nothing else: any other failure (a stat
+    outside its check constraint, a bad foreign key) is a bug, not a
+    domain error, and travels to the 500 envelope.
     """
     member = await _require_member(db, run_id=run_id, user_id=user_id)
     run = await _get_run(db, run_id)
@@ -489,6 +499,31 @@ async def create_character(
         sheet = loaded.campaign.seed_character
 
     instance_key = f"pc:{member.id}:1"
+
+    if isinstance(sheet, CharacterSheet):
+        state = CharacterState(
+            abilities=sheet.abilities,
+            race=sheet.race,
+            character_class=sheet.character_class,
+            background=sheet.backstory,
+            appearance=sheet.appearance,
+            level=sheet.level,
+            alignment=sheet.alignment,
+            speed=sheet.speed,
+            proficiency_bonus=sheet.proficiency_bonus,
+            saving_throws=list(sheet.saving_throws),
+            skills=list(sheet.skills),
+            equipment=list(sheet.equipment),
+        )
+    else:
+        state = CharacterState(
+            abilities=sheet.abilities,
+            race=sheet.race,
+            character_class=sheet.character_class,
+            background=sheet.background,
+            appearance=sheet.appearance,
+        )
+
     character = GameObject(
         id=generate_id(),
         campaign_run_id=run_id,
@@ -500,31 +535,45 @@ async def create_character(
         max_hp=sheet.max_hp,
         armour_class=sheet.armour_class,
         is_alive=True,
-        state=CharacterState(
-            abilities=sheet.abilities,
-            race=sheet.race,
-            character_class=sheet.character_class,
-            background=sheet.background,
-            appearance=sheet.appearance,
-        ).model_dump(),
+        state=state.model_dump(),
     )
     db.add(character)
     await db.flush()
 
-    # `n` counts repeats of the same template within the pack -- greenhollow's
-    # five entries are distinct, so every carried key here ends `:1`.
-    ordinals: dict[str, int] = {}
     carried_rows: list[GameObject] = []
-    for template_id in sheet.inventory:
-        ordinals[template_id] = ordinals.get(template_id, 0) + 1
-        carried_key = f"{instance_key}/{template_id}:{ordinals[template_id]}"
-        carried_row = _build_object(
-            campaign_run_id=run_id,
-            template=loaded.object_templates[template_id],
-            instance_key=carried_key,
-        )
-        carried_row.owner_object_id = character.id
-        carried_rows.append(carried_row)
+    if isinstance(sheet, CharacterSheet):
+        for item in sheet.equipment:
+            for n in range(1, item.quantity + 1):
+                carried_key = f"{instance_key}/{item.id}:{n}"
+                carried_rows.append(
+                    GameObject(
+                        id=generate_id(),
+                        campaign_run_id=run_id,
+                        kind="item",
+                        template_id=None,
+                        instance_key=carried_key,
+                        name=item.name,
+                        owner_object_id=character.id,
+                        state={
+                            "srd_id": item.id,
+                            "attacks": [attack.model_dump() for attack in item.attacks],
+                        },
+                    )
+                )
+    else:
+        # `n` counts repeats of the same template within the pack -- greenhollow's
+        # five entries are distinct, so every carried key here ends `:1`.
+        ordinals: dict[str, int] = {}
+        for template_id in sheet.inventory:
+            ordinals[template_id] = ordinals.get(template_id, 0) + 1
+            carried_key = f"{instance_key}/{template_id}:{ordinals[template_id]}"
+            carried_row = _build_object(
+                campaign_run_id=run_id,
+                template=loaded.object_templates[template_id],
+                instance_key=carried_key,
+            )
+            carried_row.owner_object_id = character.id
+            carried_rows.append(carried_row)
 
     db.add_all(carried_rows)
     await db.flush()
@@ -778,9 +827,33 @@ async def _append_roll_requested(
     number a caller passed) and appends `roll_requested` at `visibility`.
     Shared by `request_player_roll` (always `player`, since the player is
     the one being asked) and `roll` (whatever visibility its caller asked
-    for)."""
+    for).
+
+    For `attack`/`damage`, `context["item_id"]` may name either a content
+    template (the seed hero's `shepherds-knife`) or a carried row with no
+    template of its own (a sheet-born weapon, sprint 009-02 WI2 AC5) --
+    looked up here and handed to `dice.derive_formula` as `item` only when
+    it is a row of this run with `template_id is None`; anything else
+    (a template id, a foreign or unknown row) falls through to today's
+    template-driven path unchanged."""
+    item: GameObject | None = None
+    if kind in ("attack", "damage"):
+        item_id = context.get("item_id") if isinstance(context, dict) else None
+        if item_id is not None:
+            candidate = await db.get(GameObject, item_id)
+            if (
+                candidate is not None
+                and candidate.campaign_run_id == run.id
+                and candidate.template_id is None
+            ):
+                item = candidate
     formula = dice.derive_formula(
-        kind, actor, context, campaign_id=run.campaign_id, version=run.content_version
+        kind,
+        actor,
+        context,
+        campaign_id=run.campaign_id,
+        version=run.content_version,
+        item=item,
     )
     return await append_event(
         db,
