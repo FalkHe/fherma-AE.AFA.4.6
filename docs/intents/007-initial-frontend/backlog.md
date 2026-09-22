@@ -15,7 +15,7 @@ Dependency-ordered. 01 and 02 have no screen and are checked through the interac
 | 02 | A player's runs can be read with everything the screens show: campaign, progress, who is at the table, which adventures lie ahead | – | #38 | done |
 | 03 | The whole product wears the delivered dark "Goblin Pub" look and is named The Goblin's Tavern | – | #39 | done |
 | 04 | Every page sits behind sign-in under one shared header with an account menu; a signed-out visitor is sent to sign-in and then back to the page they asked for | 03 | #40 | done |
-| 05 | Opening a run shows the campaign, who is at the table and whether their character is ready, plus an invite slot | 02, 04 | – | open |
+| 05 | Opening a run shows the campaign, who is at the table and whether their character is ready, plus an invite slot | 02, 04 | #42 | done |
 | 06 | The run screen lists the adventures in order, marks which is next and says what the party is waiting for | 05 | – | open |
 | 07 | Signing in lands on a dashboard of the player's runs, or on an invitation to start the first one | 05 | – | open |
 | 08 | The dashboard sorts runs under "In progress", "New" and "Archived" and opens on the one that matters | 07 | – | open |

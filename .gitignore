@@ -22,3 +22,8 @@ __pycache__/
 /ac-report.*
 # Playwright MCP session artefacts (screenshots, snapshots, console logs)
 .playwright-mcp/
+
+# locals
+*.local.md
+*.local.yml
+*.local.json

@@ -13,6 +13,7 @@ import { SignUpRoute } from "./modules/auth/routes/SignUpRoute";
 import { AppShell } from "./core/layout/AppShell";
 import { DashboardRoute } from "./modules/home/routes/DashboardRoute";
 import { HomeRoute } from "./modules/home/routes/HomeRoute";
+import { RunRoute } from "./modules/playthrough/routes/RunRoute";
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
       >
         <Route path="/" element={<HomeRoute />} />
         <Route path="/dashboard" element={<DashboardRoute />} />
+        <Route path="/runs/:runId" element={<RunRoute />} />
       </Route>
       <Route element={<RequireAnonymous><Outlet /></RequireAnonymous>}>
         <Route path="/signin" element={<SignInRoute />} />
