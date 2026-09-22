@@ -89,11 +89,19 @@ Owns a player's playthrough of a campaign and who may act in it.
 
 ## Surface
 
-Nine endpoints, mounted under `/api/v1/playthrough/campaign`, all requiring
-an authenticated caller (`POST` and `PATCH` are also CSRF-guarded). Cost and
-rolling both have no endpoint at all — see the CLI commands and the notes
-below the service list.
+Ten endpoints, in two path families under `/api/v1/playthrough`, all
+requiring an authenticated caller (`POST` and `PATCH` are also
+CSRF-guarded). Cost and rolling both have no endpoint at all — see the CLI
+commands and the notes below the service list.
 
+- `GET /api/v1/playthrough/runs` — the caller's runs read as a picker list
+  (WI1, AC1/AC2): newest first, archived included, each carrying its
+  pinned campaign's title and summary, adventures completed versus the
+  campaign's total, and how many players are seated —
+  `CampaignRunSummaryRead`. A run whose pinned campaign or version no
+  longer loads still lists, with `unavailable: true` and no campaign copy;
+  nothing raises. A sibling literal to `/campaign` (not
+  `/campaign/{runId}`, which the path parameter would shadow).
 - `POST /api/v1/playthrough/campaign` with `{"campaignId": …}` — starts a
   campaign run, answering `201` and the run.
 - `GET /api/v1/playthrough/campaign` — the caller's runs, newest first,
@@ -136,8 +144,25 @@ An event reads as `id, type, turnId, payload, createdAt` and nothing else —
 answers `{events, awaiting}` (`EventsRead`), not a bare array — `awaiting`
 is one of `"none"`, `"roll:<id>"` or `"answer:<id>"`.
 
+A run summary (`GET /runs`, `CampaignRunSummaryRead`) reads as `id,
+campaignId, status, createdAt, campaignTitle, campaignSummary,
+adventuresCompleted, adventuresTotal, playerCount, unavailable` and nothing
+else — `campaignTitle`/`campaignSummary`/`adventuresTotal` are `null` and
+`unavailable` is `true` exactly when the pinned content no longer loads;
+`adventuresCompleted` and `playerCount` are always counted, from this
+run's own rows rather than from content.
+
 Service functions (`service.py`), called as `service.f(...)`:
 
+- `list_run_summaries` — `list_campaign_runs`'s own rows and order,
+  enriched with one grouped count of completed `adventure_runs` rows and
+  one of `campaign_run_members` rows, both keyed by `campaign_run_id`, and
+  each run's pinned campaign reloaded through `_load_pinned` — cached per
+  `(campaign_id, content_version)`, so two runs of one campaign load its
+  content once. Reads only: no commit, no status change, no event.
+- `_load_pinned` — `content_service.load_campaign` for one run's pin,
+  catching `ContentError` alone (logging `playthrough_content_unavailable`)
+  and returning `None`; anything else travels.
 - `start_campaign_run` — pins the run's `content_version` for its whole
   life, makes the starter the run's owning member, and instantiates every
   object the campaign's adventures declare, all unpositioned — entering an

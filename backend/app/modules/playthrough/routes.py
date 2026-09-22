@@ -15,6 +15,7 @@ from app.modules.playthrough.errors import PlaythroughError
 from app.modules.playthrough.schemas import (
     AdventureRunRead,
     CampaignRunRead,
+    CampaignRunSummaryRead,
     CharacterRead,
     EventRead,
     EventsRead,
@@ -53,6 +54,14 @@ async def list_campaign_runs(auth: CurrentAuth, db: DbSession) -> list[CampaignR
     except PlaythroughError as exc:
         raise ApiError(exc.code) from exc
     return [CampaignRunRead.model_validate(run) for run in runs]
+
+
+@router.get("/runs", responses={401: {"model": ErrorEnvelope}})
+async def list_run_summaries(auth: CurrentAuth, db: DbSession) -> list[CampaignRunSummaryRead]:
+    try:
+        return await service.list_run_summaries(db, user_id=auth.user.id)
+    except PlaythroughError as exc:
+        raise ApiError(exc.code) from exc
 
 
 @router.get(

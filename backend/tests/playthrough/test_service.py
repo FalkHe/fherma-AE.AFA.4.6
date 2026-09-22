@@ -14,6 +14,7 @@ wrapped in a single `asyncio.run(...)` per test.
 """
 
 import asyncio
+from datetime import UTC, datetime
 
 import pytest
 import structlog.testing
@@ -62,6 +63,18 @@ GREENHOLLOW_KEYS = {
 
 def _load_greenhollow() -> LoadedCampaign:
     return content_service.load_campaign("greenhollow", "v1")
+
+
+def _make_campaign_run(**overrides) -> CampaignRun:
+    fields = dict(
+        id=generate_id(),
+        campaign_id="greenhollow",
+        content_version="v1",
+        status="setup",
+        created_at=datetime.now(UTC),
+    )
+    fields.update(overrides)
+    return CampaignRun(**fields)
 
 
 class FakeResult:
@@ -455,10 +468,8 @@ def test_load_pinned_returns_none_and_logs_a_warning_on_a_content_error(monkeypa
 
 
 def test_list_run_summaries_orders_and_includes_archived_runs_exactly_as_queried():
-    newest = CampaignRun(
-        id="run-2", campaign_id="greenhollow", content_version="v1", status="archived"
-    )
-    oldest = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1", status="setup")
+    newest = _make_campaign_run(id="run-2", status="archived")
+    oldest = _make_campaign_run(id="run-1", status="setup")
     db = FakeSession(
         FakeResult(scalars=[newest, oldest]),
         FakeResult(scalars=[]),
@@ -472,8 +483,8 @@ def test_list_run_summaries_orders_and_includes_archived_runs_exactly_as_queried
 
 
 def test_list_run_summaries_takes_the_completed_count_from_the_adventure_run_rows():
-    run = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
-    other = CampaignRun(id="run-2", campaign_id="greenhollow", content_version="v1")
+    run = _make_campaign_run(id="run-1")
+    other = _make_campaign_run(id="run-2")
     db = FakeSession(
         FakeResult(scalars=[run, other]),
         FakeResult(scalars=[("run-1", 2)]),
@@ -492,9 +503,9 @@ def test_list_run_summaries_takes_the_completed_count_from_the_adventure_run_row
 def test_list_run_summaries_flags_unavailable_content_without_raising_and_leaves_a_sibling_intact(
     monkeypatch,
 ):
-    healthy = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
-    missing = CampaignRun(id="run-2", campaign_id="ghost-town", content_version="v1")
-    broken = CampaignRun(id="run-3", campaign_id="ruined-keep", content_version="v1")
+    healthy = _make_campaign_run(id="run-1")
+    missing = _make_campaign_run(id="run-2", campaign_id="ghost-town")
+    broken = _make_campaign_run(id="run-3", campaign_id="ruined-keep")
     db = FakeSession(
         FakeResult(scalars=[healthy, missing, broken]),
         FakeResult(scalars=[]),
@@ -531,8 +542,8 @@ def test_list_run_summaries_flags_unavailable_content_without_raising_and_leaves
 def test_list_run_summaries_loads_pinned_content_only_once_for_two_runs_of_one_campaign(
     monkeypatch,
 ):
-    first = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
-    second = CampaignRun(id="run-2", campaign_id="greenhollow", content_version="v1")
+    first = _make_campaign_run(id="run-1")
+    second = _make_campaign_run(id="run-2")
     db = FakeSession(
         FakeResult(scalars=[first, second]),
         FakeResult(scalars=[]),
@@ -554,7 +565,7 @@ def test_list_run_summaries_loads_pinned_content_only_once_for_two_runs_of_one_c
 
 
 def test_list_run_summaries_makes_no_write():
-    run = CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+    run = _make_campaign_run(id="run-1")
     db = FakeSession(
         FakeResult(scalars=[run]),
         FakeResult(scalars=[]),

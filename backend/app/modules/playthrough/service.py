@@ -21,7 +21,7 @@ from app.core.llm import service as llm_service
 from app.core.llm.service import Usage
 from app.core.settings import get_settings
 from app.modules.content import service as content_service
-from app.modules.content.errors import ContentNotFoundError
+from app.modules.content.errors import ContentError, ContentNotFoundError
 from app.modules.content.schemas import LoadedCampaign, ObjectTemplate, SeedCharacter
 from app.modules.playthrough import dice
 from app.modules.playthrough.errors import (
@@ -57,6 +57,7 @@ from app.modules.playthrough.models import (
 )
 from app.modules.playthrough.schemas import (
     EVENT_PAYLOADS,
+    CampaignRunSummaryRead,
     CharacterState,
     NarrationRead,
     RollKind,
@@ -239,6 +240,81 @@ async def list_campaign_runs(db: AsyncSession, *, user_id: str) -> list[Campaign
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+def _load_pinned(run: CampaignRun) -> LoadedCampaign | None:
+    """`run`'s pinned campaign, reloaded -- or `None` when the pinned
+    `(campaign_id, content_version)` no longer loads. Catches
+    `ContentError` alone, logging a warning; anything else (a bug, not a
+    missing-content fact) travels to the caller.
+    """
+    try:
+        return content_service.load_campaign(run.campaign_id, run.content_version)
+    except ContentError as exc:
+        logger.warning("playthrough_content_unavailable", run_id=run.id, error=str(exc))
+        return None
+
+
+async def list_run_summaries(db: AsyncSession, *, user_id: str) -> list[CampaignRunSummaryRead]:
+    """The caller's runs, enriched for a picker screen (WI1, AC1/AC2):
+    newest first, archived included -- the same rows and order as
+    `list_campaign_runs` -- each carrying its pinned campaign's title and
+    summary, how many of its adventures are done versus the campaign's
+    total, and how many players are seated, or `unavailable=True` with no
+    campaign copy when the pinned content no longer loads.
+
+    Two grouped counts, both keyed by `campaign_run_id`: completed rows in
+    `adventure_runs` and rows in `campaign_run_members`. `_load_pinned` is
+    cached per `(campaign_id, content_version)`, so two runs of the same
+    campaign at the same version load its content once. Reads only: no
+    commit, no status change, no event.
+    """
+    runs = await list_campaign_runs(db, user_id=user_id)
+    if not runs:
+        return []
+
+    run_ids = [run.id for run in runs]
+
+    completed_stmt = (
+        select(AdventureRun.campaign_run_id, func.count())
+        .where(AdventureRun.campaign_run_id.in_(run_ids), AdventureRun.status == "completed")
+        .group_by(AdventureRun.campaign_run_id)
+    )
+    completed_result = await db.execute(completed_stmt)
+    completed_counts = dict(completed_result.all())
+
+    member_stmt = (
+        select(CampaignRunMember.campaign_run_id, func.count())
+        .where(CampaignRunMember.campaign_run_id.in_(run_ids))
+        .group_by(CampaignRunMember.campaign_run_id)
+    )
+    member_result = await db.execute(member_stmt)
+    member_counts = dict(member_result.all())
+
+    content_by_pin: dict[tuple[str, str], LoadedCampaign | None] = {}
+    summaries: list[CampaignRunSummaryRead] = []
+    for run in runs:
+        pin = (run.campaign_id, run.content_version)
+        if pin not in content_by_pin:
+            content_by_pin[pin] = _load_pinned(run)
+        loaded = content_by_pin[pin]
+
+        summaries.append(
+            CampaignRunSummaryRead(
+                id=run.id,
+                campaign_id=run.campaign_id,
+                status=run.status,
+                created_at=run.created_at,
+                campaign_title=loaded.campaign.title if loaded is not None else None,
+                campaign_summary=loaded.campaign.summary if loaded is not None else None,
+                adventures_completed=completed_counts.get(run.id, 0),
+                adventures_total=len(loaded.campaign.adventures) if loaded is not None else None,
+                player_count=member_counts.get(run.id, 0),
+                unavailable=loaded is None,
+            )
+        )
+
+    return summaries
 
 
 async def _get_run(db: AsyncSession, run_id: str) -> CampaignRun:

@@ -24,6 +24,27 @@ class CampaignRunRead(CamelModel):
     created_at: datetime
 
 
+class CampaignRunSummaryRead(CamelModel):
+    """One `GET /runs` row (WI1, AC1/AC2): the run's own facts alongside
+    its pinned campaign's copy, enriched with counts no single table
+    carries. `campaignTitle`/`campaignSummary`/`adventuresTotal` are
+    `None` and `unavailable` is `true` when the pinned campaign or
+    version can no longer be loaded -- `adventuresCompleted` and
+    `playerCount` stay counted either way, since both come from this
+    run's own rows, not from content."""
+
+    id: str
+    campaign_id: str
+    status: str
+    created_at: datetime
+    campaign_title: str | None
+    campaign_summary: str | None
+    adventures_completed: int
+    adventures_total: int | None
+    player_count: int
+    unavailable: bool
+
+
 class RenameCampaignRunRequest(CamelModel):
     title: str = Field(min_length=1, max_length=120)
 
