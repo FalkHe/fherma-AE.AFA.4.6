@@ -49,21 +49,25 @@ proxy. Configure the browser-facing addresses in `.env`:
 ```dotenv
 VITE_API_URL=https://dnd.example.com
 VITE_ALLOWED_HOST=dnd.example.com
+VITE_API_PROXY_TARGET=http://app-web:8000
 FRONTEND_ORIGIN=https://dnd.example.com
 ```
 
-For one public hostname, route `/api/*` to `127.0.0.1:8000` and all other
-requests to `127.0.0.1:5173`. If the API uses a separate hostname, put that
-origin in `VITE_API_URL`; `FRONTEND_ORIGIN` must still be the exact frontend
+With `VITE_API_PROXY_TARGET` set, send every request for the public hostname to
+`127.0.0.1:5173`; Vite forwards `/api/*` to the backend over the Compose
+network. If the API uses a separate public hostname instead, leave
+`VITE_API_PROXY_TARGET` blank, put that origin in `VITE_API_URL`, and route it
+to `127.0.0.1:8000`. `FRONTEND_ORIGIN` must always be the exact frontend
 origin. Recreate the affected services after changing these values:
 
 ```bash
 docker compose up -d --force-recreate frontend app-web
 ```
 
-The proxy must disable response buffering for `/api/*` so campaign SSE updates
-are delivered immediately, and it must support WebSocket upgrades for the Vite
-development server.
+The external proxy must support WebSocket upgrades for the Vite development
+server. When proxying the API directly instead of through Vite, it must also
+disable response buffering for `/api/*` so campaign SSE updates arrive
+immediately.
 
 `OPENROUTER_API_KEY` is not needed yet — nothing calls a model until the game
 agent lands — but set it now if you have one; every LLM call in this project

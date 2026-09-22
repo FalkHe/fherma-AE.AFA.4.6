@@ -31,6 +31,9 @@ services:
       # Vite rejects unknown Host headers. Set this to the reverse proxy's
       # public hostname; localhost and IP addresses need no explicit entry.
       VITE_ALLOWED_HOST: ${VITE_ALLOWED_HOST:-}
+      # Optional Docker-network target for forwarding /api/* through Vite.
+      # This lets an external reverse proxy send the whole hostname to :5173.
+      VITE_API_PROXY_TARGET: ${VITE_API_PROXY_TARGET:-}
       # Bind mounts do not reliably propagate inotify events into containers;
       # see vite.config.ts.
       VITE_SERVER_USE_POLLING: "true"
