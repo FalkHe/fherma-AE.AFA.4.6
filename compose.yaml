@@ -7,7 +7,7 @@ services:
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "${LOCAL_HOST_IP:-127.0.0.1}:${LOCAL_HOST_WEB_PORT:-8000}:8000"
     volumes:
       # Source bind mount so uvicorn --reload picks up local edits.
       - ./backend:/app
@@ -25,14 +25,13 @@ services:
       target: dev
     environment:
       # The SPA calls the backend from the browser, so this is the host-side
-      # URL, not the Compose service name. Deliberately set here and not in
-      # .env: it is a fixed development value, not a secret.
-      VITE_API_URL: http://localhost:8000
+      # URL, not the Compose service name.
+      VITE_API_URL: http://${LOCAL_HOST_IP:-localhost}:${LOCAL_HOST_WEB_PORT:-8000}
       # Bind mounts do not reliably propagate inotify events into containers;
       # see vite.config.ts.
       VITE_SERVER_USE_POLLING: "true"
     ports:
-      - "5173:5173"
+      - "${LOCAL_HOST_IP:-127.0.0.1}:${LOCAL_HOST_VITE_PORT:-5173}:5173"
     volumes:
       # Source bind mount so Vite HMR picks up local edits.
       - ./frontend:/app
