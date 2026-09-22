@@ -313,6 +313,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/game/runs/{run_id}/turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Turn */
+        post: operations["run_turn_api_v1_game_runs__run_id__turn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -717,6 +734,36 @@ export interface components {
         StartCampaignRunRequest: {
             /** Campaignid */
             campaignId: string;
+        };
+        /**
+         * TurnRead
+         * @description The turn route's whole response body (I1) -- `turnId`, `kind` and
+         *     `awaiting`. `awaiting` mirrors `playthrough.schemas.EventsRead`'s own
+         *     field: `"none"`, `"roll:<id>"` or `"answer:<id>"`, read fresh from
+         *     `playthrough.service.get_awaiting` after the turn runs.
+         */
+        TurnRead: {
+            /** Turnid */
+            turnId: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "action" | "answer" | "roll" | "retry" | "opening";
+            /** Awaiting */
+            awaiting: string;
+        };
+        /**
+         * TurnRequest
+         * @description The turn route's whole request body (I1) -- `text` and nothing
+         *     else. `extra="forbid"` enforces that: a caller naming a turn kind or
+         *     a dice number is refused with `VALIDATION_ERROR`, never silently
+         *     ignored -- that refusal is the point of the design, not an
+         *     afterthought.
+         */
+        TurnRequest: {
+            /** Text */
+            text?: string | null;
         };
         /** UserRead */
         UserRead: {
@@ -1652,6 +1699,86 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    run_turn_api_v1_game_runs__run_id__turn_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnRead"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
