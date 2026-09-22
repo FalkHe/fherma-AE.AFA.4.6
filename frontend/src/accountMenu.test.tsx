@@ -16,6 +16,8 @@ const APP_TITLE = "The Goblin's Tavern";
 
 function stubAuthenticated() {
   mockRoute("GET", "/api/v1/users/me", { status: 200, body: USER, headers: { "X-CSRF-Token": "csrf-token-value" } });
+  // The dashboard now lives at `/` (sprint 007/07 WI1) and makes this read.
+  mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
 }
 
 describe("header and account menu (AC3)", () => {

@@ -21,6 +21,8 @@ describe("CSRF token handling and credentialed requests", () => {
       headers: { "X-CSRF-Token": "token-from-reload" },
     });
     mockRoute("POST", "/api/v1/auth/sign-out", { status: 204 });
+    // The dashboard now lives at `/` (sprint 007/07 WI1) and makes this read.
+    mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
 
     const app = renderApp(["/"]);
     await screen.findByRole("heading", { level: 1 });
@@ -42,6 +44,8 @@ describe("CSRF token handling and credentialed requests", () => {
 
   it("every request is credentialed (`credentials: \"include\"`), the necessary condition for the cross-origin session cookie to be sent", async () => {
     mockRoute("GET", "/api/v1/users/me", { status: 200, body: USER, headers: { "X-CSRF-Token": "t" } });
+    // The dashboard now lives at `/` (sprint 007/07 WI1) and makes this read.
+    mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
     renderApp(["/"]);
     await screen.findByRole("heading", { level: 1 });
 

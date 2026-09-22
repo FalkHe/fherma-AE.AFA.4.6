@@ -211,6 +211,8 @@ describe("SignInRoute (UI-1 … UI-12)", () => {
 
   it("UI-12: on success, navigates to / via replace and moves focus to the greeting, which is the home h1", async () => {
     stubSignInSuccess("thorin");
+    // The dashboard now lives at `/` (sprint 007/07 WI1) and makes this read.
+    mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
     const app = renderApp(["/signin"]);
     const { username, password } = await waitFor(() => fillAndGetFields());
     const user = userEvent.setup();

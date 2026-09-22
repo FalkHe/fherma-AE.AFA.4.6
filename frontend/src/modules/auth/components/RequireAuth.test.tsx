@@ -1,69 +1,42 @@
-// UI-21 … UI-29, UI-42 (ui-spec.md §12, §3.3, §6.3), plus step-0.1.md
-// criterion 45 (the session-expired warning's exact trigger set). Criterion
-// 37/38 (CSRF re-acquisition and header presence) live in
-// modules/auth/csrf.test.tsx, next to the other request-shape assertions.
+// Recovered from `modules/home`'s retired `HomeRoute.test.tsx`
+// (git show main:frontend/src/modules/home/routes/HomeRoute.test.tsx) —
+// deleted along with the rest of that module when the landing screen moved
+// to `playthrough/routes/DashboardRoute` (sprint 007/07 WI1). These cases
+// assert `RequireAuth` itself — the session-expired warning's exact trigger
+// set (step-0.1.md criterion 45) and the unreachable-server retry path
+// (UI-29) — not any particular screen, so they belong here rather than with
+// one route's own test. UI-21/22/23/24/42 (the guard's pending/redirect/
+// authenticated-render shell) moved instead onto
+// `playthrough/routes/DashboardRoute.test.tsx`, the address they're now
+// exercised through.
 import { describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderApp } from "../../../test/render";
-import { deferredResponse, mockRoute } from "../../../test/network";
+import { mockRoute } from "../../../test/network";
 
 const USER = { id: "01ARZ3NDEKTSV4RRFFQ69G5FAV", username: "thorin", createdAt: "2026-09-08T12:34:56.789012+00:00" };
 
 const copy = {
-  appTitle: "The Goblin's Tavern",
-  greeting: "Welcome, thorin.",
+  // "Welcome, thorin." in the original — updated for the dashboard's own
+  // greeting copy (sprint 007/07 WI1, AC5); every other assertion here is
+  // unchanged from the original.
+  greeting: "Welcome back, thorin.",
   sessionExpired: "Your session ended. Please sign in again.",
   retry: "Try again",
   networkError: "Cannot reach the server. Check your connection and try again.",
 };
 
-function stubAuthenticated() {
-  mockRoute("GET", "/api/v1/users/me", {
-    status: 200,
-    body: USER,
-    headers: { "X-CSRF-Token": "csrf-token-value" },
-  });
+// The dashboard now lives at `/` (sprint 007/07 WI1) and reads this once
+// `RequireAuth` actually renders it — only the recovery case below ever
+// reaches that far; the others redirect or error out of `RequireAuth`
+// itself before the dashboard would mount.
+function stubEmptyRuns() {
+  mockRoute("GET", "/api/v1/playthrough/runs", { status: 200, body: [] });
 }
 
-describe("HomeRoute and the RequireAuth guard on / (UI-21 … UI-29, UI-42)", () => {
-  it("UI-21 / UI-22: while the session read is in flight shows a labelled spinner and no AppBar; resolves to /signin with no message for an unauthenticated visitor", async () => {
-    const pending = deferredResponse();
-    mockRoute("GET", "/api/v1/users/me", () => pending.promise);
-
-    const app = renderApp(["/"]);
-
-    expect(screen.getByRole("progressbar", { name: /loading/i })).toBeInTheDocument();
-    expect(screen.queryByRole("banner")).not.toBeInTheDocument();
-
-    pending.resolve({
-      status: 401,
-      body: { error: { code: "NOT_AUTHENTICATED", message: "Authentication required.", details: null } },
-    });
-
-    await waitFor(() => expect(app.getPathname()).toBe("/signin"));
-    expect(screen.queryByRole("banner")).not.toBeInTheDocument();
-    expect(screen.queryByText(copy.sessionExpired)).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("UI-23 / UI-24 / UI-42: an authenticated / renders the AppBar (non-heading title), the account control, and only the greeting h1", async () => {
-    // Sign-out itself lives entirely in AccountMenu now (AC3); that control's
-    // own contents are covered by accountMenu.test.tsx / AccountMenu.test.tsx
-    // — this assertion only needs the shared shell to be present here too.
-    stubAuthenticated();
-    renderApp(["/"]);
-
-    const heading = await screen.findByRole("heading", { level: 1 });
-    expect(heading).toHaveTextContent(copy.greeting);
-    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Account" })).toBeInTheDocument();
-
-    const title = screen.getByText(copy.appTitle);
-    expect(title.tagName).toBe("P"); // branding, not the document heading (§3.3)
-  });
-
+describe("RequireAuth guard (UI-28, UI-29, criterion 45)", () => {
   it("UI-28 / criterion 45: a cold load answering 401 SESSION_EXPIRED redirects to /signin and shows the warning", async () => {
     mockRoute("GET", "/api/v1/users/me", {
       status: 401,
@@ -117,6 +90,7 @@ describe("HomeRoute and the RequireAuth guard on / (UI-21 … UI-29, UI-42)", ()
       }
       return { status: 200, body: USER, headers: { "X-CSRF-Token": "csrf-token-value" } };
     });
+    stubEmptyRuns();
     renderApp(["/"]);
 
     const retryButton = await screen.findByRole("button", { name: copy.retry });

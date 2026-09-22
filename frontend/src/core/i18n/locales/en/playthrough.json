@@ -33,5 +33,26 @@
       "locked": "Locked",
       "done": "Done"
     }
+  },
+  "dashboard": {
+    "greeting": "Welcome back, {{username}}.",
+    "subtitle_one": "{{count}} campaign is waiting on you. The lantern is still lit.",
+    "subtitle_other": "{{count}} campaigns are waiting on you. The lantern is still lit.",
+    "card": {
+      "coverArtPlaceholder": "Art",
+      "meta": "Adventure {{current}} of {{total}} · {{players}} · Created {{date}}",
+      "players_one": "{{count}} player",
+      "players_other": "{{count}} players",
+      "begin": "Begin",
+      "resume": "Resume",
+      "unavailableTitle": "Campaign unavailable",
+      "unavailableTrigger": "Why can't I open this?",
+      "unavailableReason": "This campaign's story content is no longer available, so this run can't be opened."
+    },
+    "cta": {
+      "title": "Start a new campaign",
+      "body": "Pick a story, gather a party, and the Dungeon Master takes it from there.",
+      "button": "Create new campaign"
+    }
   }
 }
