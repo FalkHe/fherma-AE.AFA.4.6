@@ -140,6 +140,13 @@ describe("RunRoute's adventures section (sprint 007/06 WI1, AC1-AC5)", () => {
     const ready = renderApp(["/runs/ready"]);
     expect(await screen.findByText("Next up")).toBeInTheDocument();
     expect(screen.queryByText("Every player needs a character before the first adventure can start.")).not.toBeInTheDocument();
+    // The disabled Start adventure button's wrapping span must not carry the
+    // waiting sentence as an aria-label in the ready state — it would leak a
+    // reason that no longer applies into the accessibility tree even though
+    // the hover tooltip itself is already suppressed.
+    expect(
+      ready.container.querySelector('[aria-label="Every player needs a character before the first adventure can start."]'),
+    ).not.toBeInTheDocument();
     ready.unmount();
 
     renderApp(["/runs/waiting"]);

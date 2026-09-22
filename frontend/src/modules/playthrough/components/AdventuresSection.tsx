@@ -98,8 +98,16 @@ function AdventureRow({ adventure, numeral, statusKey, isCurrent }: AdventureRow
   const isLocked = statusKey === "adventures.status.locked";
   const isWaiting = statusKey === "adventures.status.waitingOnParty";
 
+  // MUI's `Tooltip` sets `aria-label` to `title` whenever `title` is a
+  // string (`Tooltip.js`: `titleIsString ? title : null`) -- so passing the
+  // waiting sentence unconditionally and only suppressing the hover popup
+  // via `disableHoverListener` still leaks that sentence into the ready
+  // state's accessibility tree (verifier finding, live preview). `title`
+  // must be non-string (`undefined`) outside the waiting state for MUI to
+  // omit the label entirely, not just an empty string, which is still a
+  // string and would set `aria-label=""`.
   const startButton = (
-    <Tooltip title={t("adventures.waitingHint")} disableHoverListener={!isWaiting}>
+    <Tooltip title={isWaiting ? t("adventures.waitingHint") : undefined}>
       <span>
         <Button variant="outlined" size="small" disabled>
           {t("adventures.start")}
