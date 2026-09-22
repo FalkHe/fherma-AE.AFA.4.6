@@ -5,7 +5,7 @@ the model must never be able to supply. It reaches a tool through
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NotRequired
 
 from langchain_core.messages import AnyMessage, ToolMessage
 from langgraph.graph import MessagesState
@@ -31,7 +31,7 @@ class DmContext:
 
 
 class DmState(MessagesState):
-    pass
+    context: NotRequired[str]
 
 
 def rolls_in(messages: list[AnyMessage], *, start: int = 0) -> list[dict[str, Any]]:

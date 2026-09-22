@@ -18,13 +18,15 @@ def build_graph(
     graph = StateGraph(DmState, context_schema=DmContext)
 
     ## Nodes
+    graph.add_node(nodes.LOAD_CONTEXT, nodes.make_load_context())
     graph.add_node(nodes.RECORD_ACTION, nodes.make_record_action())
     graph.add_node(nodes.NARRATE, nodes.make_narrate(model, system_prompt))
     graph.add_node(nodes.TOOLS_NODE, nodes.make_tools())
     graph.add_node(nodes.RECORD_NARRATION, nodes.make_record_narration())
 
     ## Edges
-    graph.add_edge(START, nodes.RECORD_ACTION)
+    graph.add_edge(START, nodes.LOAD_CONTEXT)
+    graph.add_edge(nodes.LOAD_CONTEXT, nodes.RECORD_ACTION)
     graph.add_edge(nodes.RECORD_ACTION, nodes.NARRATE)
     graph.add_conditional_edges(
         nodes.NARRATE,

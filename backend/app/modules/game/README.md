@@ -11,16 +11,16 @@ or writes an event.
 - `service.py` — the public surface: `build_agent()` compiles the graph over
   the core chat model and the resolved system prompt; `turn()` runs one
   player message on a thread and returns the reply plus the rolls made.
-- `agent/graph.py` — the `StateGraph`: `narrate -> (tools -> narrate)* -> END`.
-- `agent/nodes.py` — node factories and routing functions.
-- `agent/state.py` — `DmState`, `DmContext` (session, user, actor, turn id —
+- `agent/graph.py` — the `StateGraph`: `load_context -> record_action -> narrate -> (tools -> narrate)* -> record_narration -> END`.
+- `agent/nodes.py` — node factories, context hydration, and routing functions.
+- `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id —
   what tools need and the model must never supply) and readers.
 - `agent/tools.py` — the tools the DM may call; each is a thin call into
-  `playthrough.service`.
+  `playthrough.service` or `content.service`.
 - `prompts/v<n>/system/dm.md` — the DM system prompt, resolved through
   `core/prompts/` as `game/system/dm`.
-- `commands.py` — `app game turn <actor-id> "<text>" --user <id>` for a
-  manual smoke run against a real run.
+- `commands.py` — `app game play --user <id> [--run-id <run-id>]` for an
+  interactive game loop across turns.
 
 ## Surface
 
@@ -37,9 +37,7 @@ or writes an event.
 
 ## Quirks
 
-- The checkpointer is `InMemorySaver`: a thread lives as long as the compiled
-  agent object. The Postgres checkpointer in `core/checkpointer/` is wired in
-  a later step.
+- The checkpointer uses `core/checkpointer/service.py` for Postgres session-level persistence, with `InMemorySaver` fallback for isolated unit testing.
 - No guard node and no `ask_player` interrupt yet.
 - The graph is async end to end because the mechanics are.
 - Tests monkeypatch `service.chat_model`, `service.load_prompt` and

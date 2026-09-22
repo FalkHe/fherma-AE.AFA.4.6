@@ -530,6 +530,7 @@ def test_the_real_dm_prompt_names_the_tool_and_the_graph_has_all_nodes():
 
     assert "roll_dice" in service.load_prompt(service.SYSTEM_PROMPT_ID).text
     assert set(agent.get_graph().nodes) >= {
+        nodes.LOAD_CONTEXT,
         nodes.RECORD_ACTION,
         nodes.NARRATE,
         nodes.TOOLS_NODE,
@@ -639,6 +640,153 @@ def test_cli_play_uses_checkpointer_from_service(monkeypatch, prompt):
 
     assert result.exit_code == 0, result.output
     assert checkpointer_entered == [True]
+
+
+def test_load_context_injects_scene_party_and_recap_into_system_prompt(monkeypatch, prompt):
+    from app.modules.content.schemas import Exit, Scene
+    from app.modules.playthrough.models import CampaignRun, GameObject
+    from app.modules.playthrough.schemas import NarrationRead
+
+    captured_inputs = []
+
+    class _CaptureModel(GenericFakeChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, input, **kwargs):
+            captured_inputs.append(input)
+            return AIMessage(content="The adventure continues.")
+
+    class _QueryResult:
+        def __init__(self, scalar=None, scalars_list=None):
+            self._scalar = scalar
+            self._scalars_list = scalars_list or []
+
+        def scalar_one_or_none(self):
+            return self._scalar
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self._scalars_list
+
+    char = GameObject(
+        id="char-1",
+        name="Rosalind",
+        current_hp=15,
+        max_hp=15,
+        armour_class=16,
+        is_alive=True,
+        kind="creature",
+        member_id="mem-1",
+        scene_id="tavern-room",
+        campaign_run_id="run-1",
+        instance_key="char-1",
+    )
+    monster = GameObject(
+        id="gob-1",
+        name="Goblin Lookout",
+        current_hp=6,
+        max_hp=6,
+        armour_class=13,
+        is_alive=True,
+        kind="creature",
+        member_id=None,
+        scene_id="tavern-room",
+        campaign_run_id="run-1",
+        instance_key="gob-1",
+    )
+    fixture = GameObject(
+        id="chest-1",
+        name="Oak Chest",
+        kind="fixture",
+        member_id=None,
+        scene_id="tavern-room",
+        campaign_run_id="run-1",
+        instance_key="chest-1",
+    )
+
+    execute_queries = [
+        _QueryResult(
+            scalar=CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
+        ),
+        _QueryResult(scalars_list=[char]),
+        _QueryResult(scalars_list=["Shortsword", "Healing Potion"]),
+        _QueryResult(scalars_list=[monster, fixture]),
+    ]
+    query_idx = 0
+
+    class _ExecutableDb:
+        async def execute(self, statement):
+            nonlocal query_idx
+            if query_idx < len(execute_queries):
+                res = execute_queries[query_idx]
+                query_idx += 1
+                return res
+            return _QueryResult()
+
+        async def commit(self):
+            pass
+
+    scene = Scene(
+        id="tavern-room",
+        title="The Old Boar Tavern",
+        truth=["A warm fireplace flickers against stone walls.", "The barkeep is pouring ale."],
+        npc_intent="Keep the peace and serve drinks",
+        exits=[
+            Exit(
+                id="cellar-door",
+                kind="scene",
+                to="cellar",
+                description="a wooden trapdoor to the cellar",
+            )
+        ],
+    )
+    monkeypatch.setattr(nodes.content_service, "load_scene", lambda cid, ver, sid: scene)
+
+    async def fake_awaiting(db, *, user_id, run_id):
+        return "roll:ability_check:dexterity"
+
+    async def fake_recap(db, *, run_id, n=5):
+        return [
+            NarrationRead(
+                id="n1",
+                text="You arrived at the tavern in the dead of night.",
+                created_at="2026-09-22T00:00:00Z",
+            )
+        ]
+
+    monkeypatch.setattr(nodes.playthrough_service, "get_awaiting", fake_awaiting)
+    monkeypatch.setattr(nodes.playthrough_service, "recap", fake_recap)
+
+    ctx = DmContext(db=_ExecutableDb(), user_id="user-1", run_id="run-1", actor_id="char-1")
+    agent = service.build_agent(model=_CaptureModel(messages=iter([])))
+
+    res = asyncio.run(
+        service.turn(
+            agent, thread_id="t-cold", context=ctx, player_text="I look around the tavern."
+        )
+    )
+    assert res.reply == "The adventure continues."
+
+    assert len(captured_inputs) > 0
+    system_msg = captured_inputs[0][0]
+    content = system_msg.content
+
+    assert "## Current Game Context" in content
+    assert "The Old Boar Tavern" in content
+    assert "A warm fireplace flickers against stone walls." in content
+    assert "Keep the peace and serve drinks" in content
+    assert "cellar-door (a wooden trapdoor to the cellar) -> cellar" in content
+    assert (
+        "Rosalind (id: char-1): HP 15/15, AC 16, status: alive, "
+        "carried items: [Shortsword, Healing Potion]"
+    ) in content
+    assert "Goblin Lookout (id: gob-1, HP: 6/6, AC: 13)" in content
+    assert "Oak Chest (id: chest-1, kind: fixture)" in content
+    assert "### Awaiting\n- roll:ability_check:dexterity" in content
+    assert "You arrived at the tavern in the dead of night." in content
 
 
 class _FakeSessionmaker:

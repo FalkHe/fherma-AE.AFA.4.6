@@ -8,11 +8,15 @@ from typing import Literal, Protocol
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.prebuilt import ToolNode, ToolRuntime
+from sqlalchemy import select
 
+from app.modules.content import service as content_service
 from app.modules.game.agent.state import DmContext, DmState
 from app.modules.game.agent.tools import TOOLS
+from app.modules.playthrough import models as playthrough_models
 from app.modules.playthrough import service as playthrough_service
 
+LOAD_CONTEXT: Literal["load_context"] = "load_context"
 RECORD_ACTION: Literal["record_action"] = "record_action"
 NARRATE: Literal["narrate"] = "narrate"
 TOOLS_NODE: Literal["tools"] = "tools"
@@ -24,6 +28,141 @@ class Node(Protocol):
     `Callable[[DmState], dict]` does not type-check against that."""
 
     async def __call__(self, state: DmState, **kwargs) -> dict: ...
+
+
+async def _build_game_context(ctx: DmContext) -> str:
+    if ctx.db is None or ctx.run_id is None or not hasattr(ctx.db, "execute"):
+        return ""
+
+    try:
+        sections = []
+
+        # 1. Campaign & Run
+        run_result = await ctx.db.execute(
+            select(playthrough_models.CampaignRun).where(
+                playthrough_models.CampaignRun.id == ctx.run_id
+            )
+        )
+        run = run_result.scalar_one_or_none()
+        if run is None:
+            return ""
+
+        campaign_id = run.campaign_id
+        content_version = run.content_version
+
+        # 2. Party Characters
+        char_result = await ctx.db.execute(
+            select(playthrough_models.GameObject).where(
+                playthrough_models.GameObject.campaign_run_id == ctx.run_id,
+                playthrough_models.GameObject.kind == "creature",
+                playthrough_models.GameObject.member_id.is_not(None),
+            )
+        )
+        characters = list(char_result.scalars().all())
+
+        current_scene_id = None
+        party_lines = []
+        for char in characters:
+            if current_scene_id is None and char.scene_id:
+                current_scene_id = char.scene_id
+
+            # Carried items
+            items_result = await ctx.db.execute(
+                select(playthrough_models.GameObject.name).where(
+                    playthrough_models.GameObject.campaign_run_id == ctx.run_id,
+                    playthrough_models.GameObject.owner_object_id == char.id,
+                )
+            )
+            carried_items = list(items_result.scalars().all())
+            items_str = ", ".join(carried_items) if carried_items else "none"
+
+            status_str = "alive" if char.is_alive else "unconscious/dead"
+            party_lines.append(
+                f"- {char.name} (id: {char.id}): HP {char.current_hp}/{char.max_hp}, "
+                f"AC {char.armour_class}, status: {status_str}, carried items: [{items_str}]"
+            )
+
+        if party_lines:
+            sections.append("### Party Status\n" + "\n".join(party_lines))
+
+        # 3. Scene Context
+        if current_scene_id:
+            scene_info = [f"- Scene ID: {current_scene_id}"]
+            try:
+                scene = content_service.load_scene(campaign_id, content_version, current_scene_id)
+                scene_info.append(f"- Title: {scene.title}")
+                if scene.truth:
+                    scene_info.append(f"- Facts: {'; '.join(scene.truth)}")
+                if scene.npc_intent:
+                    scene_info.append(f"- NPC intent: {scene.npc_intent}")
+                if scene.exits:
+                    exits_str = ", ".join(
+                        f"{e.id} ({e.description}) -> {e.to or 'end'}" for e in scene.exits
+                    )
+                    scene_info.append(f"- Exits: {exits_str}")
+            except Exception:
+                pass
+
+            # Present objects & creatures in this scene
+            scene_objs_result = await ctx.db.execute(
+                select(playthrough_models.GameObject).where(
+                    playthrough_models.GameObject.campaign_run_id == ctx.run_id,
+                    playthrough_models.GameObject.scene_id == current_scene_id,
+                    playthrough_models.GameObject.owner_object_id.is_(None),
+                )
+            )
+            scene_objects = list(scene_objs_result.scalars().all())
+            creatures = [
+                f"{obj.name} (id: {obj.id}, HP: {obj.current_hp}/{obj.max_hp}, "
+                f"AC: {obj.armour_class})"
+                for obj in scene_objects
+                if obj.kind == "creature" and obj.member_id is None
+            ]
+            fixtures_items = [
+                f"{obj.name} (id: {obj.id}, kind: {obj.kind})"
+                for obj in scene_objects
+                if obj.kind in ("item", "fixture")
+            ]
+
+            if creatures:
+                scene_info.append(f"- Creatures present: {', '.join(creatures)}")
+            if fixtures_items:
+                scene_info.append(f"- Objects & fixtures: {', '.join(fixtures_items)}")
+
+            sections.append("### Current Scene\n" + "\n".join(scene_info))
+
+        # 4. Awaiting State
+        try:
+            awaiting = await playthrough_service.get_awaiting(
+                ctx.db, user_id=ctx.user_id, run_id=ctx.run_id
+            )
+            if awaiting != "none":
+                sections.append(f"### Awaiting\n- {awaiting}")
+        except Exception:
+            pass
+
+        # 5. Recent Recap
+        try:
+            recaps = await playthrough_service.recap(ctx.db, run_id=ctx.run_id, n=5)
+            if recaps:
+                recap_lines = [f"- {r.text}" for r in recaps if r.text.strip()]
+                if recap_lines:
+                    sections.append("### Recent Narrative Recap\n" + "\n".join(recap_lines))
+        except Exception:
+            pass
+
+        return "\n\n".join(sections)
+    except Exception:
+        return ""
+
+
+def make_load_context() -> Node:
+    async def load_context(state: DmState, *, runtime: ToolRuntime[DmContext]) -> dict:
+        ctx = runtime.context
+        context_text = await _build_game_context(ctx)
+        return {"context": context_text}
+
+    return load_context
 
 
 def make_record_action() -> Node:
@@ -55,9 +194,14 @@ def make_record_action() -> Node:
 
 def make_narrate(model: BaseChatModel, system_prompt: str) -> Node:
     bound = model.bind_tools(TOOLS)
-    system = SystemMessage(content=system_prompt)
 
     async def narrate(state: DmState) -> dict:
+        context = state.get("context", "")
+        if context:
+            full_system = f"{system_prompt}\n\n## Current Game Context\n{context}"
+        else:
+            full_system = system_prompt
+        system = SystemMessage(content=full_system)
         reply = await bound.ainvoke([system, *state["messages"]])
         return {"messages": [reply]}
 
