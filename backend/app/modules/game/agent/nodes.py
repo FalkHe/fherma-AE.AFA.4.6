@@ -7,10 +7,11 @@ import re
 from typing import Literal, Protocol
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langgraph.prebuilt import ToolNode, ToolRuntime
 from sqlalchemy import select
 
+from app.core.llm import service as llm_service
 from app.modules.content import service as content_service
 from app.modules.game.agent.state import DmContext, DmState
 from app.modules.game.agent.tools import TOOLS
@@ -288,7 +289,7 @@ def make_narrate(model: BaseChatModel, system_prompt: str) -> Node:
         else:
             full_system = system_prompt
         system = SystemMessage(content=full_system)
-        reply = await bound.ainvoke([system, *state["messages"]])
+        reply = await llm_service.ainvoke_chat(bound, [system, *state["messages"]], label="narrate")
         return {"messages": [reply]}
 
     return narrate
@@ -300,6 +301,36 @@ def _handle_tool_error(exc: Exception) -> str:
 
 def make_tools() -> ToolNode:
     return ToolNode(TOOLS, handle_tool_errors=_handle_tool_error)
+
+
+def _turn_usage(messages: list[BaseMessage]) -> llm_service.Usage:
+    """Sum every model call this turn made into one `Usage`.
+
+    "This turn" is every `AIMessage` after the last `HumanMessage` in
+    `state["messages"]` -- that boundary survives an interrupt (a question
+    or a roll mid-turn), so the whole resumed leg is still counted, never
+    just its final call. Token counts add as plain ints; `cost_usd` is the
+    sum of whichever calls reported one, or `None` when none did -- a
+    provider that never reports cost must not make the turn look free.
+    """
+    last_human_index = -1
+    for index, message in enumerate(messages):
+        if isinstance(message, HumanMessage):
+            last_human_index = index
+
+    usages = [
+        llm_service.usage_of(message)
+        for message in messages[last_human_index + 1 :]
+        if isinstance(message, AIMessage)
+    ]
+    costs = [usage.cost_usd for usage in usages if usage.cost_usd is not None]
+
+    return llm_service.Usage(
+        prompt_tokens=sum(usage.prompt_tokens for usage in usages),
+        completion_tokens=sum(usage.completion_tokens for usage in usages),
+        total_tokens=sum(usage.total_tokens for usage in usages),
+        cost_usd=sum(costs) if costs else None,
+    )
 
 
 def make_record_narration() -> Node:
@@ -323,6 +354,7 @@ def make_record_narration() -> Node:
                     visibility="player",
                     payload={"text": text},
                     turn_id=ctx.turn_id,
+                    usage=_turn_usage(state["messages"]),
                 )
                 await ctx.db.commit()
 

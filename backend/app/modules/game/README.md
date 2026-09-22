@@ -56,3 +56,11 @@ or writes an event.
 - Tests monkeypatch `service.chat_model`, `service.load_prompt` and
   `tools.playthrough_service.roll`; call
   through the module reference, never by name import.
+- `narrate` calls the bound model through `core/llm/service.ainvoke_chat()`,
+  never `bound.ainvoke()` directly, so a transient provider failure is
+  retried quietly and a permanent one raises the classified `LlmError` --
+  same as every other model call in the app.
+- `record_narration` sums `llm_service.usage_of()` over every `AIMessage`
+  since the last `HumanMessage` (the boundary an interrupt survives) and
+  passes the total as that turn's narration `usage=`; `playthrough.service`
+  stores it and sums it back up per run.
