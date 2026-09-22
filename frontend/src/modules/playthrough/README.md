@@ -57,9 +57,12 @@ then its party and its adventures.
   fold into the same `notFound` flag; the caller never has to tell them
   apart either.
 - `PartySection` — the "n of m characters ready" readout plus one
-  `PlayerCard` per member and an `InviteTile` for open seats; both the card's
-  "Create character" button and the tile open `InDevelopmentDialog` (WI3,
-  keys in `common`), whose open state `PartySection` alone owns (WI2).
+  `PlayerCard` per member and an `InviteTile` for open seats; the tile opens
+  `InDevelopmentDialog` (WI3, keys in `common`), whose open state
+  `PartySection` alone owns (WI2). The card's "Create character" button is a
+  link to `character`'s own creation-chat page (`/runs/:runId/create-character`,
+  sprint 009/06 WI1) — `PartySection` takes `runId` to build that address and
+  passes it to `PlayerCard` as `createHref`.
 - `AdventuresSection` — one numbered row per adventure in campaign order;
   the first unplayed one reads "Next up"/"Waiting on party" from whether
   every seated member is ready, later rows read "Locked", finished ones

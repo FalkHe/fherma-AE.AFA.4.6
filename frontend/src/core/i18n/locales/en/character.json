@@ -1,0 +1,51 @@
+{
+  "chat": {
+    "title": "Create your character",
+    "subtitle": "Tell the tale. I'll keep the numbers.",
+    "back": "Back to the run",
+    "keeper": "Tavern Keeper",
+    "you": "you",
+    "placeholder": "Say what you like…",
+    "send": "Send",
+    "error": "The tavern is noisy, I did not catch that. Say it again?"
+  },
+  "choices": {
+    "takeReadyMade": "Take {{name}}",
+    "makeMyOwn": "Make my own",
+    "suggestScores": "Suggest a set for my class",
+    "rollScores": "Roll for me",
+    "spendScores": "I'll spend the points myself",
+    "defaultEquipment": "Just the default"
+  },
+  "sheet": {
+    "heading": "Your sheet so far",
+    "step": "Step {{n}} of 7",
+    "strip": "{{raceClass}} · Level {{level}} · step {{n}} of 7",
+    "empty": "—",
+    "fields": {
+      "name": "Name",
+      "race": "Race",
+      "class": "Class",
+      "level": "Level",
+      "alignment": "Alignment",
+      "abilities": {
+        "str": "STR",
+        "dex": "DEX",
+        "con": "CON",
+        "int": "INT",
+        "wis": "WIS",
+        "cha": "CHA"
+      },
+      "hitPoints": "Hit points",
+      "armourClass": "Armour class",
+      "skills": "Skills",
+      "equipment": "Equipment"
+    }
+  },
+  "leave": {
+    "title": "Leave character creation?",
+    "body": "Nothing is kept, you would start over.",
+    "stay": "Keep going",
+    "leave": "Leave"
+  }
+}

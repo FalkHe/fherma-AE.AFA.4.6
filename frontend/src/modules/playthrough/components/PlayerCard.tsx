@@ -1,13 +1,15 @@
 // One seat in the party grid (sprint 007/05 WI2, AC2/AC3) — initial, name,
-// role badge, character state and a "Create character" button that always
-// opens the shared in-development dialog (the character-creation flow
-// itself doesn't exist yet, so the button reads the same whether or not the
+// role badge, character state and a "Create character" link that always
+// opens the creation chat at `createHref` (sprint 009/06 WI1, AC1: the
+// creation flow now exists, so the button reads the same whether or not the
 // member already has a character — brief's own wording lists it as a fixed
-// per-card element, not conditional on readiness). Visual treatment (card
-// tone, state-box fill) still tracks `ready` so a party that already has
-// its characters reads differently from one that doesn't
+// per-card element, not conditional on readiness — but navigates instead of
+// opening the in-development dialog). Visual treatment (card tone,
+// state-box fill) still tracks `ready` so a party that already has its
+// characters reads differently from one that doesn't
 // (docs/design/dnd-app-dashboard-design/project/CampaignRun.dc.html:39-59).
 import type { ReactElement } from "react";
+import { Link as RouterLink } from "react-router";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -23,10 +25,10 @@ import type { RunMember } from "../hooks/useRunOverview";
 
 export interface PlayerCardProps {
   member: RunMember;
-  onCreateCharacter: () => void;
+  createHref: string;
 }
 
-export function PlayerCard({ member, onCreateCharacter }: PlayerCardProps): ReactElement {
+export function PlayerCard({ member, createHref }: PlayerCardProps): ReactElement {
   const { t } = useTranslation("playthrough");
   const initial = member.username.charAt(0).toUpperCase();
 
@@ -87,7 +89,7 @@ export function PlayerCard({ member, onCreateCharacter }: PlayerCardProps): Reac
               {member.characterName ?? t("party.card.noCharacter")}
             </Typography>
           </Stack>
-          <Button variant="outlined" size="small" onClick={onCreateCharacter}>
+          <Button variant="outlined" size="small" component={RouterLink} to={createHref}>
             {t("party.card.createCharacter")}
           </Button>
         </Box>
