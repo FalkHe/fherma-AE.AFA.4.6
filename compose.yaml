@@ -25,8 +25,12 @@ services:
       target: dev
     environment:
       # The SPA calls the backend from the browser, so this is the host-side
-      # URL, not the Compose service name.
-      VITE_API_URL: http://${LOCAL_HOST_IP:-localhost}:${LOCAL_HOST_WEB_PORT:-8000}
+      # URL, not the Compose service name. Override it with the public URL
+      # when the stack is behind a reverse proxy.
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      # Vite rejects unknown Host headers. Set this to the reverse proxy's
+      # public hostname; localhost and IP addresses need no explicit entry.
+      VITE_ALLOWED_HOST: ${VITE_ALLOWED_HOST:-}
       # Bind mounts do not reliably propagate inotify events into containers;
       # see vite.config.ts.
       VITE_SERVER_USE_POLLING: "true"

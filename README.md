@@ -41,6 +41,30 @@ Open <http://localhost:5173>, register a username and password, and sign in.
 
 `make down` stops everything. `make help` lists every target.
 
+### Public hostname / SSL reverse proxy
+
+The stack can remain in `ENVIRONMENT=development` behind an HTTPS reverse
+proxy. Configure the browser-facing addresses in `.env`:
+
+```dotenv
+VITE_API_URL=https://dnd.example.com
+VITE_ALLOWED_HOST=dnd.example.com
+FRONTEND_ORIGIN=https://dnd.example.com
+```
+
+For one public hostname, route `/api/*` to `127.0.0.1:8000` and all other
+requests to `127.0.0.1:5173`. If the API uses a separate hostname, put that
+origin in `VITE_API_URL`; `FRONTEND_ORIGIN` must still be the exact frontend
+origin. Recreate the affected services after changing these values:
+
+```bash
+docker compose up -d --force-recreate frontend app-web
+```
+
+The proxy must disable response buffering for `/api/*` so campaign SSE updates
+are delivered immediately, and it must support WebSocket upgrades for the Vite
+development server.
+
 `OPENROUTER_API_KEY` is not needed yet — nothing calls a model until the game
 agent lands — but set it now if you have one; every LLM call in this project
 goes through OpenRouter.
