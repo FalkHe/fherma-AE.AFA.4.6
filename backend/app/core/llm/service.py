@@ -10,6 +10,12 @@ module reference (`from app.core.llm import service as llm_service`), never
 a name import - tests monkeypatch `service.ChatOpenRouter` and
 `service.build_sdk_client`.
 
+`ainvoke_chat()` (sprint 010-02) is the async entry point for a caller that
+already holds a built, tool-bound `Runnable` (the game agent's compiled
+graph) and must await it - unlike `chat()`, it never builds the model
+itself, so it takes one in. Same exception translation as `chat()`, on top
+of `retry.acall_with_retry()` rather than `call_with_retry()`.
+
 `build_sdk_client()` hands `ChatOpenRouter` a pre-built `openrouter.OpenRouter`
 with the SDK's own retry switched off (`retry_config=None`): left at its
 default, the SDK retries 5XX itself with a near-unbounded backoff, which
@@ -55,6 +61,7 @@ import structlog
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.runnables import Runnable
 from langchain_openrouter import ChatOpenRouter
 from openrouter.components import ImageGenerationResponse
 from openrouter.components import ImageGenerationUsage as SdkImageUsage
@@ -67,7 +74,7 @@ from app.core.llm.errors import (
     classify,
     raise_for_finish_reason,
 )
-from app.core.llm.retry import call_with_retry, stream_with_retry
+from app.core.llm.retry import acall_with_retry, call_with_retry, stream_with_retry
 from app.core.settings import get_settings
 from app.core.tracing import service as tracing
 
@@ -186,6 +193,40 @@ def chat(
         message = call_with_retry(_attempt, label="chat")
         observation.update(output=message.text)
         return message
+
+
+async def ainvoke_chat(
+    model: Runnable[LanguageModelInput, BaseMessage],
+    prompt: LanguageModelInput,
+    *,
+    label: str = "chat_async",
+) -> AIMessage:
+    """Await `model.ainvoke(prompt)` and return the reply, translating
+    provider failures exactly like `chat()`.
+
+    Unlike `chat()`, this takes an already-built, already-tool-bound
+    runnable (the game agent's compiled graph, in particular) and never
+    calls `chat_model()` itself: `LlmConfigurationError` stays a
+    `build_agent()`-time failure, and the agent's own injected-model test
+    seam is untouched by this seam. It passes no `config=` and opens no
+    span - the caller's turn is already traced by the time this runs.
+
+    The whole attempt runs through `acall_with_retry()` (← `retry.py`), the
+    async twin of the `call_with_retry()` `chat()` uses.
+    """
+
+    async def _attempt() -> AIMessage:
+        try:
+            message = await model.ainvoke(prompt)
+        except Exception as exc:
+            if (err := classify(exc)) is not None:
+                raise err from exc
+            raise
+
+        raise_for_finish_reason(message)
+        return message
+
+    return await acall_with_retry(_attempt, label=label)
 
 
 def chat_stream(
