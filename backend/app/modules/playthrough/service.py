@@ -63,6 +63,7 @@ from app.modules.playthrough.schemas import (
     CampaignRunMemberRead,
     CampaignRunOverviewRead,
     CampaignRunSummaryRead,
+    CharacterRead,
     CharacterState,
     NarrationRead,
     RollKind,
@@ -371,12 +372,33 @@ def _excerpt(text: str, limit: int = 200) -> str:
     return cut.rstrip() + "…"
 
 
+def character_read(obj: GameObject) -> CharacterRead:
+    """`CharacterRead` from a character `GameObject` (sprint 009-07, ←
+    research Decision 5) -- the four card facts (`race`, `characterClass`,
+    `level`, `appearance`) are read off `obj.state` through
+    `CharacterState`, the fighting stats off the object's own columns.
+    Shared by `get_run_overview`'s member list and the
+    `POST …/character` route, so both answer the same shape."""
+    state = CharacterState.model_validate(obj.state)
+    return CharacterRead(
+        id=obj.id,
+        name=obj.name,
+        current_hp=obj.current_hp,
+        max_hp=obj.max_hp,
+        armour_class=obj.armour_class,
+        race=state.race,
+        character_class=state.character_class,
+        level=state.level,
+        appearance=state.appearance,
+    )
+
+
 async def get_run_overview(
     db: AsyncSession, *, user_id: str, run_id: str
 ) -> CampaignRunOverviewRead:
     """One aggregate overview for a run screen (WI2, AC3): the run itself,
-    every member with username, role, a `ready` flag and the character's
-    name when one exists, and the campaign's adventures in the campaign's
+    every member with username, role, a `ready` flag and the character
+    card when one exists, and the campaign's adventures in the campaign's
     own order with a clipped intro and a done/active/unplayed status.
 
     Gated by membership exactly like every other read (`_require_member`
@@ -384,7 +406,7 @@ async def get_run_overview(
     `campaign_run_members` to `users` and outer-joining `objects` on
     `member_id == member.id AND kind == 'creature'` -- a non-player
     creature's `member_id` is always `None`, so it can never supply a
-    `character_name` (← research). Adventures come from `_load_pinned(run)`
+    character (← research). Adventures come from `_load_pinned(run)`
     (`None` means unavailable, AC2's twin) paired with this run's own
     `adventure_runs` rows. Reads only: no commit, no status change, no
     event.
@@ -393,7 +415,7 @@ async def get_run_overview(
     run = await _get_run(db, run_id)
 
     member_stmt = (
-        select(CampaignRunMember, User.username, GameObject.name)
+        select(CampaignRunMember, User.username, GameObject)
         .join(User, User.id == CampaignRunMember.user_id)
         .outerjoin(
             GameObject,
@@ -408,10 +430,10 @@ async def get_run_overview(
             user_id=member.user_id,
             username=username,
             role=member.role,
-            ready=character_name is not None,
-            character_name=character_name,
+            ready=character_object is not None,
+            character=character_read(character_object) if character_object is not None else None,
         )
-        for member, username, character_name in member_result.all()
+        for member, username, character_object in member_result.all()
     ]
 
     adventure_run_stmt = select(AdventureRun).where(AdventureRun.campaign_run_id == run_id)

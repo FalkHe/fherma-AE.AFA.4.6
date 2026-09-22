@@ -203,14 +203,24 @@ def test_ac3_overview_answers_run_members_and_adventures_in_campaign_order(
     second_member_id = generate_id()
 
     owner_without_character = SimpleNamespace(
-        user_id=USER_ID, username="aragorn", role="owner", ready=False, character_name=None
+        user_id=USER_ID, username="aragorn", role="owner", ready=False, character=None
     )
     member_with_character = SimpleNamespace(
         user_id=second_member_id,
         username="frodo",
         role="owner",
         ready=True,
-        character_name="Rosalind Thorn",
+        character=SimpleNamespace(
+            id=generate_id(),
+            name="Rosalind Thorn",
+            current_hp=9,
+            max_hp=9,
+            armour_class=14,
+            race="Halfling",
+            character_class="Rogue",
+            level=1,
+            appearance="Barely three feet of him, all elbows and grin.",
+        ),
     )
     overview = SimpleNamespace(
         id=run_id,
@@ -271,14 +281,20 @@ def test_ac3_overview_answers_run_members_and_adventures_in_campaign_order(
         "username",
         "role",
         "ready",
-        "characterName",
+        "character",
     }
     assert no_character_member["username"] == "aragorn"
     assert no_character_member["role"] == "owner"
     assert no_character_member["ready"] is False
-    assert no_character_member["characterName"] is None
+    assert no_character_member["character"] is None
     assert ready_member["ready"] is True
-    assert ready_member["characterName"] == "Rosalind Thorn"
+    assert ready_member["character"]["name"] == "Rosalind Thorn"
+    assert ready_member["character"]["race"] == "Halfling"
+    assert ready_member["character"]["characterClass"] == "Rogue"
+    assert ready_member["character"]["level"] == 1
+    assert ready_member["character"]["appearance"] == (
+        "Barely three feet of him, all elbows and grin."
+    )
 
     assert [adventure["id"] for adventure in body["adventures"]] == [
         "goblins-of-greenhollow",

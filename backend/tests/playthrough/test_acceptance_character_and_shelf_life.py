@@ -107,6 +107,20 @@ def _make_character(**overrides):
         member_id=generate_id(),
         template_id=None,
         instance_key="pc:member-placeholder:1",
+        state={
+            "abilities": {
+                "strength": 10,
+                "dexterity": 14,
+                "constitution": 12,
+                "intelligence": 10,
+                "wisdom": 13,
+                "charisma": 8,
+            },
+            "race": "Halfling",
+            "character_class": "Rogue",
+            "background": "Raised in the kitchens of a river inn.",
+            "appearance": "Barely three feet of him, all elbows and grin.",
+        },
     )
     fields.update(overrides)
     return SimpleNamespace(**fields)
@@ -144,7 +158,17 @@ def test_ac1_creating_a_character_reads_it_back_moves_the_run_to_ready_and_refus
 
     assert response.status_code == 201, response.text
     body = response.json()
-    assert set(body.keys()) == {"id", "name", "currentHp", "maxHp", "armourClass"}, body
+    assert set(body.keys()) == {
+        "id",
+        "name",
+        "currentHp",
+        "maxHp",
+        "armourClass",
+        "race",
+        "characterClass",
+        "level",
+        "appearance",
+    }, body
     assert body["id"] == str(character.id)
     assert body["name"] == character.name
     assert body["currentHp"] == character.current_hp
