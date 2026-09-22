@@ -62,6 +62,34 @@ class _EventSpy:
         return _Event(kwargs)
 
 
+@dataclass
+class _Run:
+    status: str
+
+
+@dataclass
+class _GetCampaignRunSpy:
+    """Stands in for `playthrough_service.get_campaign_run`; `status` is
+    set by the test before the turn runs to pick which run state the
+    fake DB "holds"."""
+
+    status: str = "active"
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    async def __call__(self, db, **kwargs):
+        self.calls.append({"db": db, **kwargs})
+        return _Run(status=self.status)
+
+
+@dataclass
+class _ActivateCampaignRunSpy:
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    async def __call__(self, db, **kwargs):
+        self.calls.append({"db": db, **kwargs})
+        return _Run(status="active")
+
+
 class _ToolAwareFakeModel(GenericFakeChatModel):
     """`GenericFakeChatModel` raises `NotImplementedError` on `bind_tools`,
     which the narrate node calls; the script already carries the tool
@@ -160,6 +188,20 @@ def event_spy(monkeypatch):
     return spy
 
 
+@pytest.fixture(autouse=True)
+def get_campaign_run_spy(monkeypatch):
+    spy = _GetCampaignRunSpy()
+    monkeypatch.setattr(nodes.playthrough_service, "get_campaign_run", spy)
+    return spy
+
+
+@pytest.fixture(autouse=True)
+def activate_campaign_run_spy(monkeypatch):
+    spy = _ActivateCampaignRunSpy()
+    monkeypatch.setattr(nodes.playthrough_service, "activate_campaign_run", spy)
+    return spy
+
+
 def test_turn_without_a_roll_returns_the_reply(prompt, roll_spy, event_spy):
     agent = service.build_agent(model=_scripted_model([AIMessage(content="You enter the tavern.")]))
 
@@ -177,6 +219,41 @@ def test_turn_without_a_roll_returns_the_reply(prompt, roll_spy, event_spy):
     assert event_spy.calls[1]["payload"] == {"text": "You enter the tavern."}
     assert event_spy.calls[1]["run_id"] == "run-1"
     assert event_spy.calls[1]["turn_id"] == "turn-1"
+
+
+def test_first_narration_activates_a_ready_run(
+    prompt, roll_spy, get_campaign_run_spy, activate_campaign_run_spy
+):
+    get_campaign_run_spy.status = "ready"
+    agent = service.build_agent(model=_scripted_model([AIMessage(content="You enter the tavern.")]))
+
+    _turn(agent, "I walk in.")
+
+    assert get_campaign_run_spy.calls == [{"db": _DB, "user_id": "user-1", "run_id": "run-1"}]
+    assert activate_campaign_run_spy.calls == [{"db": _DB, "user_id": "user-1", "run_id": "run-1"}]
+
+
+def test_later_narration_does_not_reactivate_an_active_run(
+    prompt, roll_spy, get_campaign_run_spy, activate_campaign_run_spy
+):
+    get_campaign_run_spy.status = "active"
+    agent = service.build_agent(model=_scripted_model([AIMessage(content="You enter the tavern.")]))
+
+    _turn(agent, "I walk in.")
+
+    assert activate_campaign_run_spy.calls == []
+
+
+@pytest.mark.parametrize("status", ["finished", "archived"])
+def test_narration_on_a_finished_or_archived_run_does_not_activate_it(
+    prompt, roll_spy, get_campaign_run_spy, activate_campaign_run_spy, status
+):
+    get_campaign_run_spy.status = status
+    agent = service.build_agent(model=_scripted_model([AIMessage(content="You enter the tavern.")]))
+
+    _turn(agent, "I walk in.")
+
+    assert activate_campaign_run_spy.calls == []
 
 
 def test_turn_routes_the_roll_through_the_playthrough_service(prompt, roll_spy):
@@ -297,6 +374,7 @@ def test_content_tools_resolve_campaign_and_version_from_run(prompt, monkeypatch
     class _FakeCampaignRun:
         campaign_id: str = "greenhollow"
         content_version: str = "v1"
+        status: str = "active"
 
     async def fake_get_campaign_run(db, *, user_id, run_id):
         return _FakeCampaignRun()
