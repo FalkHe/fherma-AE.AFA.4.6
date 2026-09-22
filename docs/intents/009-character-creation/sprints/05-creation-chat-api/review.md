@@ -24,3 +24,4 @@ Brief: docs/intents/009-character-creation/sprints/05-creation-chat-api/brief.md
 
 ## Verdict
 Round 1: changes requested — the ability scores in the running sheet leave out the race's bonus, so a halfling rogue reads dexterity 15 while the armour class beside it, the Keeper's own review and the saved character all say 17; everything else checked out over the network.
+Round 2: approve — the running sheet's ability scores now include the race's bonus and agree with the Keeper's review, the armour class beside them and the saved character; starting, holding and saving the conversation over the network all work, and the refusals still hold.

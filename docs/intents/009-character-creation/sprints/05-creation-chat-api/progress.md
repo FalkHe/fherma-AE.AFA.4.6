@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: draft
+stage: done
 ---
 # Progress: Sprint 05
 
@@ -24,3 +24,4 @@ Status: `open | running | done | failed`
 ## Verify
 Round 1: changes requested — AC3: `sheet.abilities` shows pre-racial draft scores while HP/AC/review/saved character use the final ones.
 Round 1 fix: panel abilities come from the built sheet or `apply_race`; AC3 test asserts Halfling 15→17.
+Round 2: approve, no failed criteria (live API with the real model).
