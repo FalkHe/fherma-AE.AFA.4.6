@@ -9,7 +9,7 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
+| 1 | done | seven tools, auto-fill, prompt rewrite, 6 new tests (13 total) |
 
 Status: `open | running | done | failed`
 
