@@ -3,14 +3,16 @@
 Owns hand-authored, version-pinned adventure content — campaigns, adventures,
 scenes and object templates — read from static JSON under `backend/content/` and
 validated against a pinned schema and a fixed set of referential rules. No
-table, no route: content lives in git, not in the database.
+table, no migration, no cache: content lives in git, not in the database.
+The one authenticated route, `GET /api/v1/content/campaigns`, lists each
+campaign at its newest valid version.
 
 ## Owns
 
 - The Pydantic content schema (`schemas.py`): `Campaign`, `Adventure`,
   `Scene`, `ObjectTemplate` (`CreatureTemplate`/`ItemTemplate`/`FixtureTemplate`), `SeedCharacter` and their nested models.
 - The loader (`service.py`): `list_campaign_ids`, `list_versions`,
-  `load_campaign`, `load_scene`, `load_object_template`.
+  `load_campaign`, `load_scene`, `load_object_template`, `list_catalogue`.
 - The referential rule set (R1–R20), applied by `load_campaign`.
 - `ContentError` / `ContentNotFoundError` / `ContentInvalidError`
   (`errors.py`).
@@ -21,6 +23,11 @@ table, no route: content lives in git, not in the database.
 - `service.load_campaign(campaign_id, version) -> LoadedCampaign` and its
   single-entity siblings `load_scene` / `load_object_template` — called by later
   phases via `from app.modules.content import service as content_service`.
+- `service.list_catalogue() -> list[LoadedCampaign]` — every campaign at its
+  newest version; a campaign with no version directories, or whose newest
+  version fails to load, is skipped and logged rather than failing the call.
+- `GET /api/v1/content/campaigns` (auth required) — the catalogue mapped to
+  `CampaignSummaryRead` (id/title/summary/adventureCount).
 - `app content validate` — walks every campaign and version under
   `CONTENT_ROOT/campaigns` and reports every problem found.
 

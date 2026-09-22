@@ -2,6 +2,8 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from app.core.schemas import CamelModel
+
 
 class ContentModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -150,3 +152,10 @@ class LoadedCampaign(ContentModel):
     adventures: dict[str, Adventure]
     scenes: dict[str, Scene]
     object_templates: dict[str, ObjectTemplate]
+
+
+class CampaignSummaryRead(CamelModel):
+    id: str
+    title: str
+    summary: str
+    adventure_count: int
