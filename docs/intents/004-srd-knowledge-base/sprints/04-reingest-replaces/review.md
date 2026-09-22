@@ -24,3 +24,4 @@ Nothing in how the product behaves: the import delivered in the previous sprint 
 Brief: docs/intents/004-srd-knowledge-base/sprints/04-reingest-replaces/brief.md
 
 ## Verdict
+Round 1: Approve. Importing the rulebook a second time replaces it wholesale instead of growing it: today's live re-import reports the same 1750 rules at a later time with no passage stored twice, a changed source text moves the rule count and the stored file together, and an import that breaks part-way leaves the previous rulebook and its stored text exactly as they were. The behaviour is now pinned by automated checks, including ones run against a real database, so it cannot regress unnoticed.

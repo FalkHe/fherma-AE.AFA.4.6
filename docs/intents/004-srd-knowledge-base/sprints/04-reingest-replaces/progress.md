@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-22
 updated: 2026-09-22
-stage: running
+stage: done
 ---
 # Progress: Sprint 04 — a second ingest replaces the corpus
 
@@ -26,3 +26,4 @@ Status: `open | running | done | failed`
 Lint, backend suite (1011 passed), database-marked suite (149 passed) and frontend suite (65) pass. The frontend suite first failed at module install because the frontend image was stale after a dependency change merged to `main` (Goblin Pub look); `make build` fixed it — unrelated to this sprint.
 
 ## Verify
+Round 1: approve — AC1–AC5 and D3 pass; verifier re-ran all three backend gates. Approval posted with the human's glab token, as before.
