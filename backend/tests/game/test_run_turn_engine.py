@@ -3,10 +3,13 @@ decides which of five kinds a turn is from the DM thread's own checkpoint
 state and the transcript, never from what the caller claims.
 
 `run_turn`'s own building blocks (`turn`, `resume`, `retry`, `thread_state`,
-`build_agent`, the checkpointer) are stubbed out here: this file proves the
-*dispatch* logic alone -- which kind is picked, which id is reused or
-minted, and what gets written before a resume -- while `test_service.py`
-already exercises the real graph underneath `turn`/`resume`.
+`build_agent`, the checkpointer) are stubbed out for most of this file:
+those tests prove the *dispatch* logic alone -- which kind is picked,
+which id is reused or minted, and what gets written before a resume.
+`test_a_broken_turn_retry_resumes_the_real_graph_without_repeating_the_roll`
+below is the one exception: it drives the real graph the way
+`test_service.py`/`test_narrate_seam.py` do, so AC4 (a broken turn's
+retry) has more than a stubbed assertion that the right branch was taken.
 
 Prefixed `test_run_turn_engine` (not `test_service_turn` or similar) so it
 never collides with WI3's acceptance suite over the HTTP route.
@@ -17,15 +20,19 @@ wrapped in a single `asyncio.run(...)` per test.
 
 import asyncio
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
 
+from app.core.checkpointer import service as checkpointer_service
 from app.core.errors import ErrorCode
+from app.core.llm.errors import LlmAuthError
 from app.modules.game import service
-from app.modules.game.agent import nodes
+from app.modules.game.agent import nodes, tools
 from app.modules.game.agent.state import DmContext
 from app.modules.game.errors import ActionNotAvailableError
 from app.modules.playthrough.errors import CampaignRunNotFoundError
@@ -258,6 +265,26 @@ def test_a_broken_turn_retries_from_the_saved_step_without_replaying_the_turn(en
     assert engine.calls.append_event == []
 
 
+def test_a_broken_turn_with_nothing_recorded_yet_still_gets_a_real_turn_id(engine):
+    """Regression: a leg that broke before writing any event at all (an
+    opening turn that crashed in `narrate` before its first narration) has
+    no open turn for `open_turn_id` to reuse -- it answers `None`. `retry`
+    must still continue under a real, freshly minted id, never `None`
+    (which would fail `TurnOutcome.turn_id: str`, and the route's
+    `TurnRead.turn_id: str` behind it)."""
+    engine.thread.value = service.ThreadState(interrupt=None, pending=True)
+    engine.open_turn.value = None
+
+    outcome = _run(object(), user_id="u1", run_id="r1", text="")
+
+    assert outcome.kind == "retry"
+    assert isinstance(outcome.turn_id, str)
+    assert outcome.turn_id != ""
+    assert len(engine.calls.retry) == 1
+    assert engine.calls.retry[0]["context"].turn_id == outcome.turn_id
+    assert engine.calls.turn == []
+
+
 def test_a_fresh_action_mints_a_new_turn_id_never_reusing_the_open_one(engine):
     engine.thread.value = service.ThreadState(interrupt=None, pending=False)
     engine.open_turn.value = "turn-open-should-never-be-read"
@@ -354,3 +381,166 @@ def test_record_action_is_suppressed_for_an_opening_turn(monkeypatch):
     asyncio.run(node({"messages": [HumanMessage(content="")]}, runtime=runtime))
 
     assert calls == []
+
+
+# --- AC4: a broken turn's retry, driven against the real graph -----------
+#
+# Everything above stubs `turn`/`resume`/`retry`/`thread_state` to prove
+# dispatch alone. This one test drives the real compiled graph the way
+# `test_service.py`/`test_narrate_seam.py` do, so the "roll not repeated,
+# narration lands" half of AC4 rests on more than a stubbed call count.
+
+
+@dataclass
+class _RealGraphRun:
+    status: str = "active"
+
+
+class _RealGraphDb:
+    """`load_context`'s own `ctx.db.execute(...)` path answers an empty
+    result for every query, so `_build_game_context` gives up immediately
+    -- this test is about the roll and the narration, not the context
+    block."""
+
+    def add(self, instance):
+        pass
+
+    async def flush(self):
+        pass
+
+    async def commit(self):
+        pass
+
+    async def refresh(self, instance):
+        pass
+
+    async def execute(self, statement):
+        class _EmptyResult:
+            def scalar_one_or_none(self):
+                return None
+
+            def scalars(self):
+                return self
+
+            def all(self):
+                return []
+
+        return _EmptyResult()
+
+
+@dataclass
+class _RealGraphRollSpy:
+    calls: list[dict[str, Any]] = field(default_factory=list)
+
+    async def __call__(self, db, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            id="roll-event-1",
+            payload={
+                "kind": kwargs["kind"],
+                "actor_id": kwargs["actor_id"],
+                "formula": "1d20+3",
+                "faces": [17],
+                "modifier": 3,
+                "total": 20,
+            },
+        )
+
+
+class _ScriptedCallModel:
+    """`bind_tools()` is a no-op: the script already carries any tool
+    calls. Each `.ainvoke()` consumes the next scripted item -- an
+    `AIMessage` to return, or an exception to raise (the same shape
+    `test_narrate_seam.py`'s own stand-in uses)."""
+
+    def __init__(self, script: list):
+        self._script = list(script)
+        self.calls = 0
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    async def ainvoke(self, prompt):
+        self.calls += 1
+        item = self._script.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+
+_ROLL_TOOL_CALL = AIMessage(
+    content="",
+    tool_calls=[
+        {
+            "id": "call-1",
+            "name": "roll_dice",
+            "args": {"kind": "ability_check", "context": {"ability": "dexterity"}},
+        }
+    ],
+)
+
+
+def test_a_broken_turn_retry_resumes_the_real_graph_without_repeating_the_roll(monkeypatch):
+    """AC4: a turn that crashes in `narrate` right after a roll was made
+    resumes, on `service.retry`, from that saved step: the roll is not
+    made twice and a narration lands. Uses the real `service.turn`
+    (which raises, exactly as `test_narrate_seam.py`'s own permanent-
+    failure test does) and the real `service.retry` -- neither is
+    stubbed here."""
+    saver = InMemorySaver()
+
+    @asynccontextmanager
+    async def fake_checkpointer():
+        yield saver
+
+    monkeypatch.setattr(checkpointer_service, "checkpointer", fake_checkpointer)
+    monkeypatch.setattr(
+        service, "load_prompt", lambda prompt_id, version=None: SimpleNamespace(text="Be the DM.")
+    )
+
+    event_calls: list[dict[str, Any]] = []
+
+    async def fake_append_event(db, **kwargs):
+        event_calls.append(kwargs)
+        return SimpleNamespace(id="event-x", payload=kwargs.get("payload", {}))
+
+    monkeypatch.setattr(nodes.playthrough_service, "append_event", fake_append_event)
+
+    async def fake_get_campaign_run(db, *, user_id, run_id):
+        return _RealGraphRun()
+
+    monkeypatch.setattr(nodes.playthrough_service, "get_campaign_run", fake_get_campaign_run)
+
+    roll_spy = _RealGraphRollSpy()
+    monkeypatch.setattr(tools.playthrough_service, "roll", roll_spy)
+
+    model = _ScriptedCallModel(
+        [_ROLL_TOOL_CALL, LlmAuthError("bad key"), AIMessage(content="You leap clear of the pit.")]
+    )
+    agent = service.build_agent(model=model, checkpointer=saver)
+
+    db = _RealGraphDb()
+    context = DmContext(
+        db=db, user_id="user-1", actor_id="actor-1", run_id="run-1", turn_id="turn-1"
+    )
+
+    with pytest.raises(LlmAuthError):
+        asyncio.run(
+            service.turn(agent, thread_id="run-1", context=context, player_text="I jump the pit.")
+        )
+
+    # The break landed right after the roll: exactly one roll so far, no
+    # narration yet.
+    assert len(roll_spy.calls) == 1
+    assert [call["type"] for call in event_calls] == ["player_action"]
+
+    snapshot = asyncio.run(service.thread_state(agent, thread_id="run-1"))
+    assert snapshot.interrupt is None
+    assert snapshot.pending is True
+
+    result = asyncio.run(service.retry(agent, thread_id="run-1", context=context))
+
+    assert result.reply == "You leap clear of the pit."
+    assert len(roll_spy.calls) == 1  # the recorded roll is not repeated
+    assert model.calls == 3
+    assert [call["type"] for call in event_calls] == ["player_action", "narration"]
