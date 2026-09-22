@@ -442,7 +442,13 @@ def _creation_conversations(state: Any) -> dict[str, _CreationConversation]:
 
 
 def _reply_for(
-    conversation_id: str, turn_reply: str, *, draft: dict[str, Any], saved: bool, error: bool
+    conversation_id: str,
+    turn_reply: str,
+    *,
+    draft: dict[str, Any],
+    saved: bool,
+    error: bool,
+    ready_made_name: str,
 ) -> CreationReply:
     progress = creation_progress(draft)
     return CreationReply(
@@ -454,6 +460,7 @@ def _reply_for(
         can_save=progress.can_save,
         saved=saved,
         error=error,
+        ready_made_name=ready_made_name,
     )
 
 
@@ -487,7 +494,9 @@ async def start_creation(
     )
 
     greeting = render_greeting(overview.campaign_title or overview.campaign_id, seed)
-    return _reply_for(conversation_id, greeting, draft={}, saved=False, error=False)
+    return _reply_for(
+        conversation_id, greeting, draft={}, saved=False, error=False, ready_made_name=seed.name
+    )
 
 
 async def send_creation_message(
@@ -524,10 +533,20 @@ async def send_creation_message(
         # here (mirrors `commands.py`'s own turn loop); the player sees the
         # in-voice line, never a raw failure (← AC4).
         return _reply_for(
-            conversation_id, MODEL_ERROR_REPLY, draft=conversation.draft, saved=False, error=True
+            conversation_id,
+            MODEL_ERROR_REPLY,
+            draft=conversation.draft,
+            saved=False,
+            error=True,
+            ready_made_name=conversation.seed.name,
         )
 
     conversation.draft = result.draft
     return _reply_for(
-        conversation_id, result.reply, draft=result.draft, saved=result.saved, error=False
+        conversation_id,
+        result.reply,
+        draft=result.draft,
+        saved=result.saved,
+        error=False,
+        ready_made_name=conversation.seed.name,
     )

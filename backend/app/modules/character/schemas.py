@@ -262,3 +262,4 @@ class CreationReply(CamelModel):
     can_save: bool
     saved: bool
     error: bool
+    ready_made_name: str | None = None

@@ -33,6 +33,7 @@ def test_ac1_starting_greets_and_a_run_with_a_character_is_refused(client, signe
     body = response.json()
     assert "Rosalind Thorn" in body["reply"]
     assert body["step"] == "raceClass"
+    assert body["readyMadeName"] == "Rosalind Thorn"
 
     taken_run_id = generate_id()
     run_overview(taken_run_id, has_character=True)

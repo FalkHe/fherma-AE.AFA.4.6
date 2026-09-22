@@ -78,7 +78,7 @@ export function RunRoute() {
             </Typography>
           </Stack>
 
-          <PartySection members={overview.members} />
+          <PartySection runId={runId!} members={overview.members} />
 
           <AdventuresSection adventures={overview.adventures} members={overview.members} />
         </>
