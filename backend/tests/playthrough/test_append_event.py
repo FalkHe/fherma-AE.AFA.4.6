@@ -1,7 +1,9 @@
-"""WI1: `append_event`, the only writer of `events` (AC1). Engine-free,
-same `FakeSession` pattern as `test_service.py`, trimmed to what
-`append_event` touches -- `add()` and `flush()`, no `execute()` since this
-function runs no query.
+"""WI1: `append_event`, the only writer of `events` (AC1), now validating
+against all sixteen registered types -- the twelve settled in intent 005
+plus `item_moved`, `hp_changed`, `way_opened` and `rule_looked_up`, added
+in sprint 010/04. Engine-free, same `FakeSession` pattern as
+`test_service.py`, trimmed to what `append_event` touches -- `add()` and
+`flush()`, no `execute()` since this function runs no query.
 
 No `pytest-asyncio` in this suite (AGENTS.md gotchas): every async call is
 wrapped in a single `asyncio.run(...)` per test.
@@ -18,14 +20,18 @@ from app.modules.playthrough.errors import InvalidEventPayloadError
 from app.modules.playthrough.models import EMBEDDING_WIDTH, Event
 from app.modules.playthrough.schemas import (
     AdventurePayload,
+    HpChangedPayload,
+    ItemMovedPayload,
     NarrationPayload,
     NoticePayload,
     PlayerActionPayload,
     QuestionPayload,
     RollPayload,
     RollRequestedPayload,
+    RuleLookedUpPayload,
     SceneEnteredPayload,
     ToolCallPayload,
+    WayOpenedPayload,
 )
 
 
@@ -101,11 +107,35 @@ VALID_PAYLOADS: dict[str, dict] = {
     "system": {"message": "The DM pauses the scene."},
     "error": {"message": "That action is not available here."},
     "warning": {"message": "Low on time."},
+    "item_moved": {
+        "movement": "taken",
+        "actor_id": "obj-1",
+        "actor_name": "Hero",
+        "item_id": "obj-2",
+        "item_name": "Rusty Sword",
+    },
+    "hp_changed": {
+        "target_id": "obj-2",
+        "target_name": "Goblin",
+        "before": 7,
+        "after": 3,
+        "max_hp": 7,
+        "alive": True,
+        "down": False,
+    },
+    "way_opened": {
+        "actor_id": "obj-1",
+        "actor_name": "Hero",
+        "object_id": "obj-3",
+        "object_name": "Iron Door",
+        "action": "pick_lock",
+    },
+    "rule_looked_up": {"topic": "Chapter 7 › Using Ability Scores › Hiding"},
 }
 
 
 @pytest.mark.parametrize("event_type", sorted(VALID_PAYLOADS))
-def test_accepts_and_stores_each_of_the_twelve_types(event_type):
+def test_accepts_and_stores_each_of_the_sixteen_types(event_type):
     db = FakeSession()
 
     event = asyncio.run(
@@ -211,6 +241,30 @@ def test_payload_with_an_unexpected_field_is_refused_and_writes_nothing():
                 type="roll",
                 visibility="player",
                 payload={**VALID_PAYLOADS["roll"], "bogus_field": True},
+            )
+        )
+
+    assert db.added == []
+    assert db.persisted == []
+
+
+@pytest.mark.parametrize(
+    "event_type,bad_payload",
+    [
+        ("item_moved", {**VALID_PAYLOADS["item_moved"], "movement": "traded"}),
+        ("item_moved", {k: v for k, v in VALID_PAYLOADS["item_moved"].items() if k != "item_id"}),
+        ("hp_changed", {k: v for k, v in VALID_PAYLOADS["hp_changed"].items() if k != "after"}),
+        ("way_opened", {**VALID_PAYLOADS["way_opened"], "extra_field": True}),
+        ("rule_looked_up", {}),
+    ],
+)
+def test_new_kind_malformed_payload_is_refused_and_writes_nothing(event_type, bad_payload):
+    db = FakeSession()
+
+    with pytest.raises(InvalidEventPayloadError):
+        asyncio.run(
+            service.append_event(
+                db, run_id="run-1", type=event_type, visibility="player", payload=bad_payload
             )
         )
 
@@ -339,7 +393,26 @@ def test_no_usage_leaves_tokens_and_cost_null():
         (ToolCallPayload, VALID_PAYLOADS["tool_call"]),
         (PlayerActionPayload, {"text": "I run."}),
         (NoticePayload, {"message": "note"}),
+        (ItemMovedPayload, VALID_PAYLOADS["item_moved"]),
+        (HpChangedPayload, VALID_PAYLOADS["hp_changed"]),
+        (WayOpenedPayload, VALID_PAYLOADS["way_opened"]),
+        (RuleLookedUpPayload, VALID_PAYLOADS["rule_looked_up"]),
     ],
 )
 def test_payload_models_round_trip_their_own_valid_dict(model_cls, payload):
     assert model_cls.model_validate(payload).model_dump(by_alias=True)
+
+
+def test_scene_entered_payload_scene_title_is_optional_for_older_rows():
+    # `scene_title` (sprint 010/04) is absent on rows written before this
+    # field existed -- omitting it must still validate, not just defaulting
+    # to `None` when explicitly passed.
+    payload = SceneEnteredPayload.model_validate(VALID_PAYLOADS["scene_entered"])
+    assert payload.scene_title is None
+    assert "sceneTitle" not in payload.model_dump(by_alias=True, exclude_none=True)
+
+
+def test_item_moved_to_id_and_to_name_are_none_unless_given():
+    payload = ItemMovedPayload.model_validate(VALID_PAYLOADS["item_moved"])
+    assert payload.to_id is None
+    assert payload.to_name is None

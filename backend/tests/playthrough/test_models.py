@@ -8,7 +8,8 @@ stats being present on a creature and nothing else, health staying within
 its maximum, position being whole or absent, a carried thing never also
 having a position, one thing per key per campaign run and no limit on how
 many things a member holds, plus `Event`'s column shape and order, the
-twelve-value `type` set and the two-value `visibility` set, `cost_usd` typed
+sixteen-value `type` set (twelve settled in intent 005, four added in
+sprint 010/04) and the two-value `visibility` set, `cost_usd` typed
 as an exact decimal rather than a float, the cascade on `campaign_run_id`
 and the clear-on-delete on `actor_member_id`, both `embedding` columns
 being optional, exactly three indexes with no unique constraint -- the
@@ -633,12 +634,13 @@ def test_event_type_is_a_non_nullable_varchar_32_with_no_default():
     assert column.server_default is None
 
 
-def test_event_type_accepts_exactly_twelve_values():
+def test_event_type_accepts_exactly_sixteen_values():
     constraint = _check_constraint(Event, "ck_events_type")
     assert str(constraint.sqltext) == (
         "type IN ('narration','player_action','roll_requested','roll','question',"
         "'tool_call','scene_entered','adventure_started','adventure_completed',"
-        "'system','error','warning')"
+        "'system','error','warning','item_moved','hp_changed','way_opened',"
+        "'rule_looked_up')"
     )
 
 
