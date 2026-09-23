@@ -37,6 +37,37 @@ describe("usePlayTranscript", () => {
     expect(result.current.awaiting).toBe("none");
     expect(result.current.isError).toBe(false);
     expect(result.current.turnUnfinished).toBe(false);
+    expect(result.current.pending).toBeNull();
+  });
+
+  it("exposes pending, built from the read's events and awaiting marker (← I2)", async () => {
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-6/events", {
+      status: 200,
+      body: {
+        events: [
+          { id: "q1", type: "question", turnId: "t1", payload: { text: "Take it?", options: ["Yes", "No"] }, createdAt: "2026-09-08T21:02:00+00:00" },
+        ],
+        awaiting: "answer:q1",
+      },
+    });
+
+    const { result } = renderHook(() => usePlayTranscript("run-6", "Rosalind Thorn"), { wrapper });
+
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+
+    expect(result.current.pending).toEqual({ kind: "choice", id: "q1", options: ["Yes", "No"] });
+  });
+
+  it("keeps pending null while pending", () => {
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-7/events", {
+      status: 200,
+      body: { events: [], awaiting: "none" },
+    });
+
+    const { result } = renderHook(() => usePlayTranscript("run-7", "Rosalind Thorn"), { wrapper });
+
+    expect(result.current.isPending).toBe(true);
+    expect(result.current.pending).toBeNull();
   });
 
   it("exposes turnUnfinished when the last event is not a narration (I5)", async () => {

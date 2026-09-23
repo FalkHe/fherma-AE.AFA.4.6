@@ -26,6 +26,10 @@
   "roll": {
     "button": "Roll {{notation}}"
   },
+  "dice": {
+    "madeIt": "Made it",
+    "missed": "Missed"
+  },
   "system": {
     "ruleLookedUp": "Checked the rules · {{topic}}",
     "itemTaken": "{{name}} takes the {{item}}",
@@ -35,7 +39,10 @@
     "wayOpened": "{{name}} · {{action}}",
     "check": "{{ability}}",
     "check_full": "{{ability}} ({{skill}})",
-    "check_kind": "{{kind}}"
+    "check_kind": "{{kind}}",
+    "check_dc": "{{ability}} · DC {{dc}}",
+    "check_full_dc": "{{ability}} ({{skill}}) · DC {{dc}}",
+    "check_kind_dc": "{{kind}} · DC {{dc}}"
   },
   "failure": {
     "line": "The Dungeon Master has lost the thread of that one. Nothing that already happened is lost — shall we pick it up again?",

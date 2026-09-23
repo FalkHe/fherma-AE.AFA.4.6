@@ -13,12 +13,13 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../core/api/client";
 import { unwrap } from "../../../core/api/errors";
 import type { components } from "../../../api/schema";
-import { isTurnUnfinished, toTranscriptRows, type EventRead, type TranscriptRow } from "../transcript";
+import { isTurnUnfinished, toPendingPrompt, toTranscriptRows, type EventRead, type PendingPrompt, type TranscriptRow } from "../transcript";
 
 interface TranscriptState {
   rows: TranscriptRow[];
   awaiting: string;
   turnUnfinished: boolean;
+  pending: PendingPrompt | null;
 }
 
 // Fallback poll while a turn is running (sprint 010/07 WI7 round 2, ← AC2/
@@ -67,7 +68,12 @@ async function fetchTranscript(runId: string, heroName: string): Promise<Transcr
     }>,
   );
   const events = result.events as EventRead[];
-  return { rows: toTranscriptRows(events, heroName), awaiting: result.awaiting, turnUnfinished: isTurnUnfinished(events) };
+  return {
+    rows: toTranscriptRows(events, heroName),
+    awaiting: result.awaiting,
+    turnUnfinished: isTurnUnfinished(events),
+    pending: toPendingPrompt(events, result.awaiting),
+  };
 }
 
 export function usePlayTranscript(runId: string, heroName: string, options: UsePlayTranscriptOptions = {}) {
@@ -91,6 +97,7 @@ export function usePlayTranscript(runId: string, heroName: string, options: UseP
     rows: query.data?.rows ?? [],
     awaiting: query.data?.awaiting ?? "none",
     turnUnfinished: query.data?.turnUnfinished ?? false,
+    pending: query.data?.pending ?? null,
     isPending: query.isPending,
     isError: query.isError,
     retry: () => {
