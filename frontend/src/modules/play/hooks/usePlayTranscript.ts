@@ -13,11 +13,12 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../core/api/client";
 import { unwrap } from "../../../core/api/errors";
 import type { components } from "../../../api/schema";
-import { toTranscriptRows, type EventRead, type TranscriptRow } from "../transcript";
+import { isTurnUnfinished, toTranscriptRows, type EventRead, type TranscriptRow } from "../transcript";
 
 interface TranscriptState {
   rows: TranscriptRow[];
   awaiting: string;
+  turnUnfinished: boolean;
 }
 
 type EventsRead = components["schemas"]["EventsRead"];
@@ -36,7 +37,8 @@ async function fetchTranscript(runId: string, heroName: string): Promise<Transcr
       response: Response;
     }>,
   );
-  return { rows: toTranscriptRows(result.events as EventRead[], heroName), awaiting: result.awaiting };
+  const events = result.events as EventRead[];
+  return { rows: toTranscriptRows(events, heroName), awaiting: result.awaiting, turnUnfinished: isTurnUnfinished(events) };
 }
 
 export function usePlayTranscript(runId: string, heroName: string) {
@@ -48,6 +50,7 @@ export function usePlayTranscript(runId: string, heroName: string) {
   return {
     rows: query.data?.rows ?? [],
     awaiting: query.data?.awaiting ?? "none",
+    turnUnfinished: query.data?.turnUnfinished ?? false,
     isPending: query.isPending,
     isError: query.isError,
     retry: () => {

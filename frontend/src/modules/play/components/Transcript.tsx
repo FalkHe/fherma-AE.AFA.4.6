@@ -33,9 +33,11 @@ import { PlayerRow } from "./PlayerRow";
 import { SystemLine } from "./SystemLine";
 import { DiceChip } from "./DiceChip";
 import { SceneDivider } from "./SceneDivider";
+import { ThinkingLine } from "./ThinkingLine";
 
 export interface TranscriptProps {
   rows: TranscriptRow[];
+  thinking?: boolean;
 }
 
 function renderRow(row: TranscriptRow): ReactElement {
@@ -55,7 +57,7 @@ function renderRow(row: TranscriptRow): ReactElement {
   }
 }
 
-export function Transcript({ rows }: TranscriptProps): ReactElement {
+export function Transcript({ rows, thinking }: TranscriptProps): ReactElement {
   const { t } = useTranslation("play");
   const { scrollRef, atBottom, jumpToLatest } = useStickToLatest();
 
@@ -82,6 +84,7 @@ export function Transcript({ rows }: TranscriptProps): ReactElement {
         ) : (
           rows.map(renderRow)
         )}
+        {thinking && <ThinkingLine />}
       </Box>
 
       {!atBottom && (

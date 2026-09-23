@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import i18n from "../../core/i18n";
-import { toTranscriptRows, type EventRead, type SystemKey } from "./transcript";
+import { isTurnUnfinished, toTranscriptRows, type EventRead, type SystemKey } from "./transcript";
 
 // `SystemLine` (WI2) calls `t(\`system.${key}\`, values)` verbatim -- this
 // reproduces exactly that call, so a `check` row's `values` (in particular
@@ -271,5 +271,31 @@ describe("toTranscriptRows (I1)", () => {
     const rows = toTranscriptRows(events, "Rosalind Thorn");
 
     expect(rows.map((row) => row.id)).toEqual(["o1", "o2", "o3"]);
+  });
+});
+
+// Sprint 010/07 WI5, I5. A turn is still running whenever the transcript is
+// non-empty and its last recorded event is not the closing narration.
+describe("isTurnUnfinished (I5)", () => {
+  it("is false for an empty transcript (AC4: after a reload with nothing recorded)", () => {
+    expect(isTurnUnfinished([])).toBe(false);
+  });
+
+  it("is false when the last event is a narration (turn closed)", () => {
+    const events = [
+      event("player_action", { text: "I look around." }, { id: "p1" }),
+      event("narration", { text: "The room is empty." }, { id: "n1" }),
+    ];
+
+    expect(isTurnUnfinished(events)).toBe(false);
+  });
+
+  it("is true when the last event is a roll (turn still running)", () => {
+    const events = [
+      event("player_action", { text: "I attack." }, { id: "p1" }),
+      event("roll", { kind: "attack", formula: "1d20", faces: [14], modifier: 2, total: 16 }, { id: "r1" }),
+    ];
+
+    expect(isTurnUnfinished(events)).toBe(true);
   });
 });

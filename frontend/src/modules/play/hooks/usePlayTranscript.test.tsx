@@ -36,6 +36,38 @@ describe("usePlayTranscript", () => {
     ]);
     expect(result.current.awaiting).toBe("none");
     expect(result.current.isError).toBe(false);
+    expect(result.current.turnUnfinished).toBe(false);
+  });
+
+  it("exposes turnUnfinished when the last event is not a narration (I5)", async () => {
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-2/events", {
+      status: 200,
+      body: {
+        events: [
+          { id: "e1", type: "player_action", turnId: "t1", payload: { text: "I attack." }, createdAt: "2026-09-08T21:02:00+00:00" },
+          { id: "e2", type: "roll", turnId: "t1", payload: { kind: "attack", total: 12 }, createdAt: "2026-09-08T21:02:05+00:00" },
+        ],
+        awaiting: "none",
+      },
+    });
+
+    const { result } = renderHook(() => usePlayTranscript("run-2", "Rosalind Thorn"), { wrapper });
+
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+
+    expect(result.current.turnUnfinished).toBe(true);
+  });
+
+  it("keeps turnUnfinished false while pending", () => {
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-3/events", {
+      status: 200,
+      body: { events: [], awaiting: "none" },
+    });
+
+    const { result } = renderHook(() => usePlayTranscript("run-3", "Rosalind Thorn"), { wrapper });
+
+    expect(result.current.isPending).toBe(true);
+    expect(result.current.turnUnfinished).toBe(false);
   });
 
   it("retry recovers from a failed read", async () => {

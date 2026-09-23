@@ -193,6 +193,16 @@ function toRow(event: EventRead, heroName: string, requests: Map<string, Payload
   }
 }
 
+/** Whether a turn is still running (sprint 010/07 WI5, I5). The game writes
+ * a `player_action` event as a turn's first entry and a `narration` event
+ * as its last, immediately before the turn ends -- everything else is
+ * mid-turn -- so a non-empty transcript whose last event is not a
+ * narration means the turn has not closed yet. An empty transcript (e.g.
+ * right after a reload, before the first read lands) is never unfinished. */
+export function isTurnUnfinished(events: EventRead[]): boolean {
+  return events.length > 0 && events[events.length - 1].type !== "narration";
+}
+
 /** Translates one run's recorded, player-visible transcript into the rows
  * D12 draws. Pure: the same `events` always yields the same rows, and
  * nothing here reaches into i18n, the network or any other side effect. */
