@@ -20,6 +20,7 @@ from app.modules.game import service as game_service
 from app.modules.game.agent.state import DmContext
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import PlaythroughError
+from app.modules.users import service as users_service
 
 game_app = typer.Typer()
 
@@ -172,14 +173,20 @@ class _ToolAwareStubModel(GenericFakeChatModel):
 
 async def _play(
     *,
-    user_id: str,
+    username: str,
     run_id: str | None,
     actor_id: str | None,
     thread_id: str,
 ) -> None:
+    sessionmaker = get_sessionmaker()
+    async with sessionmaker() as db:
+        user = await users_service.get_user_by_username(db, username=username)
+    if user is None:
+        raise typer.BadParameter(f"unknown username: {username}", param_hint="--user")
+
+    user_id = user.id
     resolved_actor_id = actor_id
     if run_id is not None and actor_id is None:
-        sessionmaker = get_sessionmaker()
         async with sessionmaker() as db:
             character = await playthrough_service.get_member_character(
                 db, user_id=user_id, run_id=run_id
@@ -196,7 +203,7 @@ async def _play(
 
 @game_app.command("play")
 def play(
-    user_id: str = typer.Option(..., "--user", help="The caller's user id."),
+    username: str = typer.Option(..., "--user", help="The caller's username."),
     run_id: str | None = typer.Option(None, "--run-id", help="The campaign run id."),
     actor_id: str | None = typer.Option(
         None,
@@ -212,7 +219,7 @@ def play(
     try:
         asyncio.run(
             _play(
-                user_id=user_id,
+                username=username,
                 run_id=run_id,
                 actor_id=actor_id,
                 thread_id=active_thread_id,

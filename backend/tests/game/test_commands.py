@@ -22,6 +22,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
@@ -34,6 +35,7 @@ from app.modules.game import service as game_service
 from app.modules.game.agent import nodes, tools
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import CharacterNotFoundError
+from app.modules.users import service as users_service
 
 runner = CliRunner()
 
@@ -88,6 +90,11 @@ class _Character:
 
 
 @dataclass
+class _User:
+    id: str
+
+
+@dataclass
 class _PlaySessionSpy:
     calls: list[dict[str, Any]] = field(default_factory=list)
 
@@ -106,7 +113,50 @@ def _invoke(args: list[str], *, input: str | None = None) -> Any:
     return runner.invoke(cli, args, input=input)
 
 
+@pytest.fixture(autouse=True)
+def stub_user_lookup(monkeypatch):
+    async def fake_get_user_by_username(db, *, username):
+        return _User(id=USER_ID)
+
+    monkeypatch.setattr(users_service, "get_user_by_username", fake_get_user_by_username)
+
+
 # --- actor resolution (AC1) --------------------------------------------
+
+
+def test_username_resolves_the_user_before_starting_play(monkeypatch):
+    username_calls = []
+
+    async def fake_get_user_by_username(db, *, username):
+        username_calls.append(username)
+        return _User(id=USER_ID)
+
+    monkeypatch.setattr(users_service, "get_user_by_username", fake_get_user_by_username)
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+    spy = _PlaySessionSpy()
+    monkeypatch.setattr(commands, "_play_session", spy)
+
+    result = _invoke(["game", "play", "--user", "  ALICE  ", "--actor", "actor-1"])
+
+    assert result.exit_code == 0, result.output
+    assert username_calls == ["  ALICE  "]
+    assert spy.calls[0]["user_id"] == USER_ID
+
+
+def test_unknown_username_exits_2_without_starting_play(monkeypatch):
+    async def fake_get_user_by_username(db, *, username):
+        return None
+
+    monkeypatch.setattr(users_service, "get_user_by_username", fake_get_user_by_username)
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+    spy = _PlaySessionSpy()
+    monkeypatch.setattr(commands, "_play_session", spy)
+
+    result = _invoke(["game", "play", "--user", "missing", "--actor", "actor-1"])
+
+    assert result.exit_code == 2
+    assert spy.calls == []
+    assert "Invalid value for --user: unknown username: missing" in result.output
 
 
 def test_run_id_alone_resolves_the_seated_hero_and_starts_play(monkeypatch):
