@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/70
 ---
 # Review: Sprint 08 — "Start adventure" opens a new adventure straight into play, where the Dungeon Master writes the opening scene
 
