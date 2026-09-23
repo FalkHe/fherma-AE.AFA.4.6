@@ -1,0 +1,26 @@
+# Reviewer guide
+
+This is a single-player AI Dungeon Master for people who want to try D&D 5e without a group or prior rules knowledge. The binding brief is [135.md](135.md). The paths below point to **current implementation**, not planned roadmap work. Run the app with the [README quick start](README.md#quick-start); an `OPENROUTER_API_KEY` is needed for live model calls.
+
+## Main requirements
+
+| `135.md` requirement | Where to look | Current state |
+|---|---|---|
+| 1. Purpose, usefulness, target users | [App vision](docs/general/app-vision.md#purpose); [project README](README.md) | Solo play in plain language, with the DM handling rules and mechanics. |
+| 2. Core tasks and user interaction | [DM graph](backend/app/modules/game/agent/graph.py), [DM tools](backend/app/modules/game/agent/tools.py), [turn service](backend/app/modules/game/service.py), [turn route](backend/app/modules/game/routes.py); deterministic [game-state service](backend/app/modules/playthrough/service.py); [character creation](backend/app/modules/character/service.py) | The agent narrates, calls tools for rolls/rules/actions, pauses for player answers or rolls, and persists turns. Character creation, campaign starts and run reads also have API and UI flows. The interactive play UI is still being completed under [Intent 10](docs/intents/010-dm-agent-in-gui/intent.md). |
+| 3. User interface | [App routes](frontend/src/App.tsx), [dashboard and run screens](frontend/src/modules/playthrough/routes/), [character creation screen](frontend/src/modules/character/routes/), [play module](frontend/src/modules/play/) | Authentication, campaign/run management, character creation and a read-only play transcript are present. Taking DM turns and the remaining play controls are Intent 10 work in progress; do not assess the full play flow as finished yet. |
+| 4. Tools, errors, real-world handling | [OpenRouter LLM seam](backend/app/core/llm/service.py), [retry policy](backend/app/core/llm/retry.py), [API error envelope](backend/app/core/errors.py), [authentication/CSRF](backend/app/modules/auth/dependencies.py), [persistent checkpointer](backend/app/core/checkpointer/service.py), [content validation](backend/app/modules/content/service.py) | Provider failures, invalid requests and game refusals have explicit handling; state and sessions persist in PostgreSQL. [Backend tests](backend/tests/) cover these paths. Live play requires configured OpenRouter access and the SRD corpus. |
+| 5. Documentation, examples, decisions | [Quick start](README.md#quick-start), [documentation index](docs/README.md), [architecture](docs/general/architecture.md), [content authoring guide](docs/modules/content.md), [module READMEs](backend/app/modules/) | Setup, subsystem behavior, sample API use and design decisions are documented. The root README's “Current state” paragraph is stale; use the implementation and module docs for current feature status. |
+
+## Optional requirements
+
+| `135.md` task | Where to look | Current state |
+|---|---|---|
+| Medium 2 — short/long-term memory | [Graph](backend/app/modules/game/agent/graph.py), [checkpointer](backend/app/core/checkpointer/service.py), [context and recap](backend/app/modules/game/agent/nodes.py), [recall tool](backend/app/modules/game/agent/tools.py), [semantic event search](backend/app/modules/playthrough/service.py) | Implemented: persistent LangGraph thread plus campaign event recall. |
+| Medium 4 — authentication and personalisation | [Auth module](backend/app/modules/auth/), [run ownership/state](backend/app/modules/playthrough/service.py), [auth UI](frontend/src/modules/auth/) | Implemented: accounts and user-owned campaign runs. |
+| Medium 8 — security guard | [Guard node](backend/app/modules/game/agent/nodes.py), [graph wiring](backend/app/modules/game/agent/graph.py), [auth/CSRF](backend/app/modules/auth/dependencies.py) | Guard implemented. The separate developer-settings UI described in the [vision](docs/general/app-vision.md) is not yet implemented. |
+| Hard 1 — agentic RAG | [Rule lookup tool](backend/app/modules/game/agent/tools.py), [tool loop](backend/app/modules/game/agent/graph.py), [SRD vector search](backend/app/modules/srd/service.py) | Implemented: the DM can choose to search the ingested SRD repeatedly during a turn. |
+| Hard 2 — observability | [Langfuse tracing](backend/app/core/tracing/service.py), [LLM integration](backend/app/core/llm/service.py), [configuration](backend/app/core/settings.py) | Implemented when external Langfuse credentials are configured. |
+| Medium 1 — token usage and cost | [Usage capture](backend/app/modules/game/agent/nodes.py), [run totals](backend/app/modules/playthrough/service.py), [cost CLI](backend/app/modules/playthrough/commands.py) | Partial: captured and queryable, but not displayed in the player UI. |
+
+Other optional tasks in the brief are **not claimed as complete**. In particular, selectable personality/models/settings, a help guide, external API tools, response ratings, tool toggles/plugins, an AI evaluation report and learning from feedback have no complete user-facing implementation. OpenRouter configuration in [the LLM seam](backend/app/core/llm/service.py) is operator configuration, not a player model selector.
