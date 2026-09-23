@@ -14,8 +14,9 @@ defined here — in code, in content and in the UI.
 - **Passive check** — `10 + bonus` against a DC, with no roll. Used for
   noticing hidden things without leaking that there was something to notice.
 - **Initiative** — `d20 + Dexterity bonus`, determines turn order in combat.
-  Combat is deferred to the DM-turn phase; this phase builds no combat state, so
-  nothing in the run model records an initiative order.
+  The game uses a simplified house rule: one hero-side roll and one hostile-side
+  roll establish which side acts first for the fight; the hero side wins a tie.
+  The active order lives in the LangGraph checkpoint, not the run model.
 - **SRD** — System Reference Document; the freely licensed subset of the D&D
   5e rules (SRD 5.1, CC-BY-4.0). The only corpus behind RAG here.
 

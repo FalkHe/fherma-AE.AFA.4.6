@@ -258,6 +258,35 @@ def test_thread_id_option_still_overrides_the_run_id(monkeypatch):
     assert spy.calls[0]["thread_id"] == "custom-thread"
 
 
+def test_turn_output_prefixes_narration_and_tool_results(monkeypatch):
+    output = []
+
+    def fake_echo(message, *, err=False):
+        output.append((message, err))
+
+    monkeypatch.setattr(commands.typer, "echo", fake_echo)
+
+    commands._print_turn_result(
+        game_service.TurnResult(
+            reply="The goblin ducks behind a crate.",
+            rolls=[
+                {
+                    "kind": "attack",
+                    "formula": "1d20+4",
+                    "faces": [17],
+                    "modifier": 4,
+                    "total": 21,
+                }
+            ],
+        )
+    )
+
+    assert output == [
+        ("* rolled attack 1d20+4: [17] +4 = 21", True),
+        ("< The goblin ducks behind a crate.", False),
+    ]
+
+
 # --- quit and rejoin (AC2) ------------------------------------------------
 
 

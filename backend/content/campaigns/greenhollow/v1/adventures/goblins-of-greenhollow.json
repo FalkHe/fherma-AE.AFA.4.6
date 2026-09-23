@@ -42,7 +42,7 @@
       "truth": [
         "The cart track narrows to a deer path within sight of the village and runs on into close-grown thorn and birch.",
         "Wool tufts snagged on the thorns mark the flock's route north in a line no shepherd would have chosen.",
-        "The path forks: the wider way continues along the old drove road, and a narrower cut breaks off through the thorn towards higher ground."
+        "The path forks: the wider way continues along the old drove road, and a narrower cut breaks off through the thorn towards higher ground. Near the mouth of the narrow cut, a few wool tufts snag low in the thorn, drawing the eye towards the ground without making clear what passed there."
       ],
       "npc_intent": null,
       "consequences": [
@@ -51,8 +51,8 @@
       "hidden": [
         {
           "fact": "The narrower cut has been deliberately widened at ankle height, as if something has dragged heavy loads through it more than once.",
-          "dc": 12,
-          "discovered_by": "a Wisdom (Perception) check while walking the narrower cut, or crouching to examine the broken thorn at ground level"
+          "dc": 5,
+          "discovered_by": "a Wisdom (Perception) check when the player deliberately searches the wool-marked narrow cut at ankle height, examining the low thorn and ground for signs of passage; merely walking through or glancing at the wool does not reveal the deliberate widening"
         }
       ],
       "placements": [],

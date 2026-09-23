@@ -1059,22 +1059,16 @@ async def _append_roll_requested(
     for).
 
     For `attack`/`damage`, `context["item_id"]` may name either a content
-    template (the seed hero's `shepherds-knife`) or a carried row with no
-    template of its own (a sheet-born weapon, sprint 009-02 WI2 AC5) --
-    looked up here and handed to `dice.derive_formula` as `item` only when
-    it is a row of this run with `template_id is None`; anything else
-    (a template id, a foreign or unknown row) falls through to today's
-    template-driven path unchanged."""
+    template or a carried item row. A row from this run is handed to
+    `dice.derive_formula` directly so the runtime item ID exposed to the DM
+    also works for seeded template weapons and sheet-born weapons alike;
+    anything else falls through to the template-driven path unchanged."""
     item: GameObject | None = None
     if kind in ("attack", "damage"):
         item_id = context.get("item_id") if isinstance(context, dict) else None
         if item_id is not None:
             candidate = await db.get(GameObject, item_id)
-            if (
-                candidate is not None
-                and candidate.campaign_run_id == run.id
-                and candidate.template_id is None
-            ):
+            if candidate is not None and candidate.campaign_run_id == run.id:
                 item = candidate
     formula = dice.derive_formula(
         kind,

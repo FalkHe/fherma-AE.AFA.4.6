@@ -71,6 +71,18 @@ async def _resume_turn(
         )
 
 
+def _print_turn_result(result: game_service.TurnResult) -> None:
+    """Render narration and tool results with distinct terminal markers."""
+    for roll in result.rolls:
+        typer.echo(
+            f"* rolled {roll['kind']} {roll['formula']}: {roll['faces']} "
+            f"{roll['modifier']:+d} = {roll['total']}",
+            err=True,
+        )
+    if result.reply:
+        typer.echo(f"< {result.reply}")
+
+
 async def _play_session(
     *,
     user_id: str,
@@ -154,14 +166,7 @@ async def _play_session(
                     text=player_text,
                 )
 
-            for roll in result.rolls:
-                typer.echo(
-                    f"rolled {roll['kind']} {roll['formula']}: {roll['faces']} "
-                    f"{roll['modifier']:+d} = {roll['total']}",
-                    err=True,
-                )
-            if result.reply:
-                typer.echo(result.reply)
+            _print_turn_result(result)
 
             in_flight_interrupt = result.interrupt
 
