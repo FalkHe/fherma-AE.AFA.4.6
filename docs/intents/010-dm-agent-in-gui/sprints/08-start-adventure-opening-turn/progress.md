@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-stage: running
+stage: done
 ---
 # Progress: Sprint 08
 
@@ -24,3 +24,4 @@ Assumed: the opening turn is fired from the play screen, so the header names the
 ## Backlog proposals
 
 ## Verify
+Round 1: approve, no failed criteria. The merge request carries no approval state because the verifier's account may not approve its own merge request.

@@ -31,3 +31,4 @@ long-wait sprint. A network failure while entering keeps you on the run screen w
 Brief: docs/intents/010-dm-agent-in-gui/sprints/08-start-adventure-opening-turn/brief.md
 
 ## Verdict
+Round 1: approve — pressing "Start adventure" on a campaign whose party is ready opens the play screen at once: the scene is named, the transcript reads that the Dungeon Master is opening the book while the thinking line runs, and a moment later the opening scene appears on its own, with the writing box back open and no player line above it; returning to the campaign the adventure reads "In progress" with "Continue", and reloading while the Dungeon Master is still writing shows what was already recorded without starting the opening a second time; a seat still needs the campaign's ready-made hero taken before the button becomes pressable, and past that point nothing asks for a character.
