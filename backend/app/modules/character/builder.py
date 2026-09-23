@@ -130,7 +130,7 @@ def apply_race(scores: Abilities, race: Race, free: list[Ability]) -> Abilities:
 
 
 def modifier(score: int) -> int:
-    return dice._ability_modifier(score)  # noqa: SLF001 -- the one seam, per the brief
+    return dice.ability_modifier(score)
 
 
 def derive_hp(cls: CharacterClass, con_mod: int) -> int:

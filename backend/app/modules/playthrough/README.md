@@ -161,11 +161,23 @@ commands and the notes below the service list.
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else. A character reads as `id, name, currentHp, maxHp,
-armourClass, race, characterClass, level, appearance` and nothing else —
-`CharacterRead` (sprint 009-07 adds the four card facts, read off the
-object's `state` column through `CharacterState`; `service.character_read`
-is the one place that builds it, shared by the overview and the `POST
-…/character` route). An adventure run reads as
+armourClass, race, characterClass, level, abilities, appearance, backstory,
+items` and nothing else — `CharacterRead`, the one hero shape shared by
+every read that already returns one (sprint 009-07 adds the four card
+facts; WI1 sprint 010/05 widens it further, no `isAlive`/`down` — ← D7).
+`abilities` is `{strength|dexterity|constitution|intelligence|wisdom|
+charisma: {score, modifier}}` — `Ability`'s `modifier` is
+`dice.ability_modifier(score)`, computed once server-side. `backstory` is
+`CharacterState.background` under its wire name; `appearance` and
+`backstory` answer `""`, never missing, for an unset value. `items` is
+`Item[]` (`id, name`), one entry per unit of carried quantity — identical
+items arrive as separate rows and the client groups them. `race`/
+`characterClass`/`level`/`appearance`/`abilities`/`backstory` are read off
+the object's `state` column through `CharacterState`; `service.
+character_read(obj, *, items=())` is the one place that builds it, shared
+by the overview and the `POST …/character` route — `items` are carried
+rows the caller already fetched, never queried inside `character_read`
+itself. An adventure run reads as
 `id, adventureId, status, startedAt` and nothing else — `AdventureRunRead`.
 An event reads as `id, type, turnId, payload, createdAt` and nothing else —
 `EventRead`; no `visibility`, no cost, no run id. The events route itself

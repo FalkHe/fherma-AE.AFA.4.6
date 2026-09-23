@@ -537,7 +537,10 @@ def test_create_character_response_has_exactly_the_camelcase_field_set(
         "race",
         "characterClass",
         "level",
+        "abilities",
         "appearance",
+        "backstory",
+        "items",
     }
 
 

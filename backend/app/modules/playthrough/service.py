@@ -7,6 +7,7 @@ suite's monkeypatching depends on it (AGENTS.md).
 """
 
 import asyncio
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
 
@@ -23,7 +24,7 @@ from app.core.settings import get_settings
 from app.modules.character.schemas import CharacterSheet
 from app.modules.content import service as content_service
 from app.modules.content.errors import ContentError, ContentNotFoundError
-from app.modules.content.schemas import LoadedCampaign, ObjectTemplate, SeedCharacter
+from app.modules.content.schemas import Abilities, LoadedCampaign, ObjectTemplate, SeedCharacter
 from app.modules.playthrough import dice
 from app.modules.playthrough.errors import (
     ActionNotAvailableError,
@@ -63,8 +64,10 @@ from app.modules.playthrough.schemas import (
     CampaignRunMemberRead,
     CampaignRunOverviewRead,
     CampaignRunSummaryRead,
+    CharacterAbilities,
     CharacterRead,
     CharacterState,
+    Item,
     NarrationRead,
     RollKind,
     RollRequestedPayload,
@@ -372,13 +375,31 @@ def _excerpt(text: str, limit: int = 200) -> str:
     return cut.rstrip() + "…"
 
 
-def character_read(obj: GameObject) -> CharacterRead:
+def _character_abilities(scores: Abilities) -> CharacterAbilities:
+    """Every ability score paired with its signed modifier (WI1, sprint
+    010/05), through `dice.ability_modifier` -- the one formula, computed
+    once here rather than left for a client to derive."""
+    return CharacterAbilities.model_validate(
+        {
+            name: {"score": score, "modifier": dice.ability_modifier(score)}
+            for name, score in scores.model_dump().items()
+        }
+    )
+
+
+def character_read(obj: GameObject, *, items: Sequence[GameObject] = ()) -> CharacterRead:
     """`CharacterRead` from a character `GameObject` (sprint 009-07, ←
-    research Decision 5) -- the four card facts (`race`, `characterClass`,
-    `level`, `appearance`) are read off `obj.state` through
-    `CharacterState`, the fighting stats off the object's own columns.
-    Shared by `get_run_overview`'s member list and the
-    `POST …/character` route, so both answer the same shape."""
+    research Decision 5; widened WI1 sprint 010/05 into the one hero shape
+    shared by every read that already returns one) -- the four card facts
+    (`race`, `characterClass`, `level`, `appearance`), the six ability
+    scores and `backstory` (`CharacterState.background`, under its wire
+    name) are read off `obj.state` through `CharacterState`, the fighting
+    stats off the object's own columns. `items` are the carried rows a
+    caller already fetched -- one `Item` per row, never queried here, so
+    `get_run_overview` can supply every hero's items from one grouped
+    query rather than one per hero. Shared by `get_run_overview`'s member
+    list and the `POST …/character` route, so both answer the same
+    shape."""
     state = CharacterState.model_validate(obj.state)
     return CharacterRead(
         id=obj.id,
@@ -389,7 +410,10 @@ def character_read(obj: GameObject) -> CharacterRead:
         race=state.race,
         character_class=state.character_class,
         level=state.level,
+        abilities=_character_abilities(state.abilities),
         appearance=state.appearance,
+        backstory=state.background,
+        items=[Item(id=item.id, name=item.name) for item in items],
     )
 
 
@@ -406,7 +430,11 @@ async def get_run_overview(
     `campaign_run_members` to `users` and outer-joining `objects` on
     `member_id == member.id AND kind == 'creature'` -- a non-player
     creature's `member_id` is always `None`, so it can never supply a
-    character (← research). Adventures come from `_load_pinned(run)`
+    character (← research). Every character's carried items (WI1, sprint
+    010/05) come from one further query, grouped in Python by
+    `owner_object_id` -- one query for every hero on the run, never one
+    per hero -- skipped outright when no member has a character.
+    Adventures come from `_load_pinned(run)`
     (`None` means unavailable, AC2's twin) paired with this run's own
     `adventure_runs` rows. Reads only: no commit, no status change, no
     event.
@@ -425,15 +453,37 @@ async def get_run_overview(
         .order_by(CampaignRunMember.id)
     )
     member_result = await db.execute(member_stmt)
+    member_rows = member_result.all()
+
+    character_ids = [
+        character_object.id
+        for _, _, character_object in member_rows
+        if character_object is not None
+    ]
+    items_by_owner: dict[str, list[GameObject]] = {}
+    if character_ids:
+        items_stmt = (
+            select(GameObject)
+            .where(GameObject.kind == "item", GameObject.owner_object_id.in_(character_ids))
+            .order_by(GameObject.instance_key)
+        )
+        items_result = await db.execute(items_stmt)
+        for item in items_result.scalars().all():
+            items_by_owner.setdefault(item.owner_object_id, []).append(item)
+
     members = [
         CampaignRunMemberRead(
             user_id=member.user_id,
             username=username,
             role=member.role,
             ready=character_object is not None,
-            character=character_read(character_object) if character_object is not None else None,
+            character=(
+                character_read(character_object, items=items_by_owner.get(character_object.id, []))
+                if character_object is not None
+                else None
+            ),
         )
-        for member, username, character_object in member_result.all()
+        for member, username, character_object in member_rows
     ]
 
     adventure_run_stmt = select(AdventureRun).where(AdventureRun.campaign_run_id == run_id)
@@ -1102,7 +1152,7 @@ async def passive_check(
     abilities = dice._actor_abilities(
         actor, campaign_id=run.campaign_id, version=run.content_version
     )
-    modifier = dice._ability_modifier(getattr(abilities, ability))
+    modifier = dice.ability_modifier(getattr(abilities, ability))
     passive_score = 10 + modifier
     success = passive_score >= dc
     await append_event(

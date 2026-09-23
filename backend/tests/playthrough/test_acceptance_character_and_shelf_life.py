@@ -167,7 +167,10 @@ def test_ac1_creating_a_character_reads_it_back_moves_the_run_to_ready_and_refus
         "race",
         "characterClass",
         "level",
+        "abilities",
         "appearance",
+        "backstory",
+        "items",
     }, body
     assert body["id"] == str(character.id)
     assert body["name"] == character.name

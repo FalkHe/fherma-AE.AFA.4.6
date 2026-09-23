@@ -46,13 +46,53 @@ class CampaignRunSummaryRead(CamelModel):
     unavailable: bool
 
 
+class Ability(CamelModel):
+    """One ability score and its signed modifier, on the wire (WI1, sprint
+    010/05) -- `modifier` is `dice.ability_modifier(score)`, computed once
+    by `service.character_read` rather than left for a client to derive;
+    it may be zero or negative."""
+
+    score: int
+    modifier: int
+
+
+class CharacterAbilities(CamelModel):
+    """The character's six ability scores, each an `Ability` (WI1, sprint
+    010/05) -- the wire twin of `content.schemas.Abilities`, which carries
+    the bare scores alone."""
+
+    strength: Ability
+    dexterity: Ability
+    constitution: Ability
+    intelligence: Ability
+    wisdom: Ability
+    charisma: Ability
+
+
+class Item(CamelModel):
+    """One carried instance, on the wire (WI1, sprint 010/05) -- `id`,
+    `name` only. One entry per unit of quantity: identical items arrive as
+    separate rows here, and the client groups them, never this shape."""
+
+    id: str
+    name: str
+
+
 class CharacterRead(CamelModel):
     """The character, on the wire -- `id, name, currentHp, maxHp,
-    armourClass, race, characterClass, level, appearance` and nothing else
-    (I2; sprint 009-07 adds the four card facts -- ← research Decision 5):
-    no full state, no keys, no ownership. `race`/`characterClass`/`level`/
-    `appearance` are read off the object's `state` column
-    (`CharacterState`), never stored as columns of their own."""
+    armourClass, race, characterClass, level, appearance, abilities,
+    backstory, items` and nothing else (I2; sprint 009-07 adds the four
+    card facts -- ← research Decision 5; WI1 sprint 010/05 widens this to
+    the one hero shape shared by every read that already returns one --
+    the run overview, the `POST …/character` route and intent 009's
+    character card): no full state, no keys, no ownership, and no
+    `isAlive`/`down` (← D7 keeps conditions off the card). `race`/
+    `characterClass`/`level`/`appearance`/`abilities`/`backstory` are read
+    off the object's `state` column (`CharacterState`), never stored as
+    columns of their own -- `backstory` is `CharacterState.background`
+    under its wire name. `items` is one entry per unit of carried
+    quantity, supplied by the caller rather than queried inside
+    `character_read`."""
 
     id: str
     name: str
@@ -62,7 +102,10 @@ class CharacterRead(CamelModel):
     race: str
     character_class: str
     level: int
+    abilities: CharacterAbilities
     appearance: str
+    backstory: str
+    items: list[Item]
 
 
 class CampaignRunMemberRead(CamelModel):
