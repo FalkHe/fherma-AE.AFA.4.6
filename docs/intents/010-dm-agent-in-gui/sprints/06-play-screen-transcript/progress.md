@@ -25,6 +25,7 @@ Accepted the architect's assumptions: a question renders as a Dungeon Master row
 
 ## Backlog proposals
 A check's difficulty and whether the roll made it are never written where a player can read them, so the dice chip cannot show D12's verdict.
-Beyond 500 entries the transcript truncates at the oldest; paging belongs with a later sprint.
+Only the first five hundred entries of a transcript are read, so a very long adventure loses its newest ones; paging belongs with a later sprint.
 
 ## Verify
+Round 1: changes-requested — the transcript never actually scrolled, so it opened at the oldest entry and never offered the pill; the check line printed empty brackets without a skill; small lines truncated on a narrow screen; the review described the five-hundred-entry limit backwards.
