@@ -232,7 +232,7 @@ def make_record_action() -> Node:
             (msg for msg in reversed(state["messages"]) if isinstance(msg, HumanMessage)),
             None,
         )
-        if last_human is not None and ctx.run_id is not None:
+        if last_human is not None and ctx.run_id is not None and ctx.record_action:
             text = (
                 last_human.content
                 if isinstance(last_human.content, str)

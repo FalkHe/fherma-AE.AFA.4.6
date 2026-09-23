@@ -468,6 +468,12 @@ Service functions (`service.py`), called as `service.f(...)`:
   the newest `question` with no `player_action` after it, else `"none"`.
   No column records this; the same three-way answer is derived again on
   every call. Called by the events route (below), never on its own.
+- `open_turn_id` (sprint 010/03) — the run's open turn id alone: whichever
+  `turn_id` its newest event carries, or `None` when there is no event yet
+  or the newest one carries no turn. `game.service.run_turn` calls this to
+  reuse the open turn's id across a resumed interrupt leg (an answered
+  question, a resolved roll, a retried mid-flight break) instead of
+  minting a new one.
 - `_require_member` — internal; every function above that takes a run id
   calls it first to check membership before doing anything else.
 - `_require_writable` — internal; raises `RunArchivedError` when the run is

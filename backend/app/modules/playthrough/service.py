@@ -2599,6 +2599,30 @@ async def get_awaiting(db: AsyncSession, *, user_id: str, run_id: str) -> str:
     return "none"
 
 
+async def open_turn_id(db: AsyncSession, *, user_id: str, run_id: str) -> str | None:
+    """The id of `run_id`'s open turn -- whichever `turn_id` the newest
+    event for this run carries, `None` when the run has no event yet or
+    the newest one carries no turn at all (sprint 010/03, I3). The same
+    "open turn" `get_awaiting` reads back from (its own newest event's
+    `turn_id`); this is that id alone, with no read of the events it
+    contains.
+
+    `_require_member` first, exactly like every other function that takes
+    a `run_id`: a foreign or unknown run raises `CampaignRunNotFoundError`
+    before anything else runs.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+
+    stmt = (
+        select(Event.turn_id)
+        .where(Event.campaign_run_id == run_id)
+        .order_by(Event.id.desc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def run_cost(db: AsyncSession, *, user_id: str, run_id: str) -> RunCost:
     """What `run_id` has cost, whole and by turn (WI1, AC3) -- for its
     owner alone, exact to the last digit, and reachable only as
