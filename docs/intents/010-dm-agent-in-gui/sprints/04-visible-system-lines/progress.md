@@ -23,3 +23,4 @@ Research found the rule heading reaching the model split character by character;
 Nothing in the game can heal a hero yet, so the hit-point line only ever falls today; the shape already covers healing for when a consumable exists.
 
 ## Verify
+Round 1: changes-requested — the module's written description of each mechanic still said the world changes leave nothing visible.
