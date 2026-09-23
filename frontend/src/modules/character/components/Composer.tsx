@@ -2,6 +2,11 @@
 // submits on Enter and clears itself once its text is handed off, matching
 // `SignInForm`'s form/TextField/Button shape (frontend-stack.md
 // "Accessibility baseline").
+//
+// Creation-chat viewport fix: while a message is in flight (`disabled`) the
+// field turns read-only rather than disabled, so focus stays in it (a
+// disabled input drops focus); only the Send button is disabled, and a
+// submit (Enter) meanwhile does nothing.
 import { type FormEvent, useState } from "react";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
@@ -19,6 +24,9 @@ export function Composer({ onSend, disabled }: ComposerProps) {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (disabled) {
+      return;
+    }
     const trimmed = text.trim();
     if (trimmed === "") {
       return;
@@ -36,7 +44,7 @@ export function Composer({ onSend, disabled }: ComposerProps) {
         fullWidth
         value={text}
         onChange={(event) => setText(event.target.value)}
-        disabled={disabled}
+        slotProps={{ input: { readOnly: disabled } }}
         autoComplete="off"
       />
       <Button type="submit" variant="contained" disabled={disabled}>

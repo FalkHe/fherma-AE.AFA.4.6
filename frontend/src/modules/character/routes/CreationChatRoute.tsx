@@ -10,13 +10,20 @@
 //
 // `ReviewPanel` replaces `Transcript`/`OfferedChoices` once
 // `step === "review" && canSave` (sprint 009-07 research.md Decision 1) —
-// the composer stays either way. "Change something" (Decision 2) is
-// remembered as the transcript length at the moment it was clicked: the
-// review stays dismissed until at least two player turns have landed since
-// — the "Change something" message itself, and one further message that
-// actually describes the change — so the very reply to "Change something"
-// can never immediately re-open the review even if it still reports
-// `review`/`canSave` unchanged.
+// the composer stays either way. "Change something" (Decision 2) dismisses
+// the review until the player picks "Review and save" in the dock: the
+// backend stays at `review`/`canSave` for the whole change round, so any
+// automatic re-open (the earlier "two player turns" rule) covered the
+// keeper's answer the moment it landed.
+//
+// Creation-chat viewport fix: the page marks itself `data-fit-viewport`, so
+// `AppShell` caps it at the viewport. The header, the narrow-screen sheet
+// strip (hidden during the review) and the dock (offered choices above the
+// composer) never scroll; the transcript well — or `ReviewPanel` in its
+// place — takes the remaining height and scrolls inside, and on a wide
+// screen the sheet card sits in its own rail, scrolling on its own too.
+// While the review shows, the rail is dropped and the review takes the full
+// width — it is the whole sheet already.
 import { useState } from "react";
 import { useBeforeUnload, useNavigate, useParams } from "react-router";
 import Box from "@mui/material/Box";
@@ -46,7 +53,7 @@ export function CreationChatRoute() {
   const theme = useTheme();
   const collapsed = useMediaQuery(theme.breakpoints.down("md"));
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
-  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const [reviewDismissed, setReviewDismissed] = useState(false);
 
   const { turns, sheet, step, stepNumber, canSave, readyMadeName, isSending, failed, send, retry } =
     useCreationChat(runId!);
@@ -59,13 +66,30 @@ export function CreationChatRoute() {
 
   const hasPlayerTurn = turns.some((turn) => turn.speaker === "player");
 
-  const playerTurnsSinceDismissal =
-    dismissedAt === null ? Infinity : turns.slice(dismissedAt).filter((turn) => turn.speaker === "player").length;
-  const reviewDismissed = dismissedAt !== null && playerTurnsSinceDismissal < 2;
-  const showReview = step === "review" && canSave && !reviewDismissed;
+  // A change that sends the conversation back to an earlier step (say, a
+  // new class) ends the dismissal, so arriving at the review again opens it
+  // on its own — React's "adjust state while rendering" pattern.
+  if (reviewDismissed && step !== "review") {
+    setReviewDismissed(false);
+  }
+  const reviewReady = step === "review" && canSave;
+  const showReview = reviewReady && !reviewDismissed;
+  const reviewing = showReview && sheet !== null;
 
   function handleLeave() {
     navigate(`/runs/${runId}`);
+  }
+
+  // A picked choice leaves the buttons it came from behind (the step moves
+  // on), so focus goes to the composer instead of dropping to the page —
+  // except on a touch screen, where focusing the field would pop the
+  // on-screen keyboard over the reply the player is about to read.
+  function handlePick(text: string) {
+    send(text);
+    const coarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+    if (!coarse) {
+      document.getElementById("creation-chat-composer")?.focus();
+    }
   }
 
   function handleSave() {
@@ -73,59 +97,102 @@ export function CreationChatRoute() {
   }
 
   function handleChangeSomething() {
-    setDismissedAt(turns.length);
+    setReviewDismissed(true);
     send(t("review.change"));
   }
 
   return (
-    <Stack spacing={4}>
-      <Button
-        onClick={() => setLeaveDialogOpen(true)}
-        startIcon={<ChevronLeft size={16} aria-hidden />}
-        sx={{ alignSelf: "flex-start" }}
+    <Box
+      // Opts this page into `AppShell`'s viewport fit (creation-chat
+      // viewport fix): the page itself never scrolls, only the well does.
+      data-fit-viewport=""
+      sx={{ flex: "1 1 0", minHeight: 0, display: "flex", flexDirection: "column" }}
+    >
+      <Stack
+        direction={{ xs: "row", md: "column" }}
+        spacing={3}
+        sx={{ alignItems: { xs: "center", md: "flex-start" }, mb: 5, flexShrink: 0 }}
       >
-        {t("chat.back")}
-      </Button>
+        <Button
+          onClick={() => setLeaveDialogOpen(true)}
+          startIcon={<ChevronLeft size={16} aria-hidden />}
+          sx={{ flexShrink: 0 }}
+        >
+          {t("chat.back")}
+        </Button>
 
-      <Stack spacing={1}>
-        <Typography variant="h2" component="h1">
-          {t("chat.title")}
-        </Typography>
-        <Typography sx={{ color: "text.secondary" }}>{t("chat.subtitle")}</Typography>
+        <Stack spacing={1} sx={{ minWidth: 0 }}>
+          <Typography variant="h2" component="h1" sx={{ typography: { xs: "h4", md: "h2" } }}>
+            {t("chat.title")}
+          </Typography>
+          {/* Hidden by CSS, not unmounted, below `md`: the header must stay
+              one short row there, but the copy stays in the DOM. */}
+          <Typography sx={{ color: "text.secondary", display: { xs: "none", md: "block" } }}>
+            {t("chat.subtitle")}
+          </Typography>
+        </Stack>
       </Stack>
 
-      {collapsed && <SheetPanel sheet={sheet} stepNumber={stepNumber} collapsed />}
+      {collapsed && !showReview && (
+        <Box sx={{ flexShrink: 0, mb: 5 }}>
+          <SheetPanel sheet={sheet} stepNumber={stepNumber} collapsed />
+        </Box>
+      )}
 
       <Box
         sx={{
+          flex: 1,
+          minHeight: 0,
           display: "grid",
-          gap: 4,
-          gridTemplateColumns: { xs: "1fr", md: "2fr 1fr" },
-          alignItems: "start",
+          // The review is itself the full sheet, so it takes the whole width
+          // and the rail beside it is dropped.
+          gridTemplateColumns: reviewing
+            ? "minmax(0, 1fr)"
+            : { xs: "minmax(0, 1fr)", md: "minmax(0, 1fr) var(--width-rail)" },
+          gridTemplateRows: "minmax(0, 1fr)",
+          gap: 7,
         }}
       >
-        <Stack spacing={4}>
-          {showReview && sheet ? (
+        <Stack spacing={4} sx={{ minHeight: 0 }}>
+          {reviewing ? (
             <ReviewPanel sheet={sheet} failed={failed} errorText={t("chat.error")} onSave={handleSave} onChange={handleChangeSomething} />
           ) : (
-            <>
-              <Transcript turns={turns} failed={failed} onRetry={retry} />
+            <Transcript turns={turns} failed={failed} onRetry={retry} />
+          )}
+          <Stack spacing={3} sx={{ flexShrink: 0 }}>
+            {!reviewing && (
               <OfferedChoices
                 step={step}
                 stepNumber={stepNumber}
                 readyMadeName={readyMadeName}
                 hasPlayerTurn={hasPlayerTurn}
-                onPick={send}
+                onPick={handlePick}
               />
-            </>
-          )}
-          <Composer onSend={send} disabled={isSending} />
+            )}
+            {/* A view switch, not a message: the sheet is already savable,
+                so going back to it sends nothing. */}
+            {reviewReady && reviewDismissed && (
+              <Button
+                variant="contained"
+                onClick={() => setReviewDismissed(false)}
+                disabled={isSending}
+                sx={{ alignSelf: "flex-start" }}
+              >
+                {t("review.back")}
+              </Button>
+            )}
+            <Composer onSend={send} disabled={isSending} />
+          </Stack>
         </Stack>
 
-        {!collapsed && <SheetPanel sheet={sheet} stepNumber={stepNumber} collapsed={false} />}
+        {!collapsed && !reviewing && (
+          <Box sx={{ minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <SheetPanel sheet={sheet} stepNumber={stepNumber} collapsed={false} />
+          </Box>
+        )}
       </Box>
 
       <LeaveDialog open={leaveDialogOpen} onStay={() => setLeaveDialogOpen(false)} onLeave={handleLeave} />
-    </Stack>
+    </Box>
   );
 }
