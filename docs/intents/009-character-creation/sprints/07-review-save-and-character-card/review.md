@@ -15,14 +15,13 @@ The web creation loop is closed. When the sheet is complete, the page shows "One
 - Click "Change something", ask for a different name, and the review comes back with the new name.
 - Click "Looks right, save": you land on the run screen, the player card shows the character card with a Ready badge, "1 of 1 characters ready" and "Next up" on the first adventure, with no reload.
 - On a fresh run click "Take Rosalind Thorn": her sheet appears as the review; saving puts her card on the run screen.
-- Break the model and click save: the review stays with the tavern's line, and the button can be pressed again.
 
 ## Heads-up
 - The saved character has no edit control, by decision.
 - The run overview now returns the character as one nested object instead of a name; the API client was regenerated.
-- The review's ability modifiers are computed in the browser from the scores the game fixed.
 - The ready-made hero has no alignment, speed or skills of her own, so her review shows a dash there.
 
 Brief: docs/intents/009-character-creation/sprints/07-review-save-and-character-card/brief.md
 
 ## Verdict
+Round 1: approve — the last look shows the whole sheet, saving makes it final, and the run screen returns on its own with the character's card, the party counted ready and the first adventure next up; the ready-made hero reaches the same last look, "Change something" returns with the change made, and a failed save leaves the review with the tavern's line to try again.
