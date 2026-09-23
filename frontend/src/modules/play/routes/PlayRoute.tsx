@@ -23,6 +23,16 @@
 // them per D12 but do not build them"). With neither built yet, D12's wide
 // and narrow layouts (§2, §5) already coincide: one column, the header
 // above the transcript, capped at the design's own chat column width.
+//
+// The transcript is meant to be the thing that scrolls, not the page (D12
+// §2: "the transcript keeps itself at the newest entry"). Every ancestor
+// between the viewport and this screen — `AppShell`'s `<main>` and
+// `Container` (`core/layout/AppShell.tsx`) — has an auto height, so a plain
+// `height: "100%"` on the transcript resolves to nothing (verification
+// round 1, defect 1: it never scrolled, the page did instead). Fixing that
+// from here means giving *this* screen a genuine, viewport-relative height
+// and letting the transcript fill whatever is left of it via flex, rather
+// than reaching into `core/layout` (out of this work item's ownership).
 import type { ReactElement } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 import Alert from "@mui/material/Alert";
@@ -43,6 +53,14 @@ interface PlayScreenProps {
   table: PlayTable;
 }
 
+// `AppShell`'s sticky `AppBar` (`core/layout/AppShell.tsx`) renders MUI's
+// own default `Toolbar` minimum height — 56px below the `sm` breakpoint,
+// 64px at `sm` and up — plus the 1px bottom border that component adds.
+// Mirrored here, rather than read off `theme.mixins.toolbar` at render
+// time, only to bound this screen's own height off the viewport; `AppShell`
+// itself is `core/`, outside this work item.
+const APP_BAR_HEIGHT_PX = { xs: 56 + 1, sm: 64 + 1 };
+
 function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   const { t } = useTranslation("play");
   // One hero per run (D9) — the transcript's own `player_action` payload
@@ -52,14 +70,33 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   const { rows } = usePlayTranscript(runId, heroName);
 
   return (
-    <Stack spacing={4} sx={{ maxWidth: "var(--width-chat)" }}>
+    <Stack
+      spacing={4}
+      sx={(theme) => {
+        // The screen's own bounded height: the dynamic viewport height
+        // minus the sticky `AppBar` above it and `AppShell`'s `Container`
+        // padding (`py: 4`) around it — the only two ancestors with a
+        // height that isn't itself content-driven. `minHeight: 0` lets the
+        // `Transcript` child below claim the remainder through `flexGrow`
+        // instead of the `Stack`'s own content pushing it taller than this.
+        const containerPadding = `(${theme.spacing(4)} * 2)`;
+        return {
+          maxWidth: "var(--width-chat)",
+          minHeight: 0,
+          height: `calc(100dvh - ${APP_BAR_HEIGHT_PX.xs}px - ${containerPadding})`,
+          [theme.breakpoints.up("sm")]: {
+            height: `calc(100dvh - ${APP_BAR_HEIGHT_PX.sm}px - ${containerPadding})`,
+          },
+        };
+      }}
+    >
       {/* `px: 4` matches `Transcript.tsx`'s own card padding (`p: 4`,
           `theme.spacing(4)` = the design system's `--sp-4` token) exactly —
           without it, the header's text sits flush against the page's own
           slim outer gutter while the card's text sits inset by its own
           padding, so the two visibly fail to line up at narrow widths (D12
           §5) even though their outer edges already coincide. */}
-      <Stack spacing={1} sx={{ px: 4 }}>
+      <Stack spacing={1} sx={{ px: 4, flexShrink: 0 }}>
         {table.campaignTitle !== null && (
           <Link component={RouterLink} to={`/runs/${runId}`} sx={{ alignSelf: "flex-start" }}>
             {t("header.back", { campaign: table.campaignTitle })}
@@ -75,7 +112,9 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
         )}
       </Stack>
 
-      <Transcript rows={rows} />
+      <Box sx={{ flex: "1 1 auto", minHeight: 0 }}>
+        <Transcript rows={rows} />
+      </Box>
     </Stack>
   );
 }

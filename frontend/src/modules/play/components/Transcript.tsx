@@ -11,6 +11,15 @@
 // on the scrolling element, and the pill only ever appears while
 // `!atBottom` (D12 §2 -- "scrolling up puts a Jump to the latest pill at
 // the foot of it").
+//
+// This component only ever *scrolls* if its own root is given a genuine,
+// bounded height by whatever renders it -- a bare `height: "100%"` here
+// resolves to nothing against an auto-height parent (verification round 1,
+// defect 1). `PlayRoute.tsx` is the one that bounds it, off the viewport;
+// this component's job is only to fill whatever height that parent hands
+// it (`height: "100%"`, `display: "flex"`, `minHeight: 0`) and scroll its
+// own rows within that, via `flex: "1 1 auto"` on the row list itself
+// rather than the `maxHeight: "100%"` this replaced.
 import type { ReactElement } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
@@ -51,14 +60,16 @@ export function Transcript({ rows }: TranscriptProps): ReactElement {
   const { scrollRef, atBottom, jumpToLatest } = useStickToLatest();
 
   return (
-    <Box sx={{ position: "relative" }}>
+    <Box sx={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
       <Box
         ref={scrollRef}
         role="log"
         sx={(theme) => ({
           display: "grid",
           gap: 4,
-          maxHeight: "100%",
+          alignContent: "start",
+          flex: "1 1 auto",
+          minHeight: 0,
           overflowY: "auto",
           p: 4,
           borderRadius: theme.shape.borderRadiusOrganic,
@@ -74,7 +85,7 @@ export function Transcript({ rows }: TranscriptProps): ReactElement {
       </Box>
 
       {!atBottom && (
-        <Box sx={{ position: "sticky", bottom: 16, display: "flex", justifyContent: "center", mt: -8 }}>
+        <Box sx={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)" }}>
           <JumpToLatestPill onClick={jumpToLatest} />
         </Box>
       )}
