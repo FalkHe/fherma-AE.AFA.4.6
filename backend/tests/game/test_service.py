@@ -18,8 +18,22 @@ from app.core.checkpointer import service as checkpointer_service
 from app.modules.game import commands, service
 from app.modules.game.agent import nodes, tools
 from app.modules.game.agent.state import DmContext
+from app.modules.users import service as users_service
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def stub_user_lookup(monkeypatch):
+    async def fake_get_user_by_username(db, *, username):
+        return _User()
+
+    monkeypatch.setattr(users_service, "get_user_by_username", fake_get_user_by_username)
+
+
+@dataclass
+class _User:
+    id: str = "user-1"
 
 
 @dataclass
@@ -1109,13 +1123,29 @@ def test_load_context_injects_scene_party_and_recap_into_system_prompt(monkeypat
         campaign_run_id="run-1",
         instance_key="chest-1",
     )
+    shortsword = GameObject(
+        id="shortsword-1",
+        name="Shortsword",
+        kind="item",
+        campaign_run_id="run-1",
+        instance_key="shortsword-1",
+        owner_object_id="char-1",
+    )
+    healing_potion = GameObject(
+        id="potion-1",
+        name="Healing Potion",
+        kind="item",
+        campaign_run_id="run-1",
+        instance_key="potion-1",
+        owner_object_id="char-1",
+    )
 
     execute_queries = [
         _QueryResult(
             scalar=CampaignRun(id="run-1", campaign_id="greenhollow", content_version="v1")
         ),
         _QueryResult(scalars_list=[char]),
-        _QueryResult(scalars_list=["Shortsword", "Healing Potion"]),
+        _QueryResult(scalars_list=[shortsword, healing_potion]),
         _QueryResult(scalars_list=[monster, fixture]),
     ]
     query_idx = 0
@@ -1184,7 +1214,7 @@ def test_load_context_injects_scene_party_and_recap_into_system_prompt(monkeypat
     assert "cellar-door (a wooden trapdoor to the cellar) -> cellar" in content
     assert (
         "Rosalind (id: char-1): HP 15/15, AC 16, status: alive, "
-        "carried items: [Shortsword, Healing Potion]"
+        "carried items: [Shortsword (id: shortsword-1), Healing Potion (id: potion-1)]"
     ) in content
     assert "Goblin Lookout (id: gob-1, HP: 6/6, AC: 13)" in content
     assert "Oak Chest (id: chest-1, kind: fixture)" in content

@@ -128,13 +128,17 @@ async def _build_game_context(ctx: DmContext) -> str:
 
             # Carried items
             items_result = await ctx.db.execute(
-                select(playthrough_models.GameObject.name).where(
+                select(playthrough_models.GameObject).where(
                     playthrough_models.GameObject.campaign_run_id == ctx.run_id,
                     playthrough_models.GameObject.owner_object_id == char.id,
                 )
             )
             carried_items = list(items_result.scalars().all())
-            items_str = ", ".join(carried_items) if carried_items else "none"
+            items_str = (
+                ", ".join(f"{item.name} (id: {item.id})" for item in carried_items)
+                if carried_items
+                else "none"
+            )
 
             status_str = "alive" if char.is_alive else "unconscious/dead"
             party_lines.append(
