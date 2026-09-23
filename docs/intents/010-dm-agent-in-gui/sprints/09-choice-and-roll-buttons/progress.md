@@ -9,11 +9,11 @@ stage: running
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | DM names ability, skill, DC when calling for a roll |
-| 2 | running | pending derivation, verdict, strings |
-| 3 | running | PendingPrompt and dice verdict |
-| 4 | running | transcript prompt slot |
-| 5 | open | wiring |
+| 1 | done | DM names ability, skill, DC when calling for a roll |
+| 2 | done | pending derived from the read; verdict; DC strings |
+| 3 | done | answer and roll buttons; verdict mark on the chip |
+| 4 | done | prompt slot before the thinking line; verdict to the chip |
+| 5 | done | buttons wired: answer sends, roll rolls, composer precedence |
 
 Status: `open | running | done | failed`
 
