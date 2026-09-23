@@ -139,6 +139,24 @@ module owns everything past "Start adventure" / "Continue".
   `thinking` prop and the composer's `"turnRunning"` state together, so
   either always mirrors the other.
 
+## Owns (sprint 010/08 — start adventure, and the opening scene)
+
+- `hooks/useTakeTurn.ts` — also exposes `startOpening()`: posts the opening
+  turn (`{ text: null }`, no player row — the wire writes no `player_action`
+  event for this turn kind) through the same mutation `send` uses, so it
+  shares `isSending`, the settle behaviour and the transcript invalidation.
+- `hooks/useOpeningTurn.ts` — `useOpeningTurn(onStart: () => void): void`
+  fires `onStart` exactly once when `useLocation().state` carries
+  `{ startOpening: true }` (set by `playthrough`'s "Start adventure" flow,
+  `useEnterAdventure.ts`), then clears that flag with a replacing navigation
+  so a reload of the same history entry never refires it. `PlayRoute` calls
+  it with `startOpening`.
+- `components/Transcript.tsx` — the empty line
+  ("Nothing written down yet...") now shows whenever the transcript holds
+  only scene dividers, not only when it holds zero rows — a brand-new
+  adventure's first `scene_entered` row lands before the opening turn's
+  narration does.
+
 ## Surface
 
 - `TranscriptRow`, `SystemKey`, `EventRead` (re-exported) — consumed by
@@ -151,3 +169,6 @@ module owns everything past "Start adventure" / "Continue".
 - `Composer`, `useRunNotices`, `useTakeTurn` and `usePlayTranscript`'s
   `turnUnfinished` — consumed by `routes/PlayRoute.tsx` (sprint 010/07 WI6)
   to drive sending a turn, live updates and the composer/thinking state.
+- `useOpeningTurn` and `useTakeTurn`'s `startOpening` — consumed by
+  `routes/PlayRoute.tsx` (sprint 010/08 WI4) to fire the opening turn once
+  when the route is reached from `playthrough`'s "Start adventure" flow.

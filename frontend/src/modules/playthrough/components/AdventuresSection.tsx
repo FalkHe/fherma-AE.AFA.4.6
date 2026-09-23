@@ -16,20 +16,26 @@
 // rows before it "Done".
 //
 // "Start adventure" renders on the current row only, and only while it is
-// still `unplayed` (never once it is under way), and is always disabled with
-// no `onClick` at all (decision) -- starting an adventure isn't built yet,
-// so the button can't offer to do it regardless of party readiness, unlike
-// the design mock's `disabled="{{blocked}}"`
-// (docs/design/dnd-app-dashboard-design/project/CampaignRun.dc.html:93). A
-// disabled button takes no focus, so its hover-only MUI Tooltip
-// (`<span>`-inside-`Tooltip>` pattern) only ever repeats the reason when
-// that reason applies (the row is actually waiting on the party); the
-// always-visible heading line is what serves keyboard and screen-reader
-// users. "Start adventure" stays disabled and unwired this sprint too (D12
-// decisions doc) -- only the already-under-way row's wording and link are
-// new here.
+// still `unplayed` (never once it is under way). A disabled button takes no
+// focus, so its hover-only MUI Tooltip (`<span>`-inside-`Tooltip>` pattern)
+// only ever repeats the reason when that reason applies (the row is
+// actually waiting on the party); the always-visible heading line is what
+// serves keyboard and screen-reader users.
+//
+// Sprint 010/08 WI1, AC5: the button goes live -- enabled exactly when the
+// row would otherwise read "Next up" (party ready), wired to
+// `useEnterAdventure`, and disabled again while that request is in flight
+// so a double-click can't fire it twice. Nothing here ever asks for a
+// character (AC5's own text) -- readiness is `partyReady`, already computed
+// below from `RunOverview`'s own members, exactly the same condition that
+// already governs the row's "Next up"/"Waiting on party" wording. A failed
+// request leaves the button pressable again (`useEnterAdventure`'s
+// `isError`, not a separate retry control) and prints the shared network
+// error line for the whole section, since only the current row ever owns
+// this button.
 import type { ReactElement } from "react";
 import { Link as RouterLink, useParams } from "react-router";
+import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -42,6 +48,7 @@ import { Lock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { RunMember, RunOverview } from "../hooks/useRunOverview";
+import { useEnterAdventure } from "../hooks/useEnterAdventure";
 
 export type RunAdventure = RunOverview["adventures"][number];
 
@@ -104,9 +111,11 @@ interface AdventureRowProps {
   statusKey: AdventureStatusKey;
   isCurrent: boolean;
   runId: string;
+  onStart: () => void;
+  isEntering: boolean;
 }
 
-function AdventureRow({ adventure, numeral, statusKey, isCurrent, runId }: AdventureRowProps): ReactElement {
+function AdventureRow({ adventure, numeral, statusKey, isCurrent, runId, onStart, isEntering }: AdventureRowProps): ReactElement {
   const { t } = useTranslation("playthrough");
   const isLocked = statusKey === "adventures.status.locked";
   const isWaiting = statusKey === "adventures.status.waitingOnParty";
@@ -123,7 +132,7 @@ function AdventureRow({ adventure, numeral, statusKey, isCurrent, runId }: Adven
   const startButton = (
     <Tooltip title={isWaiting ? t("adventures.waitingHint") : undefined}>
       <span>
-        <Button variant="outlined" size="small" disabled>
+        <Button variant="outlined" size="small" onClick={onStart} disabled={isWaiting || isEntering}>
           {t("adventures.start")}
         </Button>
       </span>
@@ -190,9 +199,11 @@ function AdventureRow({ adventure, numeral, statusKey, isCurrent, runId }: Adven
 
 export function AdventuresSection({ adventures, members }: AdventuresSectionProps): ReactElement {
   const { t } = useTranslation("playthrough");
+  const { t: tCommon } = useTranslation("common");
   // This component only ever renders under the `/runs/:runId` route
   // (`App.tsx`, via `RunRoute`), so the param is always present.
   const { runId } = useParams<"runId">();
+  const { start, isPending: isEntering, isError: enterFailed } = useEnterAdventure(runId ?? "");
 
   const partyReady = members.length > 0 && members.every((member) => member.ready);
   const currentIndex = adventures.findIndex((adventure) => adventure.status !== "done");
@@ -213,6 +224,8 @@ export function AdventuresSection({ adventures, members }: AdventuresSectionProp
           </Typography>
         )}
       </Stack>
+
+      {enterFailed && <Alert severity="error">{tCommon("errors.network")}</Alert>}
 
       <Stack spacing={3}>
         {adventures.map((adventure, index) => {
@@ -236,6 +249,8 @@ export function AdventuresSection({ adventures, members }: AdventuresSectionProp
               statusKey={statusKey}
               isCurrent={isCurrent}
               runId={runId ?? ""}
+              onStart={start}
+              isEntering={isEntering}
             />
           );
         })}

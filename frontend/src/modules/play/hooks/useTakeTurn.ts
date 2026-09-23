@@ -50,7 +50,11 @@ export function useTakeTurn({ runId, rows }: UseTakeTurnArgs) {
   // from one that was already there before this turn started.
   const sentBeforeRef = useRef<Set<string>>(new Set());
 
-  const mutation = useMutation<TurnRead, ApiFailure, string>({
+  // `text` is `string | null` -- the opening turn (`startOpening`, sprint
+  // 010/08 WI2, I2/AC4) posts `{ text: null }` and writes no player row
+  // (facts), so the mutation's own input type widens to match rather than
+  // needing a cast at the call site.
+  const mutation = useMutation<TurnRead, ApiFailure, string | null>({
     mutationFn: (text) =>
       unwrap(api.POST("/api/v1/game/runs/{run_id}/turn", { params: { path: { run_id: runId } }, body: { text } })),
     onSettled: () => {
@@ -79,5 +83,13 @@ export function useTakeTurn({ runId, rows }: UseTakeTurnArgs) {
     mutation.mutate(text);
   }
 
-  return { send, isSending: mutation.isPending, pending };
+  // The opening turn (sprint 010/08 WI2, I2 ← AC4): `{ text: null }`. Sets
+  // no `pending` row -- the route writes no player row for this turn kind
+  // (facts), so there is no optimistic text to show -- but settles exactly
+  // like `send` (same `onSettled`, same `isSending`, same invalidation).
+  function startOpening(): void {
+    mutation.mutate(null);
+  }
+
+  return { send, startOpening, isSending: mutation.isPending, pending };
 }
