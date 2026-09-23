@@ -28,7 +28,10 @@ difficulty whenever it calls for a roll, which is where the difficulty and the m
 A check whose difficulty the Dungeon Master did not name shows no "DC n" and no mark, never an invented
 one; older transcripts recorded before this sprint look that way. A question that arrives with no answers
 leaves the composer open, since the game accepts free text in exactly that case. A turn that breaks
-mid-way still keeps the thinking line until the long-wait sprint.
+mid-way still keeps the thinking line until the long-wait sprint. The first verification found that the
+Dungeon Master had never once handed the dice to a player, rolling every check itself; its instructions
+now say that a hero's checks and saves go to the player as a roll button while monsters, hidden rolls and
+damage stay with the game. Expect more turns to stop on a roll than before.
 
 Brief: docs/intents/010-dm-agent-in-gui/sprints/09-choice-and-roll-buttons/brief.md
 
