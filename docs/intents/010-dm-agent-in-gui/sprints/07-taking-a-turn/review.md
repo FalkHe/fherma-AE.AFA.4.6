@@ -14,7 +14,8 @@ and a thinking line appears at the foot of the transcript. While the turn runs, 
 — a rule looked up, dice, a question — appears within a couple of seconds, above the thinking line. When
 the narration lands the thinking line goes and the composer asks again. The screen listens to the run's
 notice stream and re-reads the transcript on every notice; the browser reopens the stream on its own when
-the server closes it.
+the server closes it. While a turn runs the screen also re-reads every few seconds on its own, so a lost
+notice cannot leave it stuck.
 
 ## How to check it
 - Open an adventure in progress, write an action and send it: your row appears immediately and the
@@ -31,7 +32,9 @@ the server closes it.
 When the Dungeon Master asks a question or calls for a roll, the composer stays closed with its own
 line ("The Dungeon Master is waiting on one of those." / "The dice go first.") but offers no buttons yet — those are the
 sprint after next. A turn that breaks mid-way keeps the thinking line until the long-wait sprint adds its
-give-up wording. Entries lag about two seconds behind the game and nothing streams word by word.
+give-up wording. Entries lag about two seconds behind the game and nothing streams word by word. Round 1
+found the notice stream dying on the server the moment it opened (a fault older than this sprint); it is
+fixed here.
 
 Brief: docs/intents/010-dm-agent-in-gui/sprints/07-taking-a-turn/brief.md
 
