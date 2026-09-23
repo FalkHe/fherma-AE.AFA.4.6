@@ -57,6 +57,20 @@ function nestedString(value: unknown, key: string): string {
   return "";
 }
 
+/** `"ability_check"` -> `"Ability check"` -- the roll kind, read as prose
+ * rather than the wire's snake_case token, for the one case (AC3 fix) where
+ * a check line has neither an ability nor a skill to show (attack, damage,
+ * initiative and custom rolls carry neither, per `game/agent/tools.py`'s
+ * `roll_dice`/`request_player_roll` docstrings -- the common case for those
+ * kinds, not an edge one). */
+function humanizeRollKind(kind: string): string {
+  if (kind === "") {
+    return "";
+  }
+  const spaced = kind.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 /** `faces` joined, the signed `modifier` appended when it is non-zero --
  * e.g. `faces: [13], modifier: 1` -> `"13 + 1"` (D12 §2's dice chip). */
 function formatBreakdown(faces: number[], modifier: number): string {
@@ -66,6 +80,37 @@ function formatBreakdown(faces: number[], modifier: number): string {
   }
   const sign = modifier > 0 ? "+" : "-";
   return dice === "" ? `${sign} ${Math.abs(modifier)}` : `${dice} ${sign} ${Math.abs(modifier)}`;
+}
+
+/** `system.check`'s `values` -- ability and skill together when both are
+ * known (`context: "full"`, `play.json`'s `check_full`), the ability alone
+ * when there is no skill (the base `check` key, the common shape:
+ * `request_player_roll`'s own docstring gives only `{"ability": …}` for a
+ * check/save), and the roll's own kind, read as prose, when neither is
+ * known (`context: "kind"`, `check_kind` -- attack, damage, initiative and
+ * custom rolls carry no ability at all). The difficulty is never included
+ * here either way -- it lives only on the Dungeon Master's private
+ * `tool_call` row (research.md, sprint 010/06) -- and is never invented.
+ * `context` rides along inside `values` on purpose: `SystemLine` (WI2)
+ * calls `t("system.check", values)` generically, and i18next's own context
+ * selection reads that same options object -- no sentence is composed here,
+ * only which of `play.json`'s own strings applies. */
+function checkRow(event: EventRead): TranscriptRow {
+  const payload = event.payload;
+  const ability = nestedString(payload.context, "ability");
+  const skill = nestedString(payload.context, "skill");
+  if (ability !== "" && skill !== "") {
+    return { kind: "system", id: event.id, key: "check", values: { ability, skill, context: "full" } };
+  }
+  if (ability !== "") {
+    return { kind: "system", id: event.id, key: "check", values: { ability } };
+  }
+  return {
+    kind: "system",
+    id: event.id,
+    key: "check",
+    values: { kind: humanizeRollKind(str(payload, "kind")), context: "kind" },
+  };
 }
 
 function itemMovedRow(event: EventRead): TranscriptRow {
@@ -131,15 +176,7 @@ function toRow(event: EventRead, heroName: string, requests: Map<string, Payload
         values: { name: str(payload, "actorName"), action: str(payload, "action") },
       };
     case "roll_requested":
-      // The check's difficulty is never on this row -- it lives only on
-      // the Dungeon Master's private `tool_call` row (research.md, sprint
-      // 010/06) -- and is deliberately not invented here.
-      return {
-        kind: "system",
-        id: event.id,
-        key: "check",
-        values: { ability: nestedString(payload.context, "ability"), skill: nestedString(payload.context, "skill") },
-      };
+      return checkRow(event);
     case "roll":
       // The dice chip's verdict (made it / missed) is never on this row for
       // the same reason -- deliberately omitted, never invented.

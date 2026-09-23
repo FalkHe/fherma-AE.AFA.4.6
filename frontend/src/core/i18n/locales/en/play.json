@@ -33,7 +33,9 @@
     "itemGiven": "{{name}} gives the {{item}} to {{to}}",
     "hpChanged": "{{name}}: {{before}} → {{after}} hit points",
     "wayOpened": "{{name}} · {{action}}",
-    "check": "{{ability}} ({{skill}})"
+    "check": "{{ability}}",
+    "check_full": "{{ability}} ({{skill}})",
+    "check_kind": "{{kind}}"
   },
   "failure": {
     "line": "The Dungeon Master has lost the thread of that one. Nothing that already happened is lost — shall we pick it up again?",

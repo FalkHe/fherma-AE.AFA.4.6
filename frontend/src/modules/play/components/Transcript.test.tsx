@@ -101,7 +101,14 @@ describe("Transcript (WI2)", () => {
     },
     { key: "hpChanged", values: { name: "Rosalind Thorn", before: 12, after: 9 }, expected: "· Rosalind Thorn: 12 → 9 hit points ·" },
     { key: "wayOpened", values: { name: "Rosalind Thorn", action: "cuts open the thornbrush" }, expected: "· Rosalind Thorn · cuts open the thornbrush ·" },
-    { key: "check", values: { ability: "Intelligence", skill: "Investigation" }, expected: "· Intelligence (Investigation) ·" },
+    // `context: "full"` is `transcript.ts`'s own value for "both known" (AC3
+    // fix) -- `SystemLine`'s generic `t(key, values)` call reads it as
+    // i18next's context option and picks `check_full` over the bare `check`.
+    {
+      key: "check",
+      values: { ability: "Intelligence", skill: "Investigation", context: "full" },
+      expected: "· Intelligence (Investigation) ·",
+    },
   ];
 
   it.each(systemCases)("words the '$key' system line from its values by the interface's own string", ({ key, values, expected }) => {

@@ -4,7 +4,17 @@
 // and never throws; the mapper is pure.
 import { describe, expect, it } from "vitest";
 
-import { toTranscriptRows, type EventRead } from "./transcript";
+import i18n from "../../core/i18n";
+import { toTranscriptRows, type EventRead, type SystemKey } from "./transcript";
+
+// `SystemLine` (WI2) calls `t(\`system.${key}\`, values)` verbatim -- this
+// reproduces exactly that call, so a `check` row's `values` (in particular
+// its `context`) is checked against what it actually renders as, not just
+// against the row's own shape (AC3 fix: a missing skill or ability must
+// never render as stray empty brackets).
+function renderSystemRow(key: SystemKey, values: Record<string, string | number>): string {
+  return i18n.t(`play:system.${key}`, values);
+}
 
 let counter = 0;
 
@@ -124,7 +134,7 @@ describe("toTranscriptRows (I1)", () => {
     ]);
   });
 
-  it("maps roll_requested to a system row keyed check, without a difficulty", () => {
+  it("maps roll_requested (ability and skill both known) to a system check row, without a difficulty", () => {
     const e = event(
       "roll_requested",
       { kind: "ability_check", actorId: "hero-1", formula: "1d20+1", context: { ability: "Intelligence", skill: "Investigation" } },
@@ -132,16 +142,33 @@ describe("toTranscriptRows (I1)", () => {
     );
 
     expect(toTranscriptRows([e], "Rosalind Thorn")).toEqual([
-      { kind: "system", id: "req1", key: "check", values: { ability: "Intelligence", skill: "Investigation" } },
+      { kind: "system", id: "req1", key: "check", values: { ability: "Intelligence", skill: "Investigation", context: "full" } },
     ]);
+    expect(renderSystemRow("check", { ability: "Intelligence", skill: "Investigation", context: "full" })).toBe(
+      "Intelligence (Investigation)",
+    );
   });
 
-  it("roll_requested with no ability/skill context still yields a check row, empty values", () => {
+  it("maps roll_requested (ability known, no skill -- a saving throw) to the ability alone, not empty brackets", () => {
+    const e = event(
+      "roll_requested",
+      { kind: "saving_throw", actorId: "hero-1", formula: "1d20+2", context: { ability: "Dexterity" } },
+      { id: "req1b" },
+    );
+
+    expect(toTranscriptRows([e], "Rosalind Thorn")).toEqual([
+      { kind: "system", id: "req1b", key: "check", values: { ability: "Dexterity" } },
+    ]);
+    expect(renderSystemRow("check", { ability: "Dexterity" })).toBe("Dexterity");
+  });
+
+  it("maps roll_requested (neither ability nor skill known -- an initiative roll) to the roll's own kind, not empty brackets", () => {
     const e = event("roll_requested", { kind: "initiative", actorId: "hero-1", formula: "1d20", context: null }, { id: "req2" });
 
     expect(toTranscriptRows([e], "Rosalind Thorn")).toEqual([
-      { kind: "system", id: "req2", key: "check", values: { ability: "", skill: "" } },
+      { kind: "system", id: "req2", key: "check", values: { kind: "Initiative", context: "kind" } },
     ]);
+    expect(renderSystemRow("check", { kind: "Initiative", context: "kind" })).toBe("Initiative");
   });
 
   it("maps a linked roll to a dice row, breakdown joining faces and the signed modifier, label from context.skill", () => {

@@ -20,7 +20,15 @@ module owns everything past "Start adventure" / "Continue".
     `hp_changed`, `way_opened`, `roll_requested` (`key: "check"`, no
     difficulty — never recorded, never invented). `key` is the bare
     `SystemKey`; the row-drawing component looks the wording up at
-    `system.<key>` in `play.json`.
+    `system.<key>` in `play.json`. `check`'s `values` also carry a
+    `context` (`"full"` when the request names both an ability and a skill,
+    absent when it names an ability alone, `"kind"` when it names neither —
+    attack/damage/initiative/custom rolls, the common case for those kinds,
+    not an edge one) for `SystemLine`'s own `t(key, values)` call to pick
+    `play.json`'s `check_full`/`check`/`check_kind` string with — i18next's
+    own context selection, never a sentence composed outside `play.json`
+    (AC3 fix: a missing skill or ability must never render as stray empty
+    brackets).
   - `dice` — `roll`. `breakdown` joins `faces` and appends the signed
     `modifier` (`"13 + 1"`). `label` prefers the linked `roll_requested`'s
     `context.skill`, then `.ability`, then falls back to the roll's own
