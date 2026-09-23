@@ -194,7 +194,7 @@ describe("RunRoute's adventures section (sprint 007/06 WI1, AC1-AC5)", () => {
     expect(screen.getByText("Locked")).toBeInTheDocument();
   });
 
-  it("AC4: Start adventure renders once, on the current row, disabled", async () => {
+  it("AC4: Start adventure renders once, on the current row, enabled once the party is ready (sprint 010/08 WI1, AC5)", async () => {
     stubAuthenticated();
     mockRoute("GET", "/api/v1/playthrough/runs/abc/overview", {
       status: 200,
@@ -213,7 +213,7 @@ describe("RunRoute's adventures section (sprint 007/06 WI1, AC1-AC5)", () => {
 
     const startButtons = await screen.findAllByRole("button", { name: "Start adventure" });
     expect(startButtons).toHaveLength(1);
-    expect(startButtons[0]).toBeDisabled();
+    expect(startButtons[0]).not.toBeDisabled();
   });
 });
 
