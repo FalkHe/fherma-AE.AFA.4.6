@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/69
 ---
 # Review: Sprint 07 — The player writes what they do, watches the Dungeon Master think as dice and questions appear, then reads the narration
 
