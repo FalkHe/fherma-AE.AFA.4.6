@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/71
 ---
 # Review: Sprint 09 — When the Dungeon Master asks or calls for a roll, only the offered buttons work; the game rolls
 
