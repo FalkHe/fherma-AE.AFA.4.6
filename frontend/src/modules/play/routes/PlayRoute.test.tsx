@@ -18,11 +18,42 @@
 // exact assertion while still passing every jsdom-scroll test that mocks
 // its own metrics, which is why those don't already catch it.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ThemeProvider } from "@mui/material/styles";
+import CssBaseline from "@mui/material/CssBaseline";
+import { I18nextProvider } from "react-i18next";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, type InitialEntry } from "react-router";
 
 import { renderApp } from "../../../test/render";
 import { getRequests, mockRoute } from "../../../test/network";
+import { theme } from "../../../core/theme";
+import i18n from "../../../core/i18n";
+import { createQueryClient } from "../../../core/queryClient";
+import App from "../../../App";
+
+// Sprint 010/08 WI4, I5 ← the opening turn's one-shot trigger. `renderApp`
+// (`test/render.tsx`) only ever accepts plain path strings, since no test
+// before this one needed router *state* on the initial entry -- the flag
+// this sprint reads (`useEnterAdventure.ts`'s `{ startOpening: true }`)
+// lives there. Reproduces that helper's own provider stack (same file,
+// "Reproduces the provider stack") rather than widening its shared
+// signature for this one work item's own single caller.
+function renderAppAt(initialEntries: InitialEntry[]) {
+  return render(
+    <ThemeProvider theme={theme} noSsr defaultMode="dark">
+      <CssBaseline />
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={createQueryClient()}>
+          <MemoryRouter initialEntries={initialEntries}>
+            <App />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </I18nextProvider>
+    </ThemeProvider>,
+  );
+}
 
 // Sprint 010/07 WI6, I6 ← AC1/AC2/AC3/AC4. `PlayScreen` now mounts
 // `useRunNotices`, which opens a real `EventSource` -- jsdom has none, so
@@ -330,5 +361,35 @@ describe("PlayRoute on /runs/:runId/play (AC2, AC6, AC7)", () => {
         getRequests({ method: "GET", path: "/api/v1/playthrough/campaign/run-1/events" }).length,
       ).toBeGreaterThan(before),
     );
+  });
+
+  it("AC4: landing with the router flag fires the opening turn once, thinking line shown, composer closed", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockEvents("run-1");
+    // Left pending on purpose, same precedent as the AC1 "sending" test above
+    // -- this only checks the in-flight state, the mutation never needs to
+    // settle for it.
+    mockRoute("POST", "/api/v1/game/runs/run-1/turn", () => new Promise(() => {}));
+
+    renderAppAt([{ pathname: "/runs/run-1/play", state: { startOpening: true } }]);
+
+    await waitFor(() =>
+      expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })).toHaveLength(1),
+    );
+    expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })[0].body).toEqual({ text: null });
+    expect(await screen.findByText("The Dungeon Master has the floor.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("What do you do?")).not.toBeInTheDocument();
+  });
+
+  it("landing without the router flag posts no opening turn", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockEvents("run-1");
+
+    renderAppAt(["/runs/run-1/play"]);
+
+    await screen.findByRole("heading", { level: 1, name: "Goblins of Greenhollow" });
+    expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })).toHaveLength(0);
   });
 });

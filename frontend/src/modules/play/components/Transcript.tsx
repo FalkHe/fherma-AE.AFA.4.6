@@ -1,7 +1,9 @@
 // The play screen's transcript (D12 §2, sprint 010/06 WI2): the four row
 // kinds it draws and no others -- narration, player, system and dice --
-// plus scene dividers between them and the empty line before anything is
-// recorded. Rows are pure data off `transcript.ts`'s `TranscriptRow` union;
+// plus scene dividers between them and the empty line while the transcript
+// holds nothing but scene dividers (a brand-new adventure, sprint 010/08
+// WI3), rendered after the dividers and before the thinking line. Rows are
+// pure data off `transcript.ts`'s `TranscriptRow` union;
 // this component's only job is drawing each kind D12's way and wording the
 // system rows through i18n (AC3) -- it invents nothing (no verdict on the
 // dice chip, no difficulty on the check line, ← sprint brief).
@@ -79,10 +81,9 @@ export function Transcript({ rows, thinking }: TranscriptProps): ReactElement {
           border: "1px solid var(--border-hairline)",
         })}
       >
-        {rows.length === 0 ? (
+        {rows.map(renderRow)}
+        {rows.every((row) => row.kind === "divider") && (
           <Typography sx={{ color: "text.secondary", textAlign: "center" }}>{t("empty")}</Typography>
-        ) : (
-          rows.map(renderRow)
         )}
         {thinking && <ThinkingLine />}
       </Box>

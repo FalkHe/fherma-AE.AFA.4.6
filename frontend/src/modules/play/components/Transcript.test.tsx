@@ -100,6 +100,38 @@ describe("Transcript (WI2)", () => {
     expect(screen.getByText(play.empty)).toBeInTheDocument();
   });
 
+  it("shows the empty line after the scene divider(s) when a brand-new adventure has only dividers recorded", () => {
+    const rows: TranscriptRow[] = [{ kind: "divider", id: "sc1", scene: "The Village Green" }];
+
+    renderWithProviders(<Transcript rows={rows} />);
+
+    const log = screen.getByRole("log");
+    expect(screen.getByText(play.empty)).toBeInTheDocument();
+    expect(log.textContent?.indexOf("The Village Green")).toBeLessThan(log.textContent?.indexOf(play.empty) ?? -1);
+  });
+
+  it("shows the empty line before the thinking line when only dividers are recorded and a turn is running", () => {
+    const rows: TranscriptRow[] = [{ kind: "divider", id: "sc1", scene: "The Village Green" }];
+
+    renderWithProviders(<Transcript rows={rows} thinking />);
+
+    const log = screen.getByRole("log");
+    expect(screen.getByTestId("thinking-line")).toBeInTheDocument();
+    expect(log.lastElementChild).toBe(screen.getByTestId("thinking-line"));
+    expect(log.textContent?.indexOf(play.empty)).toBeLessThan(log.textContent?.indexOf("thinking") ?? -1);
+  });
+
+  it("does not show the empty line once the transcript holds a narration row alongside a divider", () => {
+    const rows: TranscriptRow[] = [
+      { kind: "divider", id: "sc1", scene: "The Village Green" },
+      { kind: "narration", id: "n1", text: "Greenhollow is a dozen houses round a well.", at: "2026-09-08T21:02:00Z" },
+    ];
+
+    renderWithProviders(<Transcript rows={rows} />);
+
+    expect(screen.queryByText(play.empty)).not.toBeInTheDocument();
+  });
+
   const systemCases: Array<{ key: SystemKey; values: Record<string, string | number>; expected: string }> = [
     { key: "ruleLookedUp", values: { topic: "Investigation" }, expected: "· Checked the rules · Investigation ·" },
     { key: "itemTaken", values: { name: "Rosalind Thorn", item: "Bent Horseshoe" }, expected: "· Rosalind Thorn takes the Bent Horseshoe ·" },

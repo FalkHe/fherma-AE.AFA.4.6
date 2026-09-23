@@ -51,6 +51,7 @@ import { useTranslation } from "react-i18next";
 
 import { usePlayTable, type PlayTable } from "../hooks/usePlayTable";
 import { usePlayTranscript } from "../hooks/usePlayTranscript";
+import { useOpeningTurn } from "../hooks/useOpeningTurn";
 import { useRunNotices } from "../hooks/useRunNotices";
 import { useTakeTurn } from "../hooks/useTakeTurn";
 import { Transcript } from "../components/Transcript";
@@ -83,7 +84,14 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // `useTakeTurn` in turn needs this hook's own `rows` (`usePlayTranscript.ts`).
   const isSendingRef = useRef(false);
   const { rows, awaiting, turnUnfinished } = usePlayTranscript(runId, heroName, { isSendingRef });
-  const { send, isSending, pending } = useTakeTurn({ runId, rows });
+  const { send, startOpening, isSending, pending } = useTakeTurn({ runId, rows });
+
+  // Sprint 010/08 WI4, I5: a run just entered from the lobby carries
+  // `{ startOpening: true }` in router state (`useEnterAdventure.ts`); this
+  // fires the opening turn once and clears that state so a reload never
+  // refires it (`useOpeningTurn.ts`). `isSending` already covers the
+  // thinking line and the closed composer while it runs.
+  useOpeningTurn(startOpening);
 
   useEffect(() => {
     isSendingRef.current = isSending;
