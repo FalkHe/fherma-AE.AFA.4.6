@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-stage: draft
+stage: done
 ---
 # Progress: Sprint 06
 
@@ -29,3 +29,4 @@ Only the first five hundred entries of a transcript are read, so a very long adv
 
 ## Verify
 Round 1: changes-requested — the transcript never actually scrolled, so it opened at the oldest entry and never offered the pill; the check line printed empty brackets without a skill; small lines truncated on a narrow screen; the review described the five-hundred-entry limit backwards.
+Round 2: approve, no failed criteria.

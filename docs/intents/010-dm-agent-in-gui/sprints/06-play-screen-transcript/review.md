@@ -34,3 +34,4 @@ Brief: docs/intents/010-dm-agent-in-gui/sprints/06-play-screen-transcript/brief.
 
 ## Verdict
 Round 1: changes requested — a long transcript opened at its oldest entry instead of its newest and "Jump to the latest" never appeared; small lines printed empty brackets when a roll named no skill, and on a phone they were cut off mid-sentence.
+Round 2: approve — the play screen now shows a run's whole recorded transcript: it opens at the newest entry, scrolls on its own without dragging the page, and offers "Jump to the latest" once you scroll up; small system lines read properly when a roll names only an ability or neither, and on a phone a long one wraps instead of being cut off mid-sentence.
