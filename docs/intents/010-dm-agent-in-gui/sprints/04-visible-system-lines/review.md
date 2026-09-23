@@ -31,3 +31,5 @@ letter until now; it arrives readable.
 Brief: docs/intents/010-dm-agent-in-gui/sprints/04-visible-system-lines/brief.md
 
 ## Verdict
+Round 1: changes requested — the written description of every mechanic still said that taking, dropping, giving, wounding and entering a scene leave nothing visible, which would mislead whoever builds the screen on top of this.
+Round 2: approve — the transcript now records what the Dungeon Master actually did: a rule looked up by its topic, an item taken, given or dropped, hit points falling, a way opening and a scene entered, each carrying who acted and what changed as plain values, while refused attempts and private checks stay hidden as before.
