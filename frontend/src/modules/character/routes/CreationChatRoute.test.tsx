@@ -170,6 +170,27 @@ describe("CreationChatRoute on /runs/:runId/create-character (AC1, AC2, AC4-AC6)
     expect(screen.getAllByText("a sneaky halfling burglar")).toHaveLength(1);
   });
 
+  it("shows the server's updated sheet even when one tool in the turn fails", async () => {
+    stubAuthenticated();
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: greetingReply() });
+    mockRoute("POST", "/api/v1/character/creation/conv-1/messages", {
+      status: 200,
+      body: greetingReply({
+        error: true,
+        reply: "My ledger snagged while I was checking that. Please try that choice again.",
+        sheet: { name: "Ada" },
+      }),
+    });
+
+    renderApp(["/runs/r1/create-character"]);
+    await screen.findByText(greetingReply().reply);
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(character.chat.placeholder), "Call me Ada{Enter}");
+
+    expect(await screen.findByText("Ada")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
   it("AC6: the page's visible copy matches character.json — no raw translation key ever renders", async () => {
     stubAuthenticated();
     mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: greetingReply() });

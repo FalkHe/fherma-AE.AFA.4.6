@@ -54,6 +54,11 @@ def _draft_gaps(draft: dict[str, Any]) -> list[str]:
     return [field for field in _REQUIRED_DRAFT_FIELDS if not draft.get(field)]
 
 
+def _describe_gaps(gaps: list[str]) -> str:
+    names = {"race": "race", "character_class": "class", "name": "name"}
+    return ", ".join(names[gap] for gap in gaps)
+
+
 def _request_from_draft(draft: dict[str, Any]) -> CharacterCreateRequest:
     """Least effort: an absent `abilities` is filled from
     `builder.suggested_scores` for the draft's own class, never asked of
@@ -78,11 +83,40 @@ def _request_from_draft(draft: dict[str, Any]) -> CharacterCreateRequest:
     )
 
 
-def _class_from_draft(draft: dict[str, Any]) -> CharacterClass:
+def _class_from_draft(draft: dict[str, Any]) -> CharacterClass | None:
     character_class = draft.get("character_class")
     if character_class is None:
-        raise ValueError("Choose a race and class before equipment.")
+        return None
     return service.character_class(character_class)
+
+
+_CLASS_NEEDED = (
+    "I need your class written in the ledger before I can lay out your gear. "
+    "Tell me which class you choose, then confirm it."
+)
+_READY_MADE_CHANGE = (
+    "That ready-made hero is already equipped as written. To change them, "
+    "choose a race and class for a new hero first; then I can write your changes."
+)
+
+
+def _editing_ready_made(draft: dict[str, Any]) -> bool:
+    return bool(draft.get("ready_made") and not draft.get("character_class"))
+
+
+def _explain(runtime: ToolRuntime[CreationContext], content: str) -> Command:
+    """Make a prerequisite or refusal visible even if the model misses it."""
+    return Command(
+        update={
+            "messages": [
+                ToolMessage(
+                    content=content,
+                    tool_call_id=runtime.tool_call_id,
+                    additional_kwargs={"show_player": True, "refusal": True},
+                )
+            ]
+        }
+    )
 
 
 @tool("list_options")
@@ -107,17 +141,48 @@ def list_options() -> str:
 
 @tool("set_race_and_class")
 def set_race_and_class(
-    race: RaceName, character_class: ClassName, runtime: ToolRuntime[CreationContext]
-) -> Command:
-    """Write down the player's race and class. Call this only after the
-    player has said yes to both -- never before agreement."""
+    runtime: ToolRuntime[CreationContext],
+    race: RaceName | None = None,
+    character_class: ClassName | None = None,
+) -> Command | str:
+    """Write down a confirmed race or class choice. On a correction, pass
+    only the field the player changed; the other stays as recorded. Never
+    write an initial choice before the player agrees to it."""
+    draft = runtime.state.get("draft", {})
+    if race is None and character_class is None:
+        return _explain(runtime, "Tell me which race or class you would like written down.")
+    delta: dict[str, Any] = {}
+    if race is not None:
+        delta["race"] = race
+    if character_class is not None:
+        delta["character_class"] = character_class
+    if character_class is not None and draft.get("character_class") != character_class:
+        delta.update({key: None for key in draft if key.startswith("equipment_pick_")})
+        delta["equipment_defaults"] = None
+    delta["ready_made"] = None
+    chosen_race = race or draft.get("race")
+    chosen_class = character_class or draft.get("character_class")
+    written = ", ".join(
+        f"your {label} as {value}"
+        for label, value in (("race", race), ("class", character_class))
+        if value is not None
+    )
+    written = f"I've written {written}"
+    missing = []
+    if chosen_race is None:
+        missing.append("race")
+    if chosen_class is None:
+        missing.append("class")
+    if missing:
+        written += f". I still need your {' and '.join(missing)} before the sheet is complete"
     return Command(
         update={
-            "draft": {"race": race, "character_class": character_class},
+            "draft": delta,
             "messages": [
                 ToolMessage(
-                    content=f"Race set to {race}, class set to {character_class}.",
+                    content=f"{written}.",
                     tool_call_id=runtime.tool_call_id,
+                    additional_kwargs={"show_player": bool(missing)},
                 )
             ],
         }
@@ -126,26 +191,35 @@ def set_race_and_class(
 
 @tool("set_identity")
 def set_identity(
-    name: str,
     runtime: ToolRuntime[CreationContext],
-    appearance: str = "",
-    backstory: str = "",
-) -> Command:
-    """Write down the character's name, and looks and backstory once the
-    player has told you. Leave `appearance`/`backstory` empty to leave
-    what is already written down untouched -- call again as the player
-    fills in what was missing."""
-    delta: dict[str, Any] = {"name": name}
-    if appearance:
+    name: str | None = None,
+    appearance: str | None = None,
+    backstory: str | None = None,
+) -> Command | str:
+    """Write a confirmed name, appearance or backstory. Pass only the
+    fields the player changed; omitted fields stay as written. An empty
+    appearance or backstory clears that field."""
+    if _editing_ready_made(runtime.state.get("draft", {})):
+        return _explain(runtime, _READY_MADE_CHANGE)
+    delta: dict[str, Any] = {}
+    if name is not None:
+        if not name.strip():
+            return _explain(runtime, "A hero needs a name. Tell me what I should write.")
+        delta["name"] = name
+    if appearance is not None:
         delta["appearance"] = appearance
-    if backstory:
+    if backstory is not None:
         delta["backstory"] = backstory
+    if not delta:
+        return _explain(runtime, "Tell me which name, look or story detail you would like changed.")
+    current_name = runtime.state.get("draft", {}).get("name")
     return Command(
         update={
             "draft": delta,
             "messages": [
                 ToolMessage(
-                    content=f"Identity written down for {name}.", tool_call_id=runtime.tool_call_id
+                    content=f"Identity written down for {name or current_name or 'your hero'}.",
+                    tool_call_id=runtime.tool_call_id,
                 )
             ],
         }
@@ -153,14 +227,20 @@ def set_identity(
 
 
 @tool("suggest_scores")
-def suggest_scores(runtime: ToolRuntime[CreationContext]) -> Command:
+def suggest_scores(runtime: ToolRuntime[CreationContext]) -> Command | str:
     """Suggest a point-buy ability score set fitting the class already
     written down in the draft. The class is read from the draft, never
-    from your own words -- choose race and class first."""
+    from your own words -- choose a class first."""
     draft = runtime.state.get("draft", {})
+    if _editing_ready_made(draft):
+        return _explain(runtime, _READY_MADE_CHANGE)
     character_class = draft.get("character_class")
     if character_class is None:
-        raise ValueError("Choose a race and class before suggesting ability scores.")
+        return _explain(
+            runtime,
+            "I need your class written in the ledger before I can suggest scores. "
+            "Choose a class, then confirm it.",
+        )
     abilities = builder.suggested_scores(character_class)
     summary = ", ".join(f"{ability} {value}" for ability, value in abilities.model_dump().items())
     return Command(
@@ -176,10 +256,12 @@ def suggest_scores(runtime: ToolRuntime[CreationContext]) -> Command:
 
 
 @tool("roll_scores")
-def roll_scores(runtime: ToolRuntime[CreationContext]) -> Command:
+def roll_scores(runtime: ToolRuntime[CreationContext]) -> Command | str:
     """Roll the character's six ability scores through the game's own
     dice -- never a number you make up yourself. Calling this again
     re-rolls; the newest roll replaces whatever was rolled before."""
+    if _editing_ready_made(runtime.state.get("draft", {})):
+        return _explain(runtime, _READY_MADE_CHANGE)
     abilities = builder.roll_scores()
     summary = ", ".join(f"{ability} {value}" for ability, value in abilities.model_dump().items())
     return Command(
@@ -201,12 +283,14 @@ def set_scores(
     wisdom: int,
     charisma: int,
     runtime: ToolRuntime[CreationContext],
-) -> Command:
+) -> Command | str:
     """Write down the six ability scores the player chose to spend by
     hand: 27 points across all six, each score 8-15. Always writes, even
     when the spread is not legal yet -- relay the returned message
     verbatim, points left and any problem included; never compute the
     numbers yourself."""
+    if _editing_ready_made(runtime.state.get("draft", {})):
+        return _explain(runtime, _READY_MADE_CHANGE)
     abilities = Abilities.model_validate(
         {
             "strength": strength,
@@ -235,18 +319,48 @@ def set_scores(
 
 @tool("set_skills")
 def set_skills(
-    first: SkillName, second: SkillName, runtime: ToolRuntime[CreationContext]
-) -> Command:
-    """Write down the two skill proficiencies chosen from the story (the
-    class's own skills are filled in on their own -- never ask for
-    those)."""
+    runtime: ToolRuntime[CreationContext],
+    first: SkillName | None = None,
+    second: SkillName | None = None,
+) -> Command | str:
+    """Write either or both confirmed story skills. Omitted positions
+    keep their previous choice; the class's own skills fill in on their
+    own. A single story skill shows in the preview while the second is
+    still being chosen."""
+    draft = runtime.state.get("draft", {})
+    if _editing_ready_made(draft):
+        return _explain(runtime, _READY_MADE_CHANGE)
+    if first is None and second is None:
+        return _explain(runtime, "Tell me which story skill you would like written down.")
+    skills = list(draft.get("skills", []))
+    if first is not None:
+        if skills:
+            skills[0] = first
+        else:
+            skills.append(first)
+    if second is not None:
+        if not skills:
+            return _explain(
+                runtime,
+                "I can write the second skill once you choose the first. Which comes first?",
+            )
+        if len(skills) == 1:
+            skills.append(second)
+        else:
+            skills[1] = second
+    if len(skills) == 2 and skills[0] == skills[1]:
+        return _explain(runtime, "Those are the same skill twice. Choose a different second skill.")
+    content = f"I've written down {', '.join(skills)}."
+    if len(skills) == 1:
+        content += " I still need one more story skill."
     return Command(
         update={
-            "draft": {"skills": [first, second]},
+            "draft": {"skills": skills},
             "messages": [
                 ToolMessage(
-                    content=f"Skills written down: {first}, {second}.",
+                    content=content,
                     tool_call_id=runtime.tool_call_id,
+                    additional_kwargs={"show_player": len(skills) == 1},
                 )
             ],
         }
@@ -254,8 +368,10 @@ def set_skills(
 
 
 @tool("set_alignment")
-def set_alignment(alignment: AlignmentName, runtime: ToolRuntime[CreationContext]) -> Command:
+def set_alignment(alignment: AlignmentName, runtime: ToolRuntime[CreationContext]) -> Command | str:
     """Write down the chosen alignment, one of the nine SRD alignments."""
+    if _editing_ready_made(runtime.state.get("draft", {})):
+        return _explain(runtime, _READY_MADE_CHANGE)
     return Command(
         update={
             "draft": {"alignment": alignment},
@@ -269,12 +385,16 @@ def set_alignment(alignment: AlignmentName, runtime: ToolRuntime[CreationContext
 
 
 @tool("list_equipment_choices")
-def list_equipment_choices(runtime: ToolRuntime[CreationContext]) -> str:
+def list_equipment_choices(runtime: ToolRuntime[CreationContext]) -> str | Command:
     """List the class's either/or starting equipment choices, one line
     per choice, numbered from 1, each option already labelled (a), (b),
-    ... -- choose a race and class first."""
+    ... -- choose a class first."""
     draft = runtime.state.get("draft", {})
+    if _editing_ready_made(draft):
+        return _explain(runtime, _READY_MADE_CHANGE)
     character_class = _class_from_draft(draft)
+    if character_class is None:
+        return _explain(runtime, _CLASS_NEEDED)
     lines = []
     for index, choice in enumerate(character_class.equipment):
         options = " | ".join(option.label for option in choice.options)
@@ -285,22 +405,24 @@ def list_equipment_choices(runtime: ToolRuntime[CreationContext]) -> str:
 @tool("pick_equipment")
 def pick_equipment(
     choice_number: int, option_number: int, runtime: ToolRuntime[CreationContext]
-) -> Command:
+) -> Command | str:
     """Write down one equipment choice by its 1-based numbers from
     `list_equipment_choices` -- `choice_number` picks the line,
     `option_number` picks the (a)/(b)/... option on it. Refuses instead of
     writing when either number is out of range."""
     draft = runtime.state.get("draft", {})
+    if _editing_ready_made(draft):
+        return _explain(runtime, _READY_MADE_CHANGE)
     character_class = _class_from_draft(draft)
+    if character_class is None:
+        return _explain(runtime, _CLASS_NEEDED)
 
     if not (1 <= choice_number <= len(character_class.equipment)):
         content = (
             f"There is no equipment choice {choice_number} -- pick from 1 "
             f"to {len(character_class.equipment)}."
         )
-        return Command(
-            update={"messages": [ToolMessage(content=content, tool_call_id=runtime.tool_call_id)]}
-        )
+        return _explain(runtime, content)
 
     choice = character_class.equipment[choice_number - 1]
     if not (1 <= option_number <= len(choice.options)):
@@ -308,9 +430,7 @@ def pick_equipment(
             f"Choice {choice_number} has no option {option_number} -- "
             f"pick from 1 to {len(choice.options)}."
         )
-        return Command(
-            update={"messages": [ToolMessage(content=content, tool_call_id=runtime.tool_call_id)]}
-        )
+        return _explain(runtime, content)
 
     option = choice.options[option_number - 1]
     return Command(
@@ -327,13 +447,17 @@ def pick_equipment(
 
 
 @tool("take_default_equipment")
-def take_default_equipment(runtime: ToolRuntime[CreationContext]) -> Command:
+def take_default_equipment(runtime: ToolRuntime[CreationContext]) -> Command | str:
     """Take the class default for every equipment choice still unset --
     an unset choice already resolves to its default option (a), so this
     writes only an `equipment_defaults` marker (← research Decision 3, so
     the sheet-so-far's equipment step can tell it is complete)."""
     draft = runtime.state.get("draft", {})
+    if _editing_ready_made(draft):
+        return _explain(runtime, _READY_MADE_CHANGE)
     character_class = _class_from_draft(draft)
+    if character_class is None:
+        return _explain(runtime, _CLASS_NEEDED)
     labels = [
         choice.options[0].label
         for index, choice in enumerate(character_class.equipment)
@@ -361,7 +485,7 @@ def show_sheet(runtime: ToolRuntime[CreationContext], ready_made: bool = False) 
     if ready_made:
         seed = runtime.context.ready_made
         if seed is None:
-            return "There is no ready-made hero offered at this table."
+            return _explain(runtime, "There is no ready-made hero offered at this table.")
         content = service.render_seed(seed, item_names=runtime.context.ready_made_items)
         # ← research Decision 4: marks the draft so `creation_progress`
         # renders the seed's own review once this turn's collector has
@@ -377,12 +501,14 @@ def show_sheet(runtime: ToolRuntime[CreationContext], ready_made: bool = False) 
     draft = runtime.state.get("draft", {})
     gaps = _draft_gaps(draft)
     if gaps:
-        return "Still missing before I can show a sheet: " + ", ".join(gaps) + "."
+        return _explain(
+            runtime, "I still need your " + _describe_gaps(gaps) + " before I can show the sheet."
+        )
     request = _request_from_draft(draft)
     try:
         sheet = service.build_sheet(request, point_buy=not draft.get("rolled", False))
     except CharacterBuildError as exc:
-        return "The numbers do not add up yet: " + "; ".join(exc.messages)
+        return _explain(runtime, "The numbers do not add up yet: " + "; ".join(exc.messages))
     return service.render_sheet(sheet)
 
 
@@ -397,7 +523,7 @@ async def save_character(
     final for this run." and wait for a yes first. `ready_made` is true
     only when the player is taking the campaign's ready-made hero."""
     if not confirmed:
-        return "Nothing saved yet -- say the word when you are ready."
+        return "Nothing saved yet. Say the word when you are ready."
 
     ctx = runtime.context
     draft = runtime.state.get("draft", {})
@@ -405,7 +531,9 @@ async def save_character(
     if not ready_made:
         gaps = _draft_gaps(draft)
         if gaps:
-            return "Still missing before I can save: " + ", ".join(gaps) + "."
+            return _explain(
+                runtime, "I still need your " + _describe_gaps(gaps) + " before I can save."
+            )
 
     try:
         if ready_made:
@@ -419,9 +547,11 @@ async def save_character(
                 ctx.db, user_id=ctx.user_id, run_id=ctx.run_id, sheet=sheet
             )
     except CharacterBuildError as exc:
-        return "The numbers do not add up yet: " + "; ".join(exc.messages)
+        return _explain(runtime, "The numbers do not add up yet: " + "; ".join(exc.messages))
     except CharacterExistsError:
-        return "You already have a hero at this table -- there is nothing left for me to write."
+        return _explain(
+            runtime, "You already have a hero at this table. There is nothing left for me to write."
+        )
 
     return Command(
         update={

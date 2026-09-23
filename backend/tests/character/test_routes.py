@@ -177,3 +177,70 @@ def test_ac5_an_unfinished_conversation_never_calls_create_character(
     _send(client, signed_in, conversation_id, "a sneaky halfling burglar")
 
     assert calls == []
+
+
+def test_unexpected_tool_failure_is_reported_as_a_failed_turn(
+    client, signed_in, run_overview, scripted_model
+):
+    run_id = generate_id()
+    run_overview(run_id)
+    # A missing required argument fails tool validation before its body runs.
+    scripted_model(("pick_equipment", {"choice_number": 1}), "I have the gear ready.")
+    started = _start(client, signed_in, run_id)
+
+    response = _send(client, signed_in, started.json()["conversationId"], "show me the gear")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is True
+    assert body["reply"] == (
+        "My ledger snagged while I was checking that. Please try that choice again."
+    )
+    assert body["step"] == "raceClass"
+
+
+def test_missing_class_is_explained_in_the_player_reply(
+    client, signed_in, run_overview, scripted_model
+):
+    run_id = generate_id()
+    run_overview(run_id)
+    scripted_model(("list_equipment_choices", {}), "Let us look at your gear.")
+    started = _start(client, signed_in, run_id)
+
+    response = _send(client, signed_in, started.json()["conversationId"], "show me the gear")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is False
+    assert "I need your class written in the ledger" in body["reply"]
+    assert "Let us look at your gear" not in body["reply"]
+    assert body["step"] == "raceClass"
+
+
+def test_written_corrections_appear_in_the_preview_across_turns(
+    client, signed_in, run_overview, scripted_model
+):
+    run_id = generate_id()
+    run_overview(run_id)
+    scripted_model(
+        ("set_race_and_class", {"race": "Human", "character_class": "Fighter"}),
+        "Written down.",
+        ("set_identity", {"name": "Ada"}),
+        "Ada, then.",
+        ("set_skills", {"first": "Athletics", "second": "Survival"}),
+        "Those skills suit you.",
+        ("set_identity", {"name": "Bea"}),
+        "Bea, then.",
+    )
+    started = _start(client, signed_in, run_id)
+    conversation_id = started.json()["conversationId"]
+
+    _send(client, signed_in, conversation_id, "Human fighter")
+    named = _send(client, signed_in, conversation_id, "Call me Ada")
+    skilled = _send(client, signed_in, conversation_id, "Athletics and Survival")
+    renamed = _send(client, signed_in, conversation_id, "Change my name to Bea")
+
+    assert named.json()["sheet"]["name"] == "Ada"
+    assert "Athletics" in skilled.json()["sheet"]["skills"]
+    assert "Survival" in skilled.json()["sheet"]["skills"]
+    assert renamed.json()["sheet"]["name"] == "Bea"

@@ -226,9 +226,10 @@ CreationStepName = Literal[
 class SheetSoFar(CamelModel):
     """The draft as it stands, on the wire (sprint 009-05, WI1): every
     field nullable, filled in only as the conversation settles it.
-    `maxHp`, `armourClass`, `speed`, `skills` and `equipment` only ever
-    come from a successful `service.build_sheet` -- everything else is
-    read straight off the draft (← research Decision 3)."""
+    Derived fields come from `service.build_sheet` when it can build a
+    provisional sheet; chosen skills and gear still show when scores need
+    correction. Unchosen gear stays off the preview until defaults are
+    explicitly taken."""
 
     name: str | None = None
     race: RaceName | None = None

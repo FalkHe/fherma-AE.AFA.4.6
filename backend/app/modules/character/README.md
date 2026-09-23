@@ -54,6 +54,12 @@ same "content lives in git" approach as the `content` module.
   seed_items=None)` renders the sheet-so-far and the step purely from the
   draft; a turn that raises answers 200 with the in-voice
   `MODEL_ERROR_REPLY` line and `error: true` rather than a raw failure.
+  Expected tool refusals explain the missing choice directly in the chat;
+  unexpected tool errors are logged and answer with an in-voice retry line
+  and `error: true`. The preview shows partial identity, chosen skills and
+  gear before the full sheet can be built. Corrections can update one
+  recorded race, class, identity detail or story skill without resending
+  the other fields; a class change clears the old class's equipment picks.
   `show_sheet(ready_made=True)` (sprint 009-07) also writes
   `{"ready_made": True}` to the draft; `creation_progress` renders that
   branch straight to `review`/`canSave: true` off the seed's own facts

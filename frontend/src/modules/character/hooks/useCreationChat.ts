@@ -15,10 +15,9 @@
 // reply invalidates the run overview and navigates back to the run — the
 // same invalidate-then-navigate shape `useStartCampaignRun` already uses,
 // needed because the overview's 30s `staleTime` would otherwise show the
-// stale, not-yet-ready party. An `error: true` reply (the save failed) is
-// applied to `turns`/`failed` only, deliberately leaving `sheet`/`step`/
-// `canSave` at their previous value — otherwise a save failure could drop
-// the player out of the review they were trying to confirm (← AC5).
+// stale, not-yet-ready party. An `error: true` reply still carries the
+// server's current sheet and step. A failed save returns the previous draft,
+// so the review stays visible (← AC5).
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
@@ -68,13 +67,6 @@ export function useCreationChat(runId: string) {
     setReadyMadeName(reply.readyMadeName ?? null);
     setFailed(reply.error);
     setTurns((previous) => [...previous, { speaker: "keeper", text: reply.reply }]);
-
-    if (reply.error) {
-      // Leave `sheet`/`step`/`canSave` exactly as they were — a failed save
-      // must not drop the player out of the review (← AC5, research.md
-      // Decision 6).
-      return;
-    }
 
     setSheet(reply.sheet);
     setStep(reply.step);

@@ -4,6 +4,7 @@ writes no events, and until `save_character` runs there is nothing to
 protect (← research Decision 2).
 """
 
+import logging
 from typing import Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -19,7 +20,13 @@ from app.modules.character.agent.tools import TOOLS
 TALK: Literal["talk"] = "talk"
 TOOLS_NODE: Literal["tools"] = "tools"
 
-_TOOL_ERROR_FALLBACK = "The tavern is noisy, I did not catch that. Say it again?"
+_logger = logging.getLogger(__name__)
+_TOOL_ERROR_FALLBACK = "My ledger snagged while I was checking that. Please try that choice again."
+
+
+def _tool_error(exc: Exception) -> str:
+    _logger.error("Character creation tool failed", exc_info=exc)
+    return _TOOL_ERROR_FALLBACK
 
 
 def _make_talk(model: BaseChatModel, system_prompt: str):
@@ -46,7 +53,7 @@ def build_graph(
     graph = StateGraph(CreationState, context_schema=CreationContext)
 
     graph.add_node(TALK, _make_talk(model, system_prompt))
-    graph.add_node(TOOLS_NODE, ToolNode(TOOLS, handle_tool_errors=_TOOL_ERROR_FALLBACK))
+    graph.add_node(TOOLS_NODE, ToolNode(TOOLS, handle_tool_errors=_tool_error))
 
     graph.add_edge(START, TALK)
     graph.add_conditional_edges(TALK, _route_after_talk, {TOOLS_NODE: TOOLS_NODE, END: END})

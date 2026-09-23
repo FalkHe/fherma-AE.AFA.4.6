@@ -20,6 +20,7 @@ and the live conversations (← research Decision 1), never the database --
 nothing here is persisted. `creation_progress` is the pure draft ->
 sheet-so-far renderer (← research Decision 3)."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -75,6 +76,7 @@ CREATION_SYSTEM_PROMPT_ID = "character/system/creator"
 # this in-voice line rather than a raw failure; moved here from
 # `commands.py` so both the terminal command and the HTTP routes share it.
 MODEL_ERROR_REPLY = "The tavern is noisy, I did not catch that. Say it again?"
+_logger = logging.getLogger(__name__)
 
 _ABILITY_ORDER = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
 _ABILITY_ABBR = {
@@ -218,6 +220,7 @@ def render_greeting(campaign_title: str, seed: SeedCharacter) -> str:
 class CreationTurn:
     reply: str
     saved: bool
+    error: bool = False
     # ← research Decision 3: the merged draft this turn left behind, so a
     # caller can render the sheet-so-far without a second read of graph
     # state.
@@ -274,15 +277,33 @@ async def turn(
         {"messages": [HumanMessage(content=player_text)]}, config=config, context=context
     )
     messages = result.get("messages", [])
-    shown = [
-        message.content
-        for message in messages[len(before) :]
-        if isinstance(message, ToolMessage)
-        and message.name == "show_sheet"
-        and isinstance(message.content, str)
-    ]
-    closing = messages[-1].text if messages and hasattr(messages[-1], "text") else ""
-    reply = "\n\n".join([*shown, closing]) if shown else closing
+    new_messages = messages[len(before) :]
+    if any(
+        isinstance(message, ToolMessage) and message.status == "error" for message in new_messages
+    ):
+        return CreationTurn(
+            reply="My ledger snagged while I was checking that. Please try that choice again.",
+            saved=False,
+            error=True,
+            draft=result.get("draft", {}),
+        )
+    shown = list(
+        dict.fromkeys(
+            message.content
+            for message in new_messages
+            if isinstance(message, ToolMessage)
+            and (message.name == "show_sheet" or message.additional_kwargs.get("show_player"))
+            and isinstance(message.content, str)
+        )
+    )
+    refused = any(
+        isinstance(message, ToolMessage) and message.additional_kwargs.get("refusal")
+        for message in new_messages
+    )
+    closing = (
+        messages[-1].text if not refused and messages and hasattr(messages[-1], "text") else ""
+    )
+    reply = "\n\n".join([*shown, closing] if closing and closing not in shown else shown)
     return CreationTurn(
         reply=reply, saved=result.get("saved", False), draft=result.get("draft", {})
     )
@@ -312,7 +333,7 @@ def _identity_done(draft: dict[str, Any]) -> bool:
 
 
 def _skills_done(draft: dict[str, Any]) -> bool:
-    return draft.get("skills") is not None
+    return len(draft.get("skills", [])) >= 2
 
 
 def _alignment_done(draft: dict[str, Any]) -> bool:
@@ -423,16 +444,20 @@ def creation_progress(
         "backstory": draft.get("backstory"),
     }
 
+    # A preview can be derived before the player supplies a name or finishes
+    # every step. Only the final save gate needs a complete draft.
+    sheet_fields["skills"] = draft.get("skills", [])
     sheet = None
-    can_save = False
-    if not creation_tools._draft_gaps(draft):  # noqa: SLF001 -- reuses the tool's own gap check
+    if _race_class_done(draft) and draft.get("abilities") is not None:
         try:
             request = creation_tools._request_from_draft(draft)  # noqa: SLF001
             sheet = build_sheet(request, point_buy=not draft.get("rolled", False))
         except CharacterBuildError:
             sheet = None
-        else:
-            can_save = True
+
+    can_save = (
+        sheet is not None and step == "review" and not creation_tools._draft_gaps(draft)  # noqa: SLF001
+    )
 
     if sheet is not None:
         sheet_fields["abilities"] = sheet.abilities.model_dump()
@@ -440,10 +465,40 @@ def creation_progress(
         sheet_fields["armour_class"] = sheet.armour_class
         sheet_fields["speed"] = sheet.speed
         sheet_fields["skills"] = sheet.skills
-        sheet_fields["equipment"] = [item.name for item in sheet.equipment]
+        # Unchosen options default only on the final sheet. Until the
+        # player asks for defaults, show equipment they actually picked.
+        if draft.get("equipment_defaults"):
+            sheet_fields["equipment"] = [item.name for item in sheet.equipment]
+        else:
+            cls = character_class(draft["character_class"])
+            chosen_items = []
+            for index, choice in enumerate(cls.equipment):
+                pick = draft.get(f"equipment_pick_{index}")
+                if pick is None:
+                    continue
+                one_choice = cls.model_copy(update={"equipment": [choice]})
+                chosen_items.extend(builder.resolve_equipment(one_choice, sheet.abilities, [pick]))
+            sheet_fields["equipment"] = [item.name for item in chosen_items]
     elif draft.get("race") and draft.get("abilities") is not None:
         base = Abilities.model_validate(draft["abilities"])
         sheet_fields["abilities"] = builder.apply_race(base, race(draft["race"]), []).model_dump()
+
+    if sheet is None and draft.get("character_class"):
+        cls = character_class(draft["character_class"])
+        picked = draft.get("skills", [])
+        sheet_fields["skills"] = (
+            picked
+            + [skill for skill in cls.skill_options if skill not in picked][: cls.skill_choices]
+        )
+        scores = builder.suggested_scores(draft["character_class"])
+        chosen_items = []
+        for index, choice in enumerate(cls.equipment):
+            pick = draft.get(f"equipment_pick_{index}")
+            if pick is None and not draft.get("equipment_defaults"):
+                continue
+            one_choice = cls.model_copy(update={"equipment": [choice]})
+            chosen_items.extend(builder.resolve_equipment(one_choice, scores, [pick or 0]))
+        sheet_fields["equipment"] = [item.name for item in chosen_items]
 
     return CreationProgress(
         sheet=SheetSoFar.model_validate(sheet_fields),
@@ -585,6 +640,9 @@ async def send_creation_message(
     except Exception:  # noqa: BLE001 -- the model, a tool or the graph itself can all raise
         # here (mirrors `commands.py`'s own turn loop); the player sees the
         # in-voice line, never a raw failure (← AC4).
+        _logger.exception(
+            "Character creation turn failed", extra={"conversation_id": conversation_id}
+        )
         return _reply_for(
             conversation_id,
             MODEL_ERROR_REPLY,
@@ -602,7 +660,7 @@ async def send_creation_message(
         result.reply,
         draft=result.draft,
         saved=result.saved,
-        error=False,
+        error=result.error,
         ready_made_name=conversation.seed.name,
         seed=conversation.seed,
         seed_items=conversation.ready_made_items,

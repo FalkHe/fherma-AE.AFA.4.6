@@ -27,8 +27,15 @@ def _merge_draft(current: dict[str, Any] | None, update: dict[str, Any]) -> dict
     (e.g. "suggest the scores and show me the sheet"); a plain last-value
     channel raises `InvalidUpdateError` on the second write in that step.
     Each writing tool now returns only its own delta, and this reducer
-    merges them -- last write wins per key."""
-    return {**(current or {}), **update}
+    merges them -- last write wins per key. `None` removes a stale key,
+    such as equipment picks after a class change."""
+    merged = dict(current or {})
+    for key, value in update.items():
+        if value is None:
+            merged.pop(key, None)
+        else:
+            merged[key] = value
+    return merged
 
 
 class CreationState(MessagesState):
