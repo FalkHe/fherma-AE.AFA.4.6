@@ -5,6 +5,18 @@
 // lines rather than showing blanks; a narrow screen matches D12's narrow
 // wireframe (AC6 — no party strip, one column, the header stacked above
 // the transcript, since that strip is a later sprint's work).
+//
+// AC5's structure (verification round 1, defect 1): jsdom lays nothing out,
+// so `scrollHeight`/`clientHeight`/`scrollTop` cannot be exercised
+// honestly here (`useStickToLatest.test.tsx` already does that against a
+// bare `div` with hand-set metrics) — this only checks the actual styling
+// rules a browser would then use to lay it out: the transcript's own
+// scrolling element is `overflow-y: auto`, and somewhere between it and
+// the app root, a real, viewport-relative height (not a bare `"auto"` or a
+// `"100%"` against an auto-height ancestor, ← the bug) is what bounds it.
+// A regression back to the old `maxHeight: "100%"` chain would fail this
+// exact assertion while still passing every jsdom-scroll test that mocks
+// its own metrics, which is why those don't already catch it.
 import { describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -182,5 +194,29 @@ describe("PlayRoute on /runs/:runId/play (AC2, AC6, AC7)", () => {
     // No party strip — that belongs to a later sprint (work item scope).
     expect(screen.queryByText(/HP\s*\d+\s*\/\s*\d+/)).not.toBeInTheDocument();
     expect(screen.queryByText("Party")).not.toBeInTheDocument();
+  });
+
+  it("AC5: the transcript scrolls itself, bounded by a real viewport-relative height rather than a bare percentage (verification round 1, defect 1)", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockEvents("run-1");
+
+    renderApp(["/runs/run-1/play"]);
+
+    const transcript = await screen.findByRole("log");
+    expect(getComputedStyle(transcript).overflowY).toBe("auto");
+
+    // Walk up from the transcript looking for the ancestor that actually
+    // bounds it: the old bug was every ancestor reading `"auto"` (content-
+    // driven) or `"100%"` (against one of those), so a real fix must show
+    // up as some concrete, viewport-relative value before the app root.
+    let el: HTMLElement | null = transcript;
+    const heights: string[] = [];
+    while (el && el !== document.body) {
+      heights.push(getComputedStyle(el).height);
+      el = el.parentElement;
+    }
+
+    expect(heights.some((height) => height.includes("vh"))).toBe(true);
   });
 });
