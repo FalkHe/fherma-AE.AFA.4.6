@@ -3,13 +3,13 @@
 // real guard via `renderApp`, so the session read it makes is always
 // stubbed first, matching every other route suite in this tree.
 //
-// Sprint 009-07, WI1 — the review/save describe block below. `SheetPanel`
-// renders alongside `ReviewPanel` on the wide layout this suite's stubbed
-// `matchMedia` produces (research.md Decision 1's "one `if`" swap only
-// touches `Transcript`/`OfferedChoices`), so every assertion on the review's
-// own copy is scoped with `within` against the panel's own
-// `aria-label={review.title}` region — otherwise a bare `getByText` would
-// match the live sheet panel's identical field values too.
+// Sprint 009-07, WI1 — the review/save describe block below. Every
+// assertion on the review's own copy is scoped with `within` against the
+// panel's own `aria-label={review.title}` region. Since the creation-chat
+// viewport fix the review is a full-width sheet with the sheet rail dropped,
+// and a value can repeat across cells (CON 14, armour class 14), so AC1
+// reads each labelled value off its own `dt`'s `dd`s rather than matching
+// bare text anywhere in the region.
 import { describe, expect, it } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -194,6 +194,22 @@ function reviewReply(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+/** The `dd`s that follow the `dt` labelled `label`, up to the next `dt`. */
+function definitionsOf(region: HTMLElement, label: string): HTMLElement[] {
+  const term = within(region).getByText(label, { selector: "dt" });
+  const definitions: HTMLElement[] = [];
+  let next = term.nextElementSibling;
+  while (next && next.tagName === "DD") {
+    definitions.push(next as HTMLElement);
+    next = next.nextElementSibling;
+  }
+  return definitions;
+}
+
+function valuesOf(region: HTMLElement, label: string): string[] {
+  return definitionsOf(region, label).map((definition) => definition.textContent ?? "");
+}
+
 function findReviewRegion() {
   return screen.findByRole("region", { name: character.review.title });
 }
@@ -208,19 +224,29 @@ describe("CreationChatRoute's review and save (sprint 009-07, WI1, AC1-AC3, AC5-
     const region = await findReviewRegion();
     const scoped = within(region);
 
-    expect(scoped.getByText("Pip Underbough")).toBeInTheDocument();
-    expect(scoped.getByText("Halfling")).toBeInTheDocument();
-    expect(scoped.getByText("Rogue")).toBeInTheDocument();
-    expect(scoped.getByText("1")).toBeInTheDocument();
-    expect(scoped.getByText("Chaotic Good")).toBeInTheDocument();
-    expect(scoped.getByText("9")).toBeInTheDocument();
-    expect(scoped.getByText("14")).toBeInTheDocument();
-    expect(scoped.getByText("25")).toBeInTheDocument();
-    expect(scoped.getByText("8 (−1)")).toBeInTheDocument();
-    expect(scoped.getByText("Stealth, Sleight of Hand")).toBeInTheDocument();
-    expect(scoped.getByText("Rapier, Leather armour")).toBeInTheDocument();
-    expect(scoped.getByText(FULL_SHEET.appearance)).toBeInTheDocument();
-    expect(scoped.getByText(FULL_SHEET.backstory)).toBeInTheDocument();
+    expect(scoped.getByRole("heading", { name: "Pip Underbough" })).toBeInTheDocument();
+    // Race, class, level and alignment share the identity line.
+    expect(scoped.getByText("Halfling Rogue · Level 1 · Chaotic Good")).toBeInTheDocument();
+
+    expect(valuesOf(region, "Hit points")).toEqual(["9"]);
+    expect(valuesOf(region, "Armour class")).toEqual(["14"]);
+    expect(valuesOf(region, "Speed")).toEqual(["25"]);
+    expect(valuesOf(region, "STR")).toEqual(["8", "−1"]);
+    expect(valuesOf(region, "DEX")).toEqual(["16", "+3"]);
+    expect(valuesOf(region, "CON")).toEqual(["14", "+2"]);
+    expect(valuesOf(region, "INT")).toEqual(["12", "+1"]);
+    expect(valuesOf(region, "WIS")).toEqual(["10", "+0"]);
+    expect(valuesOf(region, "CHA")).toEqual(["13", "+1"]);
+
+    const [skills] = definitionsOf(region, "Skills");
+    expect(within(skills).getByText("Stealth")).toBeInTheDocument();
+    expect(within(skills).getByText("Sleight of Hand")).toBeInTheDocument();
+    const [equipment] = definitionsOf(region, "Equipment");
+    expect(within(equipment).getByText("Rapier")).toBeInTheDocument();
+    expect(within(equipment).getByText("Leather armour")).toBeInTheDocument();
+    expect(valuesOf(region, "Looks")).toEqual([FULL_SHEET.appearance]);
+    expect(valuesOf(region, "Story")).toEqual([FULL_SHEET.backstory]);
+
     expect(scoped.getByRole("button", { name: character.review.save })).toBeInTheDocument();
     expect(scoped.getByRole("button", { name: character.review.change })).toBeInTheDocument();
   });
@@ -267,6 +293,62 @@ describe("CreationChatRoute's review and save (sprint 009-07, WI1, AC1-AC3, AC5-
     expect(getRequests({ method: "POST", path: "/api/v1/character/creation/conv-1/messages" })[1].body).toEqual({
       text: "Looks right, save",
     });
+  });
+
+  it("after 'Change something', the keeper's answer to the change stays on screen while the backend still reports the review", async () => {
+    stubAuthenticated();
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: reviewReply() });
+    // The real backend stays at `review`/`canSave` through the whole change round.
+    mockRoute("POST", "/api/v1/character/creation/conv-1/messages", [
+      { status: 200, body: reviewReply({ reply: "What would you like to change?" }) },
+      { status: 200, body: reviewReply({ reply: "Pip is older now, with grey at the temples." }) },
+    ]);
+
+    renderApp(["/runs/r1/create-character"]);
+    await findReviewRegion();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: character.review.change }));
+    await screen.findByText("What would you like to change?");
+
+    await user.type(screen.getByLabelText(character.chat.placeholder), "Make him older{Enter}");
+
+    expect(await screen.findByText("Pip is older now, with grey at the temples.")).toBeInTheDocument();
+    expect(getRequests({ method: "POST", path: "/api/v1/character/creation/conv-1/messages" })[1].body).toEqual({
+      text: "Make him older",
+    });
+    expect(screen.queryByRole("region", { name: character.review.title })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: character.review.back }));
+
+    expect(await findReviewRegion()).toBeInTheDocument();
+    // Going back to the review is a view switch — it sends nothing.
+    expect(getRequests({ method: "POST", path: "/api/v1/character/creation/conv-1/messages" })).toHaveLength(2);
+  });
+
+  it("after 'Change something', a change that leaves the review step re-opens the review on its own once it is reached again", async () => {
+    stubAuthenticated();
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: reviewReply() });
+    mockRoute("POST", "/api/v1/character/creation/conv-1/messages", [
+      { status: 200, body: reviewReply({ reply: "What would you like to change?" }) },
+      { status: 200, body: reviewReply({ reply: "A bard, then. Which two skills?", step: "skills", stepNumber: 5, canSave: false }) },
+      { status: 200, body: reviewReply({ reply: "That's everyone again." }) },
+    ]);
+
+    renderApp(["/runs/r1/create-character"]);
+    await findReviewRegion();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: character.review.change }));
+    await screen.findByText("What would you like to change?");
+
+    await user.type(screen.getByLabelText(character.chat.placeholder), "Make him a bard{Enter}");
+    await screen.findByText("A bard, then. Which two skills?");
+    expect(screen.queryByRole("button", { name: character.review.back })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(character.chat.placeholder), "Performance and Persuasion{Enter}");
+
+    expect(await findReviewRegion()).toBeInTheDocument();
   });
 
   it("AC3: a saved:true reply lands on /runs/r1 and a second overview GET is recorded", async () => {

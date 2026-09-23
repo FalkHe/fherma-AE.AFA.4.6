@@ -5,6 +5,13 @@
 // Its only inputs are `action` and `children`: the product name is read
 // straight off the `common:app.title` i18next key, so no caller passes a
 // title anymore.
+//
+// Layout (creation-chat viewport fix): the shell is a `100dvh`-minimum flex
+// column so `main` fills whatever the bar leaves, and every route keeps
+// scrolling the page exactly as before. A route that must fit the viewport
+// instead (the transcript scrolls, the composer never leaves the screen)
+// marks its own root `data-fit-viewport`; `:has()` picks that up here, so
+// `core/` caps the shell at `100dvh` without knowing which module asked.
 import type { ReactElement, ReactNode } from "react";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
@@ -24,7 +31,22 @@ export function AppShell({ action, children }: AppShellProps): ReactElement {
   const { t } = useTranslation("common");
 
   return (
-    <>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        minHeight: "100dvh",
+        "&:has([data-fit-viewport])": {
+          height: "100dvh",
+          // Only here do `main` and the Container shrink to the space left
+          // under the bar (`1 1 0` + `minHeight: 0`), so the marked child can
+          // size itself to that remainder; `overflow: hidden` keeps the page
+          // itself from ever scrolling.
+          "& > main": { flex: "1 1 0", minHeight: 0, overflow: "hidden" },
+          "& > main > .MuiContainer-root": { flex: "1 1 0", minHeight: 0 },
+        },
+      }}
+    >
       {/* `AppBar` defaults its root to a `<header>` (MUI source), which the
           browser exposes as the `banner` landmark as long as it isn't nested
           inside `article`/`aside`/`main`/`nav`/`section` — true here, so no
@@ -88,7 +110,11 @@ export function AppShell({ action, children }: AppShellProps): ReactElement {
           {action}
         </Toolbar>
       </AppBar>
-      <Box component="main">
+      {/* `1 0 auto` outside a fit-viewport page: `main` and the Container
+          grow to fill the viewport but never shrink below their content, so
+          the page scrolls just as it did before the shell became a flex
+          column. */}
+      <Box component="main" sx={{ display: "flex", flexDirection: "column", flex: "1 0 auto" }}>
         {/* No token in `theme/tokens/spacing.css` matches the design's 1080px
             content width (`--width-prose`/`--width-chat`/`--width-rail` are
             64ch/760px/296px, none of them this), so the pixel value is set
@@ -96,10 +122,10 @@ export function AppShell({ action, children }: AppShellProps): ReactElement {
             `maxWidth` prop only accepts a breakpoint key, not an arbitrary
             length, hence `false` plus an `sx` override
             (docs/design/.../CampaignRun.dc.html:23; sprint 007/05 WI1). */}
-        <Container maxWidth={false} sx={{ py: 4, maxWidth: 1080 }}>
+        <Container maxWidth={false} sx={{ py: 4, maxWidth: 1080, display: "flex", flexDirection: "column", flex: "1 0 auto" }}>
           {children}
         </Container>
       </Box>
-    </>
+    </Box>
   );
 }
