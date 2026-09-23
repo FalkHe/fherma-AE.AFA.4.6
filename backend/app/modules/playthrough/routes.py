@@ -25,6 +25,7 @@ from app.modules.playthrough.schemas import (
     EventsRead,
     RenameCampaignRunRequest,
     StartCampaignRunRequest,
+    TableRead,
 )
 
 router = APIRouter()
@@ -77,6 +78,17 @@ async def get_run_overview(
 ) -> CampaignRunOverviewRead:
     try:
         return await service.get_run_overview(db, user_id=auth.user.id, run_id=run_id)
+    except PlaythroughError as exc:
+        raise ApiError(exc.code) from exc
+
+
+@router.get(
+    "/runs/{run_id}/table",
+    responses={401: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope}},
+)
+async def get_table(run_id: str, auth: CurrentAuth, db: DbSession) -> TableRead:
+    try:
+        return await service.get_table(db, user_id=auth.user.id, run_id=run_id)
     except PlaythroughError as exc:
         raise ApiError(exc.code) from exc
 

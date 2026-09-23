@@ -30,7 +30,6 @@ calls are wrapped in a single `asyncio.run(...)`.
 """
 
 import asyncio
-from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -146,9 +145,7 @@ def test_ac1_a_run_under_way_names_the_current_adventure_and_the_heros_scene(
     assert_error_envelope(no_auth_response, status=401, code="NOT_AUTHENTICATED")
 
 
-def test_ac2_each_seated_hero_carries_its_full_sheet(
-    client, monkeypatch, session_cookie_header
-):
+def test_ac2_each_seated_hero_carries_its_full_sheet(client, monkeypatch, session_cookie_header):
     # <- AC2
     _stub_auth(monkeypatch)
     run_id = generate_id()
@@ -245,15 +242,10 @@ def test_ac3_a_turn_that_wounds_the_hero_is_reflected_on_the_next_read(playthrou
         assert before.heroes[0].current_hp == character.max_hp
 
         wounded_hp = character.max_hp - 3
-        await playthrough_db.execute(
-            text("UPDATE objects SET current_hp = :hp WHERE id = :id"),
-            {"hp": wounded_hp, "id": character.id},
-        )
+        character.current_hp = wounded_hp
         await playthrough_db.commit()
 
-        after = await playthrough_service.get_table(
-            playthrough_db, user_id=owner_id, run_id=run.id
-        )
+        after = await playthrough_service.get_table(playthrough_db, user_id=owner_id, run_id=run.id)
         assert len(after.heroes) == 1
         assert after.heroes[0].current_hp == wounded_hp
         assert after.heroes[0].max_hp == character.max_hp
@@ -283,9 +275,7 @@ def test_ac4_a_run_the_caller_is_not_seated_at_is_refused_like_the_existing_read
             )
 
         with pytest.raises(CampaignRunNotFoundError) as new_read_error:
-            await playthrough_service.get_table(
-                playthrough_db, user_id=stranger_id, run_id=run.id
-            )
+            await playthrough_service.get_table(playthrough_db, user_id=stranger_id, run_id=run.id)
 
         assert new_read_error.value.code == existing_read_error.value.code == ErrorCode.NOT_FOUND
 

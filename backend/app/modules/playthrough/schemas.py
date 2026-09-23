@@ -158,6 +158,58 @@ class CampaignRunOverviewRead(CamelModel):
     adventures: list[CampaignRunAdventureRead]
 
 
+class TableAdventure(CamelModel):
+    """The current adventure, on the play screen's own read (WI2, sprint
+    010/05, I1) -- `id` is the campaign's own adventure id (content),
+    `runId` the `adventure_runs` row id, alongside `title` and `status`
+    (`"active"`/`"completed"`, `adventure_runs.status` verbatim -- `use_exit`
+    marks a row `completed` without clearing anyone's position, so a
+    finished adventure still reads here rather than vanishing)."""
+
+    id: str
+    run_id: str
+    title: str
+    status: Literal["active", "completed"]
+
+
+class TableScene(CamelModel):
+    """The scene the acting hero stands in, on the play screen's own read
+    (WI2, sprint 010/05, I1) -- `id, name` and nothing else. `name` is the
+    pinned scene's own `title`."""
+
+    id: str
+    name: str
+
+
+class TableRead(CamelModel):
+    """The play screen's whole answer, in one call (WI2, sprint 010/05,
+    I1/I2): the run, its pinned campaign's title, the current adventure and
+    scene, and every seated hero -- serves the screen's header, its party
+    rail and its full character sheet alike.
+
+    `adventure`/`scene` are anchored on the **acting caller's own hero**
+    (its `objects.adventure_run_id`/`scene_id`), never on whichever
+    `adventure_runs` row happens to read `status == 'active'` -- `use_exit`
+    completes a row without clearing anyone's position, so an active-row
+    anchor would blank the header at exactly the moment an adventure ends
+    (← research). Both are `None` when no adventure was entered yet, the
+    caller has no hero on this run, or the pinned content no longer loads.
+    `campaignTitle` is `None` exactly when the pinned content no longer
+    loads (`_load_pinned` -> `None`), independent of either. `heroes` is
+    every member's character (`CharacterRead`, WI1), ordered by member id,
+    empty before any character has been created -- a member with no
+    character yet contributes no row here, unlike `CampaignRunOverviewRead`
+    which carries one row per member either way."""
+
+    run_id: str
+    run_title: str | None
+    run_status: str
+    campaign_title: str | None
+    adventure: TableAdventure | None
+    scene: TableScene | None
+    heroes: list[CharacterRead]
+
+
 class RenameCampaignRunRequest(CamelModel):
     title: str = Field(min_length=1, max_length=120)
 
