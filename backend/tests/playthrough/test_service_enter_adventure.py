@@ -376,11 +376,21 @@ def test_enter_adventure_appends_adventure_started_at_player_visibility():
     adventure_run = asyncio.run(service.enter_adventure(db, user_id="user-1", run_id="run-1"))
 
     events = [obj for obj in db.persisted if isinstance(obj, Event)]
-    assert len(events) == 1
-    event = events[0]
-    assert event.type == "adventure_started"
-    assert event.visibility == "player"
-    assert event.payload == {"adventureRunId": adventure_run.id}
+    assert len(events) == 2
+    started, entered = events
+    assert started.type == "adventure_started"
+    assert started.visibility == "player"
+    assert started.payload == {"adventureRunId": adventure_run.id}
+
+    # sprint 010/04, I2: `enter_adventure` also appends `scene_entered`
+    # carrying the entry scene's own pinned title.
+    assert entered.type == "scene_entered"
+    assert entered.visibility == "player"
+    assert entered.payload == {
+        "adventureRunId": adventure_run.id,
+        "sceneId": GREENHOLLOW_ENTRY_SCENE,
+        "sceneTitle": _load_greenhollow().scenes[GREENHOLLOW_ENTRY_SCENE].title,
+    }
 
 
 def test_enter_adventure_commits_exactly_once():
@@ -443,10 +453,11 @@ def test_enter_adventure_translates_the_partial_unique_index_violation(two_trail
     # would raise `MissingGreenlet` outside an async context.
     assert db.rolled_back == 0
     assert db.nested_rollbacks == 1
-    # <- the refused attempt appended no second event: only the first
-    # call's `adventure_started` ever made it into `persisted`.
+    # <- the refused attempt appended no further event: only the first
+    # call's `adventure_started` and `scene_entered` ever made it into
+    # `persisted`.
     events = [obj for obj in db.persisted if isinstance(obj, Event)]
-    assert len(events) == 1
+    assert len(events) == 2
 
 
 def test_enter_adventure_does_not_swallow_an_unrelated_integrity_error():

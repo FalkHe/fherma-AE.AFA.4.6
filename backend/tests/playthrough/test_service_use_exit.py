@@ -196,12 +196,15 @@ def test_use_exit_moves_the_actor_and_records_scene_entered_and_a_dm_tool_call(p
                 {"run_id": run.id},
             )
         ).all()
+        # `enter_adventure` itself appends one `scene_entered` for the
+        # opening scene (`village-green`); this move is the second.
         scene_entered = [e for e in events if e.type == "scene_entered"]
-        assert len(scene_entered) == 1
-        assert scene_entered[0].visibility == "player"
-        assert scene_entered[0].payload == {
+        assert len(scene_entered) == 2
+        assert scene_entered[-1].visibility == "player"
+        assert scene_entered[-1].payload == {
             "adventureRunId": adventure_run.id,
             "sceneId": "thornway",
+            "sceneTitle": "The Thornway",
         }
 
         ok_calls = [e for e in events if e.type == "tool_call" and e.payload["result"] == "ok"]
@@ -242,7 +245,8 @@ def test_use_exit_commits_exactly_once_on_the_happy_path(playthrough_db):
                 {"run_id": run.id},
             )
         ).scalar_one()
-        assert count == 1
+        # One from `enter_adventure`'s own opening scene, one from this move.
+        assert count == 2
 
     asyncio.run(_scenario())
 

@@ -10,7 +10,7 @@ activity, not an entity: **no table is called `playthrough`**, and no row is "a
 playthrough".
 
 Today the module ships its five tables and their migrations, plus a service
-of twenty-nine functions behind nine authenticated endpoints and three
+of thirty functions behind nine authenticated endpoints and three
 commands run by hand rather than an endpoint. Together they carry a whole
 game: starting a campaign run and giving it its character, renaming it and
 reading it back, entering its next adventure and moving whoever is acting
@@ -25,7 +25,12 @@ and rolling to see who acts first — built from those same ordinary
 mechanics rather than a state of its own (§20–§22). A narration is also
 given a vector of its own meaning as it is written, stored on the entry
 beside the text it came from — recorded now, searched by nobody yet (§7,
-§8). A tool layer letting the Dungeon Master reach any of this belongs to
+§8). Four more of those transcript entries (sprint 010/04) let a player
+read, in their own words, what a mechanic already changed — an item
+moving, hit points falling, a way opening, a rule looked up — without
+adding a route, a table or a mechanic of their own: an existing mechanic
+simply appends one more entry once its own change already landed. A tool
+layer letting the Dungeon Master reach any of this belongs to
 a separate, later phase;
 nothing in this document describes one, because none exists yet.
 
@@ -219,7 +224,9 @@ class is `GameObject` because `Object` shadows a builtin; the table is
 
 One step of a campaign run's transcript — narration, player action, a
 requested or resolved dice roll, a question put to the player, a tool call,
-a scene or adventure milestone, a system message, or an error or warning.
+a scene or adventure milestone, a system message, an error or warning, or
+one of four player-visible mechanic outcomes added in sprint 010/04: an
+item moved, hit points changed, a way opened, a rule looked up.
 Append-only: written once, never edited, never deleted.
 
 | Column | Type | Null | Default | Purpose |
@@ -228,7 +235,7 @@ Append-only: written once, never edited, never deleted.
 | `campaign_run_id` | FK → `campaign_runs.id` | no | — | `ON DELETE CASCADE` |
 | `actor_member_id` | FK → `campaign_run_members.id` | yes | `NULL` | `ON DELETE SET NULL` — the event outlives the member |
 | `turn_id` | ULID `CHAR(26)` | yes | `NULL` | Groups events into one turn — **no foreign key** |
-| `type` | `String(32)` | no | — | `narration` / `player_action` / `roll_requested` / `roll` / `question` / `tool_call` / `scene_entered` / `adventure_started` / `adventure_completed` / `system` / `error` / `warning` |
+| `type` | `String(32)` | no | — | `narration` / `player_action` / `roll_requested` / `roll` / `question` / `tool_call` / `scene_entered` / `adventure_started` / `adventure_completed` / `system` / `error` / `warning` / `item_moved` / `hp_changed` / `way_opened` / `rule_looked_up` |
 | `visibility` | `String(8)` | no | — | `player` / `dm` |
 | `payload` | `JSONB` | no | **none** | The event body; its shape follows from `type` |
 | `prompt_tokens`, `completion_tokens` | `Integer` | yes | `NULL` | Model usage for this event |
@@ -388,7 +395,10 @@ carried items excluded — moves to the scene each was authored into
 made, moves to the adventure's `entry_scene`. Nothing else in the run is
 touched, and a carried item stays with whoever carries it. It appends one
 `adventure_started` event, visible to the player, carrying the new adventure
-run's id, then commits once. **It does not move the campaign run's own
+run's id, then (sprint 010/04) a player-visible `scene_entered` for that
+same `entry_scene`, carrying the destination's own pinned title — the
+opening move otherwise left no such row at all — and commits once, both
+writes together. **It does not move the campaign run's own
 `status`**: a run becomes `active` at its first narration
 (`activate_campaign_run`, above), not at its first adventure. **A second
 entry while one is already `active` is refused** — `AdventureActiveError`,
@@ -407,11 +417,13 @@ module, and nothing outside it, inserts a row there. It takes the run, the
 entry's `type`, who may see it (`visibility`), the entry's payload, and
 optionally the turn it belongs to, the member who caused it, and the model
 usage it cost. It checks the payload — a dict or the type's own payload
-model — against `EVENT_PAYLOADS[type]`, the twelve-entry registry in
-`schemas.py` that fixes the shape each of the twelve kinds promises
-(`narration`, `player_action`, `roll_requested`, `roll`, `question`,
-`tool_call`, `scene_entered`, `adventure_started`, `adventure_completed`,
-`system`, `error`, `warning`), and stores the validated result camelCase. An
+model — against `EVENT_PAYLOADS[type]`, the sixteen-entry registry in
+`schemas.py` that fixes the shape each kind promises (`narration`,
+`player_action`, `roll_requested`, `roll`, `question`, `tool_call`,
+`scene_entered`, `adventure_started`, `adventure_completed`, `system`,
+`error`, `warning`, plus `item_moved`, `hp_changed`, `way_opened` and
+`rule_looked_up`, added in sprint 010/04), and stores the validated result
+camelCase. An
 unknown type, an unknown visibility, or a payload that does not match its
 type's shape raises `InvalidEventPayloadError` and **writes nothing** — not
 a partial row, not a row with a wrong-shaped payload. Model usage, when
@@ -445,6 +457,15 @@ columns are left `NULL` and the row is written regardless. The caller sees
 no difference, gets no error and needs no handling of its own, because a
 transcript entry is the thing that matters and an embedding is not worth
 losing one over.
+
+**Recording a rule lookup** is `record_rule_lookup` (sprint 010/04), the
+one new public function this sprint adds: the module's ordinary mechanic
+shape, `_require_member` then `append_event` then commit, appending a
+player-visible `rule_looked_up` entry whose only field, `topic`, is the
+best match's own `heading_path` — never the rules text and never whatever
+the model searched for. It is called only when a lookup matched something;
+one that matches nothing never reaches this function at all, so there is
+no refusal path to keep.
 
 **Writing to the transcript by hand** is `app playthrough narrate <run-id>
 "<text>"`, the module's third command run by hand. It appends one
@@ -527,7 +548,9 @@ An exit found and of the ordinary kind **moves the actor**: its position
 (§6) is rewritten to the scene the exit leads to, and nothing else about it
 changes — which adventure the actor is in is untouched, since an exit only
 ever changes where within it someone stands. A `scene_entered` event,
-visible to the player, records the adventure run and the scene now entered.
+visible to the player, records the adventure run and the scene now entered,
+and (sprint 010/04) that destination's own pinned title alongside it — read
+through the content module, never supplied by whatever asked for the exit.
 
 An exit found and marked as **ending the adventure** does something
 different: instead of moving anyone, it completes the adventure run the
@@ -850,6 +873,16 @@ the refusal is raised as an error, so the attempt is never lost to whatever
 happens next. A player reading their own transcript sees no gap where the
 mistake happened, only ever the passes that actually took hold.
 
+**A passing check also leaves the player a line of their own (sprint
+010/04).** Before the `tool_call` above, a passing attempt appends a
+player-visible `way_opened` entry naming the actor and the fixture and
+carrying the action's own authored text verbatim — never the Dungeon
+Master's own words. A check that is weighed and comes up short is still
+recorded as an ordinary, successful attempt (its own `tool_call` reads
+`ok`, not refused — see above), but it changed nothing in the world, so it
+appends no `way_opened` row: that entry marks something having actually
+opened, not merely having been tried.
+
 ## 17. One action per creature per turn
 
 **A creature gets one action in a turn.** Interacting with a fixture (§16),
@@ -931,14 +964,21 @@ one of those two draws on the turn's action, but it can never pick
 something up twice in that same turn.
 
 **Every attempt is recorded, a move and a refusal alike.** A move that
-succeeds is written down as its own entry naming the mechanic, the actor
-and the item — handing one over also names who received it — visible only
-to the Dungeon Master, alongside whatever state actually changed. A
-refusal is recorded the same way, marked refused rather than succeeded,
-on its own before the mistake is ever raised as an error — the same
-pattern every refusal already kept in this document (§9, §14, §16) — so a
-player reading their own transcript never sees a gap where a mistake
+succeeds is written down as its own `tool_call` entry naming the mechanic,
+the actor and the item — handing one over also names who received it —
+visible only to the Dungeon Master, alongside whatever state actually
+changed. A refusal is recorded the same way, marked refused rather than
+succeeded, on its own before the mistake is ever raised as an error — the
+same pattern every refusal already kept in this document (§9, §14, §16) —
+so a player reading their own transcript never sees a gap where a mistake
 happened, only the moves that actually took hold.
+
+**A player reads the move too (sprint 010/04).** Before that `tool_call`,
+a successful move also appends a player-visible `item_moved` entry naming
+the actor and the item by their stored names and naming which of the three
+moves this was — `taken`, `dropped` or `given`; handing one over also
+names who received it, the only case that entry does. A refusal appends
+no such row: nothing in the world changed for a player to be told about.
 
 ## 19. Using an item: the seam, not yet the mechanic
 
@@ -1110,6 +1150,16 @@ the same shape marked refused, on its own, before the error is raised.
 has already answered that when it was made (§17, §21) — so a wound is
 never turned away for a reason that belongs to the blow that caused it,
 not to the paperwork settling it.
+
+**A wound applied also leaves the player a line of their own (sprint
+010/04).** Before that `tool_call`, an applied wound appends a
+player-visible `hp_changed` entry naming the target and bracketing the hit
+points actually applied — what they were before, what they are after,
+alongside the maximum they can hold and the same alive/down flags the
+`tool_call` itself records. A refusal appends no such row, exactly like
+`item_moved` above: nothing about the target changed for a player to be
+told about. Nothing in this module can yet raise hit points, so this line
+today only ever falls.
 
 **One attack per turn, like every other acting mechanic** (§17): a
 creature that has already spent this turn's action is refused before an

@@ -54,13 +54,16 @@ Owns a player's playthrough of a campaign and who may act in it.
 - The `events` table (`models.py`): one row per step of a campaign run's
   transcript -- narration, player action, a requested or resolved roll, a
   question put to the player, a tool call, a scene or adventure milestone, a
-  system message, or an error or warning -- `campaign_run_id`
+  system message, an error or warning, or one of four player-visible
+  mechanic outcomes added in sprint 010/04 (an item moved, hit points
+  changed, a way opened, a rule looked up) -- `campaign_run_id`
   (`ON DELETE CASCADE`) and an optional `actor_member_id`
   (`ON DELETE SET NULL` -- the event outlives the member); an optional
   `turn_id` with no foreign key, since no turn concept exists yet; a `type`
   limited to `narration` / `player_action` / `roll_requested` / `roll` /
   `question` / `tool_call` / `scene_entered` / `adventure_started` /
-  `adventure_completed` / `system` / `error` / `warning` and a `visibility`
+  `adventure_completed` / `system` / `error` / `warning` / `item_moved` /
+  `hp_changed` / `way_opened` / `rule_looked_up` and a `visibility`
   limited to `player` / `dm`; a non-nullable `payload`
   JSONB column with no default; optional `prompt_tokens`,
   `completion_tokens` and `cost_usd` (an exact `NUMERIC(12,6)`, never a
@@ -73,6 +76,10 @@ Owns a player's playthrough of a campaign and who may act in it.
   relationship.
 - The `events` embedding columns and index migration
   (`alembic/versions/0008_event_embeddings.py`).
+- The four-more-event-types migration, widening `ck_events_type` to sixteen
+  values (`alembic/versions/0010_more_event_types.py`, sprint 010/04),
+  self-reversing and additive-only like `0007`'s own `events.type` step,
+  which it mirrors.
 - The dice engine (`dice.py`): `roll(expression)` parses `NdM+-K` and rolls
   it behind an `_rng()` seam (swappable in tests for a scripted sequence of
   faces), capped at 20 dice of at most 100 faces, raising
@@ -164,6 +171,13 @@ An event reads as `id, type, turnId, payload, createdAt` and nothing else —
 `EventRead`; no `visibility`, no cost, no run id. The events route itself
 answers `{events, awaiting}` (`EventsRead`), not a bare array — `awaiting`
 is one of `"none"`, `"roll:<id>"` or `"answer:<id>"`.
+
+`payload: dict[str, Any]` passes through unmapped — a new `type` (like the
+four sprint 010/04 added: `item_moved`, `hp_changed`, `way_opened`,
+`rule_looked_up`) needs a migration, a payload model and a registry entry,
+and **no route, `EventRead`, `EventsRead` or generated client change** to
+reach a caller; older transcripts simply hold no rows of a kind that did
+not exist yet when they were written.
 
 A run summary (`GET /runs`, `CampaignRunSummaryRead`) reads as `id,
 campaignId, status, createdAt, campaignTitle, campaignSummary,
@@ -260,11 +274,14 @@ Service functions (`service.py`), called as `service.f(...)`:
   Inserts the new `active` row, then in the same transaction positions the
   adventure's cast (`source_adventure_id` match, carried items excluded) at
   each one's authored scene and every member's character at the adventure's
-  `entry_scene`; nothing else is touched. Appends one `adventure_started`
-  event and commits once. Leaves the campaign run's own `status` untouched —
-  that changes at the first narration, not here. A second entry while one is
-  `active` collides with `uq_adventure_runs_active` and is re-raised as
-  `AdventureActiveError`.
+  `entry_scene`; nothing else is touched. Appends a player-visible
+  `adventure_started` event, then (sprint 010/04, I2) a player-visible
+  `scene_entered {adventureRunId, sceneId, sceneTitle}` for that same entry
+  scene — the opening move otherwise left no such row at all — and commits
+  once, both writes together. Leaves the campaign run's own `status`
+  untouched — that changes at the first narration, not here. A second entry
+  while one is `active` collides with `uq_adventure_runs_active` and is
+  re-raised as `AdventureActiveError`.
 - `use_exit` — the one mechanic that moves an actor anywhere, taking only
   who is acting and which exit they take; no destination is ever an
   argument. Loads the actor by id alone (`GameObjectNotFoundError` if
@@ -279,7 +296,10 @@ Service functions (`service.py`), called as `service.f(...)`:
   `result: "refused"`, commits that one row on its own — `append_event`
   only flushes — and then raises `ExitNotAvailableError`. Found and
   `kind="scene"`: rewrites the actor's `scene_id` to `exit.to`, appends a
-  player-visible `scene_entered {adventureRunId, sceneId}`. Found and
+  player-visible `scene_entered {adventureRunId, sceneId, sceneTitle}` —
+  `sceneTitle` (sprint 010/04, I2) is the destination's own pinned title,
+  read through `content.service.load_scene`, never a tool argument. Found
+  and
   `kind="adventure_end"`: sets the actor's `adventure_runs` row
   `completed`/`completed_at`, appends a player-visible
   `adventure_completed {adventureRunId}`, and — when the pinned campaign's
@@ -366,7 +386,12 @@ Service functions (`service.py`), called as `service.f(...)`:
   instead when a row with `owner_object_id` equal to the actor's id carries
   a `template_id` the check's own `bypassed_by` names; carrying nothing
   that bypasses it, with no roll either, is `RollRequiredError` /
-  `ROLL_REQUIRED`. Either pass appends one DM-visible
+  `ROLL_REQUIRED`. A passing check also appends a player-visible
+  `way_opened {actorId, actorName, objectId, objectName, action}` (sprint
+  010/04, I2) before the `tool_call` below — `action` is the authored
+  string verbatim, never the model's own words; a failed check changed
+  nothing in the world and appends no such row, though its `tool_call`
+  still records `ok`. Either pass appends one DM-visible
   `tool_call {args: {actorId, objectId, action, rollId?},
   rollIds: rollId ? [rollId] : [], result: "ok",
   outcome: {action, dc, total?, bypassedBy?, success: true}}` and commits
@@ -389,8 +414,11 @@ Service functions (`service.py`), called as `service.f(...)`:
   another *creature* carries is not reachable this way, nor is one in
   another scene, nor is any of this true of an actor with no scene at all.
   Anything else is `ObjectNotReachableError` / `OBJECT_NOT_REACHABLE`. A
-  pass appends one DM-visible `tool_call {args: {actorId, itemId},
-  result: "ok"}` and commits once; a refusal is recorded the same way,
+  pass also appends a player-visible `item_moved {movement: "taken",
+  actorId, actorName, itemId, itemName}` (sprint 010/04, I2) before the
+  `tool_call` below, naming actor and item by their stored `name`s, never a
+  tool argument, then appends one DM-visible `tool_call {args: {actorId,
+  itemId}, result: "ok"}` and commits once; a refusal is recorded the same way,
   `result: "refused"`, on its own commit, before the error is raised —
   the pattern `_refuse_exit` and `interact`'s own refusal already keep.
   Full behaviour is `docs/modules/playthrough.md` §18.
@@ -400,9 +428,11 @@ Service functions (`service.py`), called as `service.f(...)`:
   what you carry costs nothing. Otherwise the same shape: actor and
   item loaded by id, the run required `ready` or `active`, an item the
   actor is not carrying refused as `ObjectNotReachableError` /
-  `OBJECT_NOT_REACHABLE`, a pass or a refusal each its own committed
-  `tool_call {args: {actorId, itemId}}`. Full behaviour is
-  `docs/modules/playthrough.md` §18.
+  `OBJECT_NOT_REACHABLE`. A pass also appends a player-visible
+  `item_moved {movement: "dropped", actorId, actorName, itemId, itemName}`
+  (sprint 010/04, I2) before the `tool_call` below; a pass or a refusal
+  each its own committed `tool_call {args: {actorId, itemId}}`. Full
+  behaviour is `docs/modules/playthrough.md` §18.
 - `give` — moves an item from one creature's hands straight to another's:
   re-owns it from `from_id` to `to_id`, touching no position column at all.
   Loads both creatures and the item by id, requires the run `ready` or
@@ -410,7 +440,11 @@ Service functions (`service.py`), called as `service.f(...)`:
   already be carried by the giver, and the receiver must be a creature
   standing in the giver's own scene — anything else, including the two
   creatures in different scenes, is `ObjectNotReachableError` /
-  `OBJECT_NOT_REACHABLE`. A pass appends one DM-visible
+  `OBJECT_NOT_REACHABLE`. A pass also appends a player-visible
+  `item_moved {movement: "given", actorId, actorName, itemId, itemName,
+  toId, toName}` (sprint 010/04, I2) before the `tool_call` below —
+  `toId`/`toName` name the receiver and are set only for this movement —
+  then appends one DM-visible
   `tool_call {args: {actorId, toId, itemId}, result: "ok"}` and commits
   once — `actorId` names the giver, so one key always names who acted; a
   refusal keeps the same shape, `result: "refused"`, committed on its own
@@ -467,7 +501,11 @@ Service functions (`service.py`), called as `service.f(...)`:
   `CharacterState` field, alongside `abilities`, `race`, `character_class`,
   `background` and `appearance` — since this JSONB column is never edited
   in place. Makes no one-action check of its own: the `attack` it is bound
-  to already spent that. A pass appends one DM-visible
+  to already spent that. A pass also appends a player-visible
+  `hp_changed {targetId, targetName, before, after, maxHp, alive, down}`
+  (sprint 010/04, I2) before the `tool_call` below — `before`/`after`
+  bracket the hit points actually applied, `alive`/`down` the same flags
+  the `tool_call` itself records — then appends one DM-visible
   `tool_call {args: {targetId, rollId, hitId}, rollIds: [rollId],
   result: "ok", outcome: {rolled, applied, currentHp, isAlive, down}}` and
   commits once; a refusal keeps the same shape, `result: "refused"`,
@@ -494,10 +532,12 @@ Service functions (`service.py`), called as `service.f(...)`:
   `events`. Takes the run, `type`, `visibility`, a payload (dict or the
   type's own payload model), and optionally `turn_id`, `actor_member_id`
   and a `core.llm.service.Usage`. Validates the payload against
-  `EVENT_PAYLOADS[type]`, the twelve-entry registry in `schemas.py`
+  `EVENT_PAYLOADS[type]`, the sixteen-entry registry in `schemas.py`
   (`narration`, `player_action`, `roll_requested`, `roll`, `question`,
   `tool_call`, `scene_entered`, `adventure_started`, `adventure_completed`,
-  `system`, `error`, `warning`), and stores it `model_dump(by_alias=True)`.
+  `system`, `error`, `warning`, plus `item_moved`, `hp_changed`,
+  `way_opened` and `rule_looked_up`, added in sprint 010/04), and stores it
+  `model_dump(by_alias=True)`.
   An unknown type or visibility, or a payload that fails its type's shape,
   raises `InvalidEventPayloadError` and writes nothing. `usage.cost_usd`
   becomes `Decimal(str(...))`, never `Decimal(float)`. `add`s and `flush`es
@@ -512,6 +552,13 @@ Service functions (`service.py`), called as `service.f(...)`:
   leaves both columns `NULL`, logs one `warning` and never raises, so a
   lost embedding never loses the narration. Every other event type never
   calls the seam.
+- `record_rule_lookup` (sprint 010/04, I3) — the module's ordinary mechanic
+  shape, `_require_member` then append then commit, for a rule lookup that
+  matched something: appends a player-visible `rule_looked_up {topic}`,
+  `topic` being the best match's own `heading_path`, supplied by the
+  `lookup_rule` tool only when its search matched. No refusal path — a
+  lookup that matched nothing never calls this at all, so there is nothing
+  here to refuse.
 - `list_events` — the caller's `player`-visible events for a run, ordered by
   `id`, `after` exclusive, `limit` capped at 500 (default 200). Checks
   membership; `dm`-visible rows are excluded, not merely hidden downstream.
