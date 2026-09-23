@@ -83,7 +83,17 @@ describe("Transcript (WI2)", () => {
     expect(screen.getByText("1d20+1")).toBeInTheDocument();
     expect(screen.getByText("13 + 1")).toBeInTheDocument();
     expect(screen.getByText("14")).toBeInTheDocument();
-    expect(screen.queryByText(/✓|✗/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
+  it("passes the dice row's verdict through to the dice chip", () => {
+    const rows: TranscriptRow[] = [
+      { kind: "dice", id: "d1", label: "Investigation", notation: "1d20+1", breakdown: "13 + 1", total: 14, verdict: "madeIt" },
+    ];
+
+    renderWithProviders(<Transcript rows={rows} />);
+
+    expect(screen.getByRole("img")).toBeInTheDocument();
   });
 
   it("renders a scene divider with the scene's name", () => {
@@ -196,5 +206,38 @@ describe("Transcript (WI2)", () => {
     renderWithProviders(<Transcript rows={rows} />);
 
     expect(screen.queryByTestId("thinking-line")).not.toBeInTheDocument();
+  });
+
+  it("renders the prompt after the rows and before the thinking line (WI4, I5)", () => {
+    const rows: TranscriptRow[] = [
+      { kind: "narration", id: "n1", text: "Greenhollow is a dozen houses round a well.", at: "2026-09-08T21:02:00Z" },
+    ];
+
+    renderWithProviders(<Transcript rows={rows} thinking prompt={<div data-testid="the-prompt">choose</div>} />);
+
+    const log = screen.getByRole("log");
+    const promptEl = screen.getByTestId("the-prompt");
+    const thinkingLine = screen.getByTestId("thinking-line");
+    expect(log.textContent?.indexOf("Greenhollow")).toBeLessThan(log.textContent?.indexOf("choose") ?? -1);
+    expect(Array.from(log.children).indexOf(promptEl)).toBeLessThan(Array.from(log.children).indexOf(thinkingLine));
+  });
+
+  it("renders the prompt after the empty line when the transcript has only dividers", () => {
+    const rows: TranscriptRow[] = [{ kind: "divider", id: "sc1", scene: "The Village Green" }];
+
+    renderWithProviders(<Transcript rows={rows} prompt={<div data-testid="the-prompt">choose</div>} />);
+
+    const log = screen.getByRole("log");
+    expect(log.textContent?.indexOf(play.empty)).toBeLessThan(log.textContent?.indexOf("choose") ?? -1);
+  });
+
+  it("does not render anything extra when no prompt is given", () => {
+    const rows: TranscriptRow[] = [
+      { kind: "narration", id: "n1", text: "Greenhollow is a dozen houses round a well.", at: "2026-09-08T21:02:00Z" },
+    ];
+
+    renderWithProviders(<Transcript rows={rows} />);
+
+    expect(screen.queryByTestId("the-prompt")).not.toBeInTheDocument();
   });
 });
