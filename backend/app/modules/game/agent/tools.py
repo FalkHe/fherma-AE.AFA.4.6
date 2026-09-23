@@ -696,12 +696,21 @@ async def lookup_rule(
     except SrdCorpusEmptyError:
         return {"status": "ok", "query": query, "rules": []}
 
+    if matches and ctx.run_id:
+        await playthrough_service.record_rule_lookup(
+            ctx.db,
+            user_id=ctx.user_id,
+            run_id=ctx.run_id,
+            topic=matches[0].heading_path,
+            turn_id=ctx.turn_id,
+        )
+
     return {
         "status": "ok",
         "query": query,
         "rules": [
             {
-                "heading": " > ".join(m.heading_path),
+                "heading": m.heading_path,
                 "text": m.text,
             }
             for m in matches

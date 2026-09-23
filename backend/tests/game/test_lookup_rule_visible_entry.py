@@ -71,9 +71,7 @@ def _install_record_rule_lookup(monkeypatch) -> list[dict]:
     calls: list[dict] = []
 
     async def fake_record_rule_lookup(db, *, user_id, run_id, topic, turn_id=None):
-        calls.append(
-            {"user_id": user_id, "run_id": run_id, "topic": topic, "turn_id": turn_id}
-        )
+        calls.append({"user_id": user_id, "run_id": run_id, "topic": topic, "turn_id": turn_id})
         return SimpleNamespace(id="event-rule-1", payload={"topic": topic})
 
     monkeypatch.setattr(
@@ -112,7 +110,9 @@ def test_a_lookup_that_matched_nothing_leaves_none(monkeypatch):
     calls = _install_record_rule_lookup(monkeypatch)
 
     ctx = _ctx()
-    result = asyncio.run(tools.lookup_rule.coroutine(query="a word matching nothing", runtime=_runtime(ctx)))
+    result = asyncio.run(
+        tools.lookup_rule.coroutine(query="a word matching nothing", runtime=_runtime(ctx))
+    )
 
     assert calls == []
     assert result["rules"] == []
@@ -152,7 +152,7 @@ def test_a_matched_lookup_with_no_run_id_leaves_none(monkeypatch):
 
 
 def test_the_models_own_query_words_never_reach_the_entry(monkeypatch):
-    query = "does hiding behind a barrel work against a sleeping goblin"
+    query = "sneaking behind the sleeping goblin sentry"
 
     async def fake_search_rules(db, *, query, limit):
         return _matches()
@@ -166,7 +166,7 @@ def test_the_models_own_query_words_never_reach_the_entry(monkeypatch):
     assert calls[0]["topic"] == BEST_HEADING
     assert query not in calls[0]["topic"]
     for word in query.split():
-        assert word not in calls[0]["topic"]
+        assert word not in calls[0]["topic"].lower()
 
 
 def test_the_heading_reaches_the_model_as_a_readable_string_not_character_by_character(monkeypatch):
@@ -217,9 +217,7 @@ def test_a_turn_with_a_rule_lookup_and_a_take_leaves_exactly_two_visible_entries
     lookup_result = asyncio.run(
         tools.lookup_rule.coroutine(query="can the hero hide here?", runtime=_runtime(ctx))
     )
-    take_result = asyncio.run(
-        tools.take.coroutine(item_id="item-1", runtime=_runtime(ctx))
-    )
+    take_result = asyncio.run(tools.take.coroutine(item_id="item-1", runtime=_runtime(ctx)))
 
     assert lookup_result["status"] == "ok"
     assert take_result["status"] == "ok"
@@ -247,9 +245,7 @@ def test_a_refused_take_and_a_private_check_leave_no_visible_entry(monkeypatch):
         asyncio.run(tools.take.coroutine(item_id="item-1", runtime=_runtime(ctx)))
 
     check_result = asyncio.run(
-        tools.passive_check.coroutine(
-            ability="wisdom", dc=12, runtime=_runtime(ctx)
-        )
+        tools.passive_check.coroutine(ability="wisdom", dc=12, runtime=_runtime(ctx))
     )
 
     assert check_result["success"] is True
