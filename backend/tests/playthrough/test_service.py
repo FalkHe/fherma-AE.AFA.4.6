@@ -631,6 +631,96 @@ def _character_object(**overrides) -> GameObject:
     return GameObject(**fields)
 
 
+def _carried_item(**overrides) -> GameObject:
+    fields = {
+        "id": "item-1",
+        "campaign_run_id": "run-1",
+        "kind": "item",
+        "instance_key": "pc:member-1:1/dagger:1",
+        "name": "Dagger",
+        "owner_object_id": "character-1",
+    }
+    fields.update(overrides)
+    return GameObject(**fields)
+
+
+def test_character_read_carries_all_six_abilities_with_signed_modifiers():
+    # <- WI1: a hero read carries all six abilities with signed modifiers
+    obj = _character_object(
+        state={
+            "abilities": {
+                "strength": 10,  # modifier 0
+                "dexterity": 7,  # modifier -2
+                "constitution": 16,  # modifier 3
+                "intelligence": 12,
+                "wisdom": 8,
+                "charisma": 14,
+            },
+            "race": "Halfling",
+            "character_class": "Rogue",
+            "background": "Raised in the kitchens of a river inn.",
+            "appearance": "Barely three feet of him, all elbows and grin.",
+        }
+    )
+
+    character = service.character_read(obj)
+
+    assert character.abilities.strength.score == 10
+    assert character.abilities.strength.modifier == 0
+    assert character.abilities.dexterity.score == 7
+    assert character.abilities.dexterity.modifier == -2
+    assert character.abilities.constitution.score == 16
+    assert character.abilities.constitution.modifier == 3
+    assert character.backstory == "Raised in the kitchens of a river inn."
+
+
+def test_character_read_empty_appearance_and_backstory_come_back_as_empty_strings():
+    # <- WI1: an empty appearance or backstory comes back as "", not missing
+    obj = _character_object(
+        state={
+            "abilities": {
+                "strength": 10,
+                "dexterity": 10,
+                "constitution": 10,
+                "intelligence": 10,
+                "wisdom": 10,
+                "charisma": 10,
+            },
+            "race": "Halfling",
+            "character_class": "Rogue",
+            "background": "",
+            "appearance": "",
+        }
+    )
+
+    character = service.character_read(obj)
+
+    assert character.appearance == ""
+    assert character.backstory == ""
+
+
+def test_character_read_carries_one_item_entry_per_passed_row():
+    # <- WI1: a hero read carries its items
+    obj = _character_object()
+    items = [
+        _carried_item(id="item-1", name="Dagger"),
+        _carried_item(id="item-2", name="Dagger"),
+    ]
+
+    character = service.character_read(obj, items=items)
+
+    assert [item.id for item in character.items] == ["item-1", "item-2"]
+    assert [item.name for item in character.items] == ["Dagger", "Dagger"]
+
+
+def test_character_read_defaults_to_no_items_when_none_are_passed():
+    obj = _character_object()
+
+    character = service.character_read(obj)
+
+    assert character.items == []
+
+
 def test_get_run_overview_members_carry_username_and_role():
     run = _make_campaign_run(id="run-1")
     member = _member_row()
@@ -674,6 +764,7 @@ def test_get_run_overview_ready_is_true_once_the_member_owns_a_character():
         FakeResult(scalar=member),
         FakeResult(scalar=run),
         FakeResult(scalars=[row]),
+        FakeResult(scalars=[_carried_item()]),
         FakeResult(scalars=[]),
     )
 
@@ -686,6 +777,12 @@ def test_get_run_overview_ready_is_true_once_the_member_owns_a_character():
     assert character.character_class == "Rogue"
     assert character.level == 1
     assert character.appearance == "Barely three feet of him, all elbows and grin."
+    # <- WI1: the existing overview read now carries the widened shape's
+    # new fields for free.
+    assert character.backstory == "Raised in the kitchens of a river inn."
+    assert character.abilities.strength.score == 8
+    assert character.abilities.strength.modifier == -1
+    assert [item.id for item in character.items] == ["item-1"]
 
 
 def test_get_run_overview_member_query_joins_the_character_by_member_id_and_kind():
@@ -719,6 +816,72 @@ def test_get_run_overview_member_query_joins_the_character_by_member_id_and_kind
     compiled = str(member_stmt.compile(compile_kwargs={"literal_binds": True}))
     assert "objects.member_id = campaign_run_members.id" in compiled
     assert "objects.kind = 'creature'" in compiled
+
+
+def test_get_run_overview_carried_items_for_several_heroes_come_from_one_grouped_query():
+    # <- WI1: carried items for several heroes come from one grouped
+    # query, not one per hero.
+    run = _make_campaign_run(id="run-1")
+    member_a = _member_row(member_id="member-1")
+    member_b = _member_row(member_id="member-2", user_id="user-2")
+    character_a = _character_object(id="character-1", member_id="member-1")
+    character_b = _character_object(
+        id="character-2", member_id="member-2", name="Bram Oakes", instance_key="pc:member-2:1"
+    )
+    item_a = _carried_item(id="item-1", name="Dagger", owner_object_id="character-1")
+    item_b = _carried_item(id="item-2", name="Torch", owner_object_id="character-2")
+
+    captured: list[object] = []
+
+    class CapturingSession(FakeSession):
+        async def execute(self, stmt):
+            captured.append(stmt)
+            return await super().execute(stmt)
+
+    db = CapturingSession(
+        FakeResult(scalar=member_a),
+        FakeResult(scalar=run),
+        FakeResult(scalars=[(member_a, "aragorn", character_a), (member_b, "bram", character_b)]),
+        FakeResult(scalars=[item_a, item_b]),
+        FakeResult(scalars=[]),
+    )
+
+    overview = asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+    # Exactly one execute call fetches items: member, run, members, items,
+    # adventures -- five calls total for two heroes, not six.
+    assert len(captured) == 5
+    items_stmt = captured[3]
+    compiled = str(items_stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "objects.kind = 'item'" in compiled
+    assert "objects.owner_object_id IN ('character-1', 'character-2')" in compiled
+
+    assert [item.id for item in overview.members[0].character.items] == ["item-1"]
+    assert [item.id for item in overview.members[1].character.items] == ["item-2"]
+
+
+def test_get_run_overview_skips_the_items_query_when_no_member_has_a_character():
+    run = _make_campaign_run(id="run-1")
+    member = _member_row()
+    row = (_member_row(), "aragorn", None)
+    captured: list[object] = []
+
+    class CapturingSession(FakeSession):
+        async def execute(self, stmt):
+            captured.append(stmt)
+            return await super().execute(stmt)
+
+    db = CapturingSession(
+        FakeResult(scalar=member),
+        FakeResult(scalar=run),
+        FakeResult(scalars=[row]),
+        FakeResult(scalars=[]),
+    )
+
+    asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
+
+    # Only member, run, members and adventures -- no items query at all.
+    assert len(captured) == 4
 
 
 def _synthetic_three_adventure_campaign() -> LoadedCampaign:

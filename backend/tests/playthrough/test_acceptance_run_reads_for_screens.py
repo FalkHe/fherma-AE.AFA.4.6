@@ -219,7 +219,17 @@ def test_ac3_overview_answers_run_members_and_adventures_in_campaign_order(
             race="Halfling",
             character_class="Rogue",
             level=1,
+            abilities={
+                "strength": {"score": 8, "modifier": -1},
+                "dexterity": {"score": 16, "modifier": 3},
+                "constitution": {"score": 14, "modifier": 2},
+                "intelligence": {"score": 12, "modifier": 1},
+                "wisdom": {"score": 10, "modifier": 0},
+                "charisma": {"score": 13, "modifier": 1},
+            },
             appearance="Barely three feet of him, all elbows and grin.",
+            backstory="Raised in the kitchens of a river inn.",
+            items=[],
         ),
     )
     overview = SimpleNamespace(

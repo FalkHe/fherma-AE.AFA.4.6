@@ -7,6 +7,7 @@ suite's monkeypatching depends on it (AGENTS.md).
 """
 
 import asyncio
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
 
@@ -23,7 +24,7 @@ from app.core.settings import get_settings
 from app.modules.character.schemas import CharacterSheet
 from app.modules.content import service as content_service
 from app.modules.content.errors import ContentError, ContentNotFoundError
-from app.modules.content.schemas import LoadedCampaign, ObjectTemplate, SeedCharacter
+from app.modules.content.schemas import Abilities, LoadedCampaign, ObjectTemplate, SeedCharacter
 from app.modules.playthrough import dice
 from app.modules.playthrough.errors import (
     ActionNotAvailableError,
@@ -63,12 +64,17 @@ from app.modules.playthrough.schemas import (
     CampaignRunMemberRead,
     CampaignRunOverviewRead,
     CampaignRunSummaryRead,
+    CharacterAbilities,
     CharacterRead,
     CharacterState,
+    Item,
     NarrationRead,
     RollKind,
     RollRequestedPayload,
     RunCost,
+    TableAdventure,
+    TableRead,
+    TableScene,
     TurnCost,
 )
 from app.modules.users.models import User
@@ -372,13 +378,31 @@ def _excerpt(text: str, limit: int = 200) -> str:
     return cut.rstrip() + "…"
 
 
-def character_read(obj: GameObject) -> CharacterRead:
+def _character_abilities(scores: Abilities) -> CharacterAbilities:
+    """Every ability score paired with its signed modifier (WI1, sprint
+    010/05), through `dice.ability_modifier` -- the one formula, computed
+    once here rather than left for a client to derive."""
+    return CharacterAbilities.model_validate(
+        {
+            name: {"score": score, "modifier": dice.ability_modifier(score)}
+            for name, score in scores.model_dump().items()
+        }
+    )
+
+
+def character_read(obj: GameObject, *, items: Sequence[GameObject] = ()) -> CharacterRead:
     """`CharacterRead` from a character `GameObject` (sprint 009-07, ←
-    research Decision 5) -- the four card facts (`race`, `characterClass`,
-    `level`, `appearance`) are read off `obj.state` through
-    `CharacterState`, the fighting stats off the object's own columns.
-    Shared by `get_run_overview`'s member list and the
-    `POST …/character` route, so both answer the same shape."""
+    research Decision 5; widened WI1 sprint 010/05 into the one hero shape
+    shared by every read that already returns one) -- the four card facts
+    (`race`, `characterClass`, `level`, `appearance`), the six ability
+    scores and `backstory` (`CharacterState.background`, under its wire
+    name) are read off `obj.state` through `CharacterState`, the fighting
+    stats off the object's own columns. `items` are the carried rows a
+    caller already fetched -- one `Item` per row, never queried here, so
+    `get_run_overview` can supply every hero's items from one grouped
+    query rather than one per hero. Shared by `get_run_overview`'s member
+    list and the `POST …/character` route, so both answer the same
+    shape."""
     state = CharacterState.model_validate(obj.state)
     return CharacterRead(
         id=obj.id,
@@ -389,7 +413,10 @@ def character_read(obj: GameObject) -> CharacterRead:
         race=state.race,
         character_class=state.character_class,
         level=state.level,
+        abilities=_character_abilities(state.abilities),
         appearance=state.appearance,
+        backstory=state.background,
+        items=[Item(id=item.id, name=item.name) for item in items],
     )
 
 
@@ -406,7 +433,11 @@ async def get_run_overview(
     `campaign_run_members` to `users` and outer-joining `objects` on
     `member_id == member.id AND kind == 'creature'` -- a non-player
     creature's `member_id` is always `None`, so it can never supply a
-    character (← research). Adventures come from `_load_pinned(run)`
+    character (← research). Every character's carried items (WI1, sprint
+    010/05) come from one further query, grouped in Python by
+    `owner_object_id` -- one query for every hero on the run, never one
+    per hero -- skipped outright when no member has a character.
+    Adventures come from `_load_pinned(run)`
     (`None` means unavailable, AC2's twin) paired with this run's own
     `adventure_runs` rows. Reads only: no commit, no status change, no
     event.
@@ -425,15 +456,37 @@ async def get_run_overview(
         .order_by(CampaignRunMember.id)
     )
     member_result = await db.execute(member_stmt)
+    member_rows = member_result.all()
+
+    character_ids = [
+        character_object.id
+        for _, _, character_object in member_rows
+        if character_object is not None
+    ]
+    items_by_owner: dict[str, list[GameObject]] = {}
+    if character_ids:
+        items_stmt = (
+            select(GameObject)
+            .where(GameObject.kind == "item", GameObject.owner_object_id.in_(character_ids))
+            .order_by(GameObject.instance_key)
+        )
+        items_result = await db.execute(items_stmt)
+        for item in items_result.scalars().all():
+            items_by_owner.setdefault(item.owner_object_id, []).append(item)
+
     members = [
         CampaignRunMemberRead(
             user_id=member.user_id,
             username=username,
             role=member.role,
             ready=character_object is not None,
-            character=character_read(character_object) if character_object is not None else None,
+            character=(
+                character_read(character_object, items=items_by_owner.get(character_object.id, []))
+                if character_object is not None
+                else None
+            ),
         )
-        for member, username, character_object in member_result.all()
+        for member, username, character_object in member_rows
     ]
 
     adventure_run_stmt = select(AdventureRun).where(AdventureRun.campaign_run_id == run_id)
@@ -474,6 +527,119 @@ async def get_run_overview(
         unavailable=loaded is None,
         members=members,
         adventures=adventures,
+    )
+
+
+async def get_table(db: AsyncSession, *, user_id: str, run_id: str) -> TableRead:
+    """One aggregate read for the play screen (WI2, sprint 010/05, AC1/AC2):
+    the run, its pinned campaign's title, the current adventure and scene,
+    and every seated hero's full sheet -- serving the screen's header, its
+    party rail and the full sheet alike, in one call.
+
+    Gated by membership exactly like every other read (`_require_member`
+    then `_get_run`). Members and their characters come from the same join
+    `get_run_overview` uses, but only rows with a character contribute a
+    hero here -- unlike that overview, this read has no seat-without-a-
+    character row to carry. Items are fetched the same way: one further
+    query, grouped in Python by `owner_object_id`, skipped when no member
+    has a character.
+
+    The current adventure and scene are anchored on the **caller's own**
+    hero, never on whichever `adventure_runs` row reads `status ==
+    'active'` (← research, sprint plan I2): `use_exit` marks a row
+    `completed` without ever clearing anyone's position, so an
+    active-row anchor would blank the header at exactly the moment an
+    adventure ends. Both answer `None` when the caller has no hero yet,
+    the hero has entered no adventure (`adventure_run_id is None` --
+    `scene_id` is always `None` right alongside it, the same tied pair
+    `objects`'s own check constraint enforces), or the pinned content no
+    longer loads. `campaignTitle` answers `None` under that last condition
+    alone, independent of the caller's own hero. Reads only: no commit, no
+    status change, no event.
+    """
+    member = await _require_member(db, run_id=run_id, user_id=user_id)
+    run = await _get_run(db, run_id)
+
+    member_stmt = (
+        select(CampaignRunMember, GameObject)
+        .outerjoin(
+            GameObject,
+            (GameObject.member_id == CampaignRunMember.id) & (GameObject.kind == "creature"),
+        )
+        .where(CampaignRunMember.campaign_run_id == run_id)
+        .order_by(CampaignRunMember.id)
+    )
+    member_result = await db.execute(member_stmt)
+    member_rows = member_result.all()
+
+    character_ids = [
+        character_object.id for _, character_object in member_rows if character_object is not None
+    ]
+    items_by_owner: dict[str, list[GameObject]] = {}
+    if character_ids:
+        items_stmt = (
+            select(GameObject)
+            .where(GameObject.kind == "item", GameObject.owner_object_id.in_(character_ids))
+            .order_by(GameObject.instance_key)
+        )
+        items_result = await db.execute(items_stmt)
+        for item in items_result.scalars().all():
+            items_by_owner.setdefault(item.owner_object_id, []).append(item)
+
+    heroes = [
+        character_read(character_object, items=items_by_owner.get(character_object.id, []))
+        for _, character_object in member_rows
+        if character_object is not None
+    ]
+
+    caller_character = next(
+        (
+            character_object
+            for run_member, character_object in member_rows
+            if run_member.id == member.id and character_object is not None
+        ),
+        None,
+    )
+
+    loaded = _load_pinned(run)
+
+    adventure: TableAdventure | None = None
+    scene: TableScene | None = None
+    if (
+        loaded is not None
+        and caller_character is not None
+        and caller_character.adventure_run_id is not None
+    ):
+        adventure_run_result = await db.execute(
+            select(AdventureRun).where(AdventureRun.id == caller_character.adventure_run_id)
+        )
+        adventure_run = adventure_run_result.scalar_one_or_none()
+        if adventure_run is not None:
+            adventure_content = loaded.adventures.get(adventure_run.adventure_id)
+            if adventure_content is not None:
+                adventure = TableAdventure(
+                    id=adventure_run.adventure_id,
+                    run_id=adventure_run.id,
+                    title=adventure_content.title,
+                    status=adventure_run.status,
+                )
+
+        scene_content = (
+            loaded.scenes.get(caller_character.scene_id)
+            if caller_character.scene_id is not None
+            else None
+        )
+        if scene_content is not None:
+            scene = TableScene(id=scene_content.id, name=scene_content.title)
+
+    return TableRead(
+        run_id=run.id,
+        run_title=run.title,
+        run_status=run.status,
+        campaign_title=loaded.campaign.title if loaded is not None else None,
+        adventure=adventure,
+        scene=scene,
+        heroes=heroes,
     )
 
 
@@ -1102,7 +1268,7 @@ async def passive_check(
     abilities = dice._actor_abilities(
         actor, campaign_id=run.campaign_id, version=run.content_version
     )
-    modifier = dice._ability_modifier(getattr(abilities, ability))
+    modifier = dice.ability_modifier(getattr(abilities, ability))
     passive_score = 10 + modifier
     success = passive_score >= dc
     await append_event(

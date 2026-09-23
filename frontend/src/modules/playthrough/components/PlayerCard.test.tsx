@@ -10,6 +10,8 @@ import { renderWithProviders } from "../../../test/render";
 import { PartySection } from "./PartySection";
 import playthrough from "../../../core/i18n/locales/en/playthrough.json";
 
+const ABILITY = { score: 10, modifier: 0 };
+
 const CHARACTER = {
   id: "char-1",
   name: "Pip Underbough",
@@ -21,6 +23,16 @@ const CHARACTER = {
   armourClass: 14,
   appearance:
     "Barely three feet of him, all elbows and grin. Curly black hair, a nose broken twice, and boots so quiet the floorboards forget he stood on them.",
+  abilities: {
+    strength: ABILITY,
+    dexterity: ABILITY,
+    constitution: ABILITY,
+    intelligence: ABILITY,
+    wisdom: ABILITY,
+    charisma: ABILITY,
+  },
+  backstory: "",
+  items: [],
 };
 
 const READY_MEMBER = { userId: "u1", username: "thorin", role: "owner", ready: true, character: CHARACTER };
