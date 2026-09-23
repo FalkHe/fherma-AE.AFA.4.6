@@ -156,13 +156,16 @@ def test_ac2_an_ordinary_exit_moves_the_actor_or_is_refused_and_recorded(playthr
         assert after_move.scene_id == THORNWAY_SCENE
         assert after_move.adventure_run_id == adventure_run.id  # unchanged
 
-        # It is recorded in the transcript, visible to the player.
+        # It is recorded in the transcript, visible to the player. Sprint
+        # 010/04 also has `enter_adventure` itself append one `scene_entered`
+        # for the opening scene (`village-green`), so this walk's own move
+        # is the *second* one, not the only one.
         player_events = await playthrough_service.list_events(
             playthrough_db, user_id=owner_id, run_id=run.id
         )
         scene_entered = [e for e in player_events if e.type == "scene_entered"]
-        assert len(scene_entered) == 1
-        entered_payload = _payload(scene_entered[0])
+        assert len(scene_entered) == 2
+        entered_payload = _payload(scene_entered[-1])
         assert entered_payload.get("adventureRunId") == str(adventure_run.id)
         assert entered_payload.get("sceneId") == THORNWAY_SCENE
 

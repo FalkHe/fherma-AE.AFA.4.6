@@ -712,7 +712,10 @@ async def enter_adventure(db: AsyncSession, *, user_id: str, run_id: str) -> Adv
     made before any adventure existed has no `source_adventure_id` for the
     first statement to match on). `append_event` records
     `adventure_started` at `player` visibility with the new adventure
-    run's id, then one commit.
+    run's id. Sprint 010/04, I2: it also records `scene_entered` for the
+    entry scene the cast and every character were just positioned into,
+    carrying that scene's own pinned `sceneTitle` -- the opening move
+    otherwise left no such row at all. One commit closes both writes.
     """
     await _require_member(db, run_id=run_id, user_id=user_id)
     run = await _get_run(db, run_id)
@@ -777,6 +780,17 @@ async def enter_adventure(db: AsyncSession, *, user_id: str, run_id: str) -> Adv
         type="adventure_started",
         visibility="player",
         payload={"adventure_run_id": adventure_run.id},
+    )
+    await append_event(
+        db,
+        run_id=run_id,
+        type="scene_entered",
+        visibility="player",
+        payload={
+            "adventure_run_id": adventure_run.id,
+            "scene_id": adventure.entry_scene,
+            "scene_title": loaded.scenes[adventure.entry_scene].title,
+        },
     )
 
     await db.commit()
@@ -1400,7 +1414,9 @@ async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: st
 
     `kind='scene'` rewrites the actor's `scene_id` to `exit.to`
     (`adventure_run_id` untouched -- an exit only ever changes where within
-    an adventure someone stands) and appends `scene_entered` at `player`.
+    an adventure someone stands) and appends `scene_entered` at `player`,
+    carrying the destination's own pinned `sceneTitle` (sprint 010/04, I2:
+    read through `content_service.load_scene`, never a tool argument).
     `kind='adventure_end'` completes the actor's adventure run -- `status`
     and `completed_at` set together on the one loaded row, so they reach
     the database in the same UPDATE and never violate the CHECK that ties
@@ -1437,12 +1453,17 @@ async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: st
 
     if exit_.kind == "scene":
         obj.scene_id = exit_.to
+        destination = content_service.load_scene(run.campaign_id, run.content_version, obj.scene_id)
         await append_event(
             db,
             run_id=run.id,
             type="scene_entered",
             visibility="player",
-            payload={"adventure_run_id": obj.adventure_run_id, "scene_id": obj.scene_id},
+            payload={
+                "adventure_run_id": obj.adventure_run_id,
+                "scene_id": obj.scene_id,
+                "scene_title": destination.title,
+            },
         )
     else:
         adventure_run_result = await db.execute(
@@ -1571,6 +1592,12 @@ async def interact(
     (`owner_object_id = actor.id`) whose `template_id` is named there; a
     match passes with no roll, its id reported as `outcome.bypassedBy`.
     No match refuses `ROLL_REQUIRED`.
+
+    Sprint 010/04, I2: `success` alone also appends `way_opened` at
+    `player` visibility, before the `dm`-only `tool_call` -- naming the
+    actor, the object and `action` verbatim (authored content, never the
+    model's own words). A failed check changed nothing in the world and
+    leaves no such row, though its `tool_call` still records `ok`.
     """
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
 
@@ -1676,6 +1703,22 @@ async def interact(
     args: dict[str, Any] = {"actorId": actor_id, "objectId": object_id, "action": action}
     if roll_id is not None:
         args["rollId"] = roll_id
+
+    if success:
+        await append_event(
+            db,
+            run_id=run.id,
+            type="way_opened",
+            visibility="player",
+            turn_id=turn_id,
+            payload={
+                "actor_id": actor_id,
+                "actor_name": actor.name,
+                "object_id": object_id,
+                "object_name": obj.name,
+                "action": action,
+            },
+        )
 
     await append_event(
         db,
@@ -1788,6 +1831,11 @@ async def take(
     carried by another creature, or the actor standing nowhere -- is
     refused as `OBJECT_NOT_REACHABLE`, recorded and committed before
     raising (← D11).
+
+    Sprint 010/04, I2: a successful move also appends `item_moved` at
+    `player` visibility, before the `dm`-only `tool_call` -- `movement:
+    "taken"`, naming the actor and the item by their stored `name`s, never
+    a tool argument (AC4). The refusal paths above are unchanged.
     """
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
     args = {"actorId": actor_id, "itemId": item_id}
@@ -1823,6 +1871,20 @@ async def take(
     await append_event(
         db,
         run_id=run.id,
+        type="item_moved",
+        visibility="player",
+        turn_id=turn_id,
+        payload={
+            "movement": "taken",
+            "actor_id": actor_id,
+            "actor_name": actor.name,
+            "item_id": item_id,
+            "item_name": item.name,
+        },
+    )
+    await append_event(
+        db,
+        run_id=run.id,
         type="tool_call",
         visibility="dm",
         turn_id=turn_id,
@@ -1850,6 +1912,10 @@ async def drop(
     Refused as `OBJECT_NOT_REACHABLE` when the item is not currently
     carried by this actor, or the actor has no current scene to drop it
     into -- recorded and committed before raising (← D11).
+
+    Sprint 010/04, I2: a successful move also appends `item_moved` at
+    `player` visibility (`movement: "dropped"`), before the `dm`-only
+    `tool_call` -- unchanged on the refusal path.
     """
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
     args = {"actorId": actor_id, "itemId": item_id}
@@ -1871,6 +1937,20 @@ async def drop(
     item.adventure_run_id = actor.adventure_run_id
     item.scene_id = actor.scene_id
 
+    await append_event(
+        db,
+        run_id=run.id,
+        type="item_moved",
+        visibility="player",
+        turn_id=turn_id,
+        payload={
+            "movement": "dropped",
+            "actor_id": actor_id,
+            "actor_name": actor.name,
+            "item_id": item_id,
+            "item_name": item.name,
+        },
+    )
     await append_event(
         db,
         run_id=run.id,
@@ -1907,6 +1987,11 @@ async def give(
     *and* the receiver is a creature sharing the giver's own scene: give
     never reaches across scenes, never hands over something the giver does
     not itself carry, and never hands to anything but another creature.
+
+    Sprint 010/04, I2: a successful move also appends `item_moved` at
+    `player` visibility (`movement: "given"`, `toId`/`toName` naming the
+    receiver -- the only case either is set), before the `dm`-only
+    `tool_call` -- unchanged on the refusal path.
     """
     giver, run = await _resolve_actor_and_run(db, actor_id=from_id, user_id=user_id)
     args = {"actorId": from_id, "toId": to_id, "itemId": item_id}
@@ -1948,6 +2033,22 @@ async def give(
 
     item.owner_object_id = receiver.id
 
+    await append_event(
+        db,
+        run_id=run.id,
+        type="item_moved",
+        visibility="player",
+        turn_id=turn_id,
+        payload={
+            "movement": "given",
+            "actor_id": from_id,
+            "actor_name": giver.name,
+            "item_id": item_id,
+            "item_name": item.name,
+            "to_id": to_id,
+            "to_name": receiver.name,
+        },
+    )
     await append_event(
         db,
         run_id=run.id,
@@ -2331,6 +2432,12 @@ async def damage(
     {targetId, rollId, hitId}`, `roll_ids [roll_id]`, `outcome {rolled,
     applied, currentHp, isAlive, down}` -- `down` is always present,
     `False` for anything that is not a character.
+
+    Sprint 010/04, I2: also appends `hp_changed` at `player` visibility,
+    before the `dm`-only `tool_call` -- `before`/`after` bracket the hit
+    points actually applied, alongside `maxHp` and the same `alive`/`down`
+    flags the `tool_call` itself records. Only reached past both refusals
+    above, which stay unchanged.
     """
     target = await _get_game_object(db, target_id)
     run = await _require_ready_or_active_run(db, run_id=target.campaign_run_id, user_id=user_id)
@@ -2366,6 +2473,7 @@ async def damage(
         raise
 
     total = consumed.payload["total"]
+    before_hp = target.current_hp
     applied = min(total, target.current_hp)
     target.current_hp -= applied
 
@@ -2380,6 +2488,22 @@ async def damage(
 
     down = target.member_id is not None and bool(target.state.get("down", False))
 
+    await append_event(
+        db,
+        run_id=run.id,
+        type="hp_changed",
+        visibility="player",
+        turn_id=turn_id,
+        payload={
+            "target_id": target_id,
+            "target_name": target.name,
+            "before": before_hp,
+            "after": target.current_hp,
+            "max_hp": target.max_hp,
+            "alive": target.is_alive,
+            "down": down,
+        },
+    )
     await append_event(
         db,
         run_id=run.id,
@@ -2515,6 +2639,34 @@ async def append_event(
 
     db.add(event)
     await db.flush()
+    return event
+
+
+async def record_rule_lookup(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    topic: str,
+    turn_id: str | None = None,
+) -> Event:
+    """Records a matched rule lookup, visible to the player (sprint 010/04,
+    I3). `topic` is the best match's own `heading_path`, supplied by the
+    `lookup_rule` tool only when its search matched something -- the
+    module's ordinary mechanic shape: `_require_member`, append, commit.
+    No refusal path: a lookup that matched nothing never calls this at
+    all (AC3), so there is nothing here to refuse.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    event = await append_event(
+        db,
+        run_id=run_id,
+        type="rule_looked_up",
+        visibility="player",
+        turn_id=turn_id,
+        payload={"topic": topic},
+    )
+    await db.commit()
     return event
 
 
