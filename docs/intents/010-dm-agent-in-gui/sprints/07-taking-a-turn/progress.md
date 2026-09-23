@@ -9,12 +9,12 @@ stage: running
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | open | composer |
-| 2 | open | thinking line |
-| 3 | open | transcript foot |
-| 4 | open | notice stream |
-| 5 | open | turn-unfinished flag |
-| 6 | open | send and wiring |
+| 1 | done | composer: open form, three closed in-voice lines |
+| 2 | done | thinking line: spinner plus wording in a live region |
+| 3 | done | transcript renders the thinking line at its foot |
+| 4 | done | notice stream via EventSource, reopens after a fatal close |
+| 5 | done | transcript read exposes whether a turn is unfinished |
+| 6 | done | send, optimistic row, composer state, tick re-read |
 
 Status: `open | running | done | failed`
 
