@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
-from app.core.db import DbSession
+from app.core.db import DbSession, get_sessionmaker
 from app.core.errors import ApiError, ErrorCode
 from app.core.schemas import ErrorEnvelope
 from app.core.settings import get_settings
@@ -233,9 +233,26 @@ async def stream_campaign_run(
 
     Settings are read through `get_settings()` inside the handler, not at
     import time, so a test can pin them small (I3).
+
+    The generator below never touches `db`: FastAPI tears the
+    request-scoped session down the moment this handler returns, before
+    the streaming body ever runs, so a poll against it raises
+    `sqlalchemy.exc.MissingGreenlet`. Each poll instead opens its own
+    short-lived session from the process-wide sessionmaker seam
+    (`app.core.db.get_sessionmaker()`, the same one the CLI commands use
+    for their own request-less sessions), used and closed within that one
+    poll.
+
+    `user_id` is read off `auth.user` once, before that first call: `db`
+    rolls back at the end of every `latest_event_id` (service.py), which
+    expires every attribute `auth.user` -- an ORM object loaded through
+    this same session -- ever loaded, and a later `auth.user.id` would
+    itself trigger a lazy-load `MissingGreenlet` the same way a poll
+    against `db` did.
     """
+    user_id = auth.user.id
     try:
-        last_id = await service.latest_event_id(db, user_id=auth.user.id, run_id=run_id)
+        last_id = await service.latest_event_id(db, user_id=user_id, run_id=run_id)
     except PlaythroughError as exc:
         raise ApiError(exc.code) from exc
 
@@ -246,6 +263,7 @@ async def stream_campaign_run(
     async def _events():
         seen_id = last_id
         started = time.monotonic()
+        sessionmaker = get_sessionmaker()
         while True:
             if await request.is_disconnected():
                 return
@@ -255,8 +273,15 @@ async def stream_campaign_run(
             await asyncio.sleep(poll_interval)
 
             try:
-                current_id = await service.latest_event_id(db, user_id=auth.user.id, run_id=run_id)
+                async with sessionmaker() as session:
+                    current_id = await service.latest_event_id(
+                        session, user_id=user_id, run_id=run_id
+                    )
             except PlaythroughError:
+                return
+            except Exception:
+                # Anything unexpected ends the stream cleanly instead of
+                # raising through Starlette's `stream_response` mid-flight.
                 return
 
             if current_id != seen_id:
