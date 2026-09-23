@@ -1142,6 +1142,108 @@
           }
         }
       }
+    },
+    "/api/v1/game/runs/{run_id}/turn": {
+      "post": {
+        "tags": [
+          "game"
+        ],
+        "summary": "Run Turn",
+        "operationId": "run_turn_api_v1_game_runs__run_id__turn_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2200,6 +2302,57 @@
           "campaignId"
         ],
         "title": "StartCampaignRunRequest"
+      },
+      "TurnRead": {
+        "properties": {
+          "turnId": {
+            "type": "string",
+            "title": "Turnid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "action",
+              "answer",
+              "roll",
+              "retry",
+              "opening"
+            ],
+            "title": "Kind"
+          },
+          "awaiting": {
+            "type": "string",
+            "title": "Awaiting"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turnId",
+          "kind",
+          "awaiting"
+        ],
+        "title": "TurnRead",
+        "description": "The turn route's whole response body (I1) -- `turnId`, `kind` and\n`awaiting`. `awaiting` mirrors `playthrough.schemas.EventsRead`'s own\nfield: `\"none\"`, `\"roll:<id>\"` or `\"answer:<id>\"`, read fresh from\n`playthrough.service.get_awaiting` after the turn runs."
+      },
+      "TurnRequest": {
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TurnRequest",
+        "description": "The turn route's whole request body (I1) -- `text` and nothing\nelse. `extra=\"forbid\"` enforces that: a caller naming a turn kind or\na dice number is refused with `VALIDATION_ERROR`, never silently\nignored -- that refusal is the point of the design, not an\nafterthought."
       },
       "UserRead": {
         "properties": {

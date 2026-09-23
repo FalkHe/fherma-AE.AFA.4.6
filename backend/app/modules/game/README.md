@@ -11,10 +11,26 @@ or writes an event.
 - `service.py` — the public surface: `build_agent()` compiles the graph over
   the core chat model and the resolved system prompt; `turn()` runs one
   player message on a thread and returns the reply plus the rolls made.
+  `run_turn(db, *, user_id, run_id, text)` (sprint 010/03) is the one entry
+  point the HTTP route calls: it decides which of five kinds
+  (`action`/`answer`/`roll`/`retry`/`opening`) a turn is from the run's own
+  thread state and transcript, never from what the caller claims, and
+  returns a `TurnOutcome(turn_id, kind, awaiting)`.
+- `errors.py` — `GameError`, the base every failure `run_turn` raises
+  directly carries (`code`, `details`); a `PlaythroughError` raised inside
+  `playthrough.service` propagates through unchanged instead.
+- `schemas.py` — the turn route's wire shapes: `TurnRequest` (`text` only,
+  `extra="forbid"`) and `TurnRead` (`turnId`, `kind`, `awaiting`).
+- `routes.py` — `POST /runs/{run_id}/turn`, behind `CsrfAuth`, mapping
+  `PlaythroughError`/`GameError` onto the one error envelope.
 - `agent/graph.py` — the `StateGraph`: `load_context -> record_action -> guard -> narrate -> (tools -> narrate)* -> record_narration -> END`.
 - `agent/nodes.py` — node factories, context hydration, and routing functions.
-- `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id —
+- `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id,
+  `record_action` —
   what tools need and the model must never supply) and readers.
+  `record_action` defaults `True`; `run_turn`'s `opening` leg (sprint
+  010/03) sets it `False` so `record_action` (`agent/nodes.py`) writes no
+  player row for a turn with no player text.
 - `agent/tools.py` — the tools the DM may call; each is a thin call into
   `playthrough.service` or `content.service`.
 - `prompts/v<n>/system/dm.md` — the DM system prompt, resolved through
@@ -33,7 +49,9 @@ or writes an event.
 
 ## Surface
 
-- CLI only. No HTTP route yet.
+- `POST /api/v1/game/runs/{runId}/turn` (sprint 010/03) — the network call
+  that runs a turn; wired in `app/api/v1/router.py` under `/game`. Plus the
+  CLI below.
 
 ## Tools
 
@@ -64,3 +82,12 @@ or writes an event.
   since the last `HumanMessage` (the boundary an interrupt survives) and
   passes the total as that turn's narration `usage=`; `playthrough.service`
   stores it and sums it back up per run.
+- `run_turn`'s own building blocks are `thread_state()` (the checkpoint's
+  pending interrupt, if any, plus whether a next step is queued at all —
+  `ThreadState`) and `retry()` (`invoke(None)`, resuming a broken turn from
+  its last saved step without repeating it); `playthrough_service.
+  open_turn_id` supplies the id a resumed leg reuses instead of minting a
+  new one — or, when it answers `None` (the leg that broke wrote no event
+  at all, e.g. an opening turn that crashed before its first narration),
+  `run_turn` mints one on the spot so the resumed leg, and the
+  `TurnOutcome` it returns, always carry a real turn id.

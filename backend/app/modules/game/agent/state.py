@@ -40,6 +40,10 @@ class DmContext:
     actor_id: str | None = None
     run_id: str | None = None
     turn_id: str | None = None
+    record_action: bool = True
+    """False suppresses `record_action`'s own `player_action` write (sprint
+    010/03) -- the DM-led opening turn, which has no player text to record,
+    is the only caller that sets this."""
 
 
 class DmState(MessagesState):
