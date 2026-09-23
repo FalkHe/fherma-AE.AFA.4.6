@@ -17,7 +17,7 @@ stage: approved
 | 04 | Rule lookups and changes in the world become short lines the player can see | 01 | #58 | done |
 | 05 | One read gives the play screen its adventure, scene and each hero's hit points, armour class and sheet | 01 | #59 | done |
 | 06 | "Continue" opens play on its own screen with everything recorded so far; back returns to the lobby | 04, 05 | #60 | done |
-| 07 | The player writes what they do, watches the Dungeon Master think as dice and questions appear, then reads the narration | 03, 06 | #61 | running |
+| 07 | The player writes what they do, watches the Dungeon Master think as dice and questions appear, then reads the narration | 03, 06 | #61 | done |
 | 08 | "Start adventure" opens a new adventure straight into play, where the Dungeon Master writes the opening scene | 03, 07 | #62 | open |
 | 09 | When the Dungeon Master asks or calls for a roll, only the offered buttons work; the game rolls | 07 | #63 | open |
 | 10 | A long turn says so and waits; a broken one ends in-voice with "Try again", nothing already rolled lost | 07 | #64 | open |

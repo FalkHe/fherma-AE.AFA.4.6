@@ -40,3 +40,4 @@ Brief: docs/intents/010-dm-agent-in-gui/sprints/07-taking-a-turn/brief.md
 
 ## Verdict
 Round 1: changes requested — nothing shows up while a turn is running: dice and rule lookups only appear at the very end together with the narration, because the live connection the screen opens dies a couple of seconds later and is never re-established; a player who reloads mid-turn is left staring at "The Dungeon Master is thinking…" with the composer closed, even long after the narration was recorded.
+Round 2: approve — writing an action shows it under the hero's name at once, the composer steps aside while the Dungeon Master has the floor, dice and rule lookups appear above the thinking line within a couple of seconds, and the finished narration arrives whole with the composer open again; reloading mid-turn keeps everything recorded and shows the thinking line only until that turn ends, and the live connection reopens itself after the server drops it five minutes in.
