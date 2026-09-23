@@ -36,3 +36,4 @@ give-up wording. Entries lag about two seconds behind the game and nothing strea
 Brief: docs/intents/010-dm-agent-in-gui/sprints/07-taking-a-turn/brief.md
 
 ## Verdict
+Round 1: changes requested — nothing shows up while a turn is running: dice and rule lookups only appear at the very end together with the narration, because the live connection the screen opens dies a couple of seconds later and is never re-established; a player who reloads mid-turn is left staring at "The Dungeon Master is thinking…" with the composer closed, even long after the narration was recorded.

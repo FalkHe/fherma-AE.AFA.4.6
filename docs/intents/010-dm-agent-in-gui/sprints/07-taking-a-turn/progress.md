@@ -25,3 +25,4 @@ Accepted the architect's assumptions: the composer stays closed with its own wor
 ## Backlog proposals
 
 ## Verify
+Round 1: changes-requested — AC2, AC4, AC5. The notice stream endpoint fails server-side on its first poll (the request-scoped database session is used inside the generator after the handler returned), so no tick ever reaches the screen and the browser never sees a close it could reconnect from.
