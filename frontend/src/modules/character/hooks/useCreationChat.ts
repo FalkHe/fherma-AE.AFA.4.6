@@ -56,6 +56,12 @@ export function useCreationChat(runId: string) {
   const [readyMadeName, setReadyMadeName] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const lastSentRef = useRef<string | null>(null);
+  // Which `runId` the opening call has already gone out for. `main.tsx`
+  // mounts the app in `StrictMode`, which in development runs every mount
+  // effect twice (mount, simulated unmount, remount) while keeping the
+  // component's refs — without this guard the start call fired twice and
+  // the keeper's greeting landed in the transcript twice.
+  const startedForRef = useRef<string | null>(null);
 
   function applyReply(reply: CreationReply) {
     setConversationId(reply.conversationId);
@@ -110,6 +116,10 @@ export function useCreationChat(runId: string) {
   });
 
   useEffect(() => {
+    if (startedForRef.current === runId) {
+      return;
+    }
+    startedForRef.current = runId;
     startMutation.mutate();
     // Runs once, on mount, for this `runId` — a reload remounts the route
     // and starts a fresh conversation (no browser-stored state, ← Decision

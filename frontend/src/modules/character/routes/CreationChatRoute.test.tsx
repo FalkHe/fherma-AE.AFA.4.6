@@ -10,11 +10,13 @@
 // and a value can repeat across cells (CON 14, armour class 14), so AC1
 // reads each labelled value off its own `dt`'s `dd`s rather than matching
 // bare text anywhere in the region.
+import { StrictMode } from "react";
 import { describe, expect, it } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { renderApp } from "../../../test/render";
+import App from "../../../App";
+import { renderApp, renderWithProviders } from "../../../test/render";
 import { getRequests, mockRoute } from "../../../test/network";
 import character from "../../../core/i18n/locales/en/character.json";
 
@@ -96,6 +98,29 @@ describe("CreationChatRoute on /runs/:runId/create-character (AC1, AC2, AC4-AC6)
     expect(getRequests({ method: "POST", path: "/api/v1/character/creation/conv-1/messages" })[0].body).toEqual({
       text: "Take Rosalind Thorn",
     });
+  });
+
+  it("under StrictMode the conversation starts once, so the greeting shows once", async () => {
+    // `main.tsx` mounts the app in `StrictMode`, which in development runs
+    // every mount effect twice (mount, simulated unmount, remount). The
+    // shared test renderer leaves `StrictMode` out, so this case opts back
+    // in: the start call must still go out exactly once, or the keeper's
+    // greeting lands in the transcript twice.
+    stubAuthenticated();
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: greetingReply() });
+
+    renderWithProviders(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+      { route: "/runs/r1/create-character" },
+    );
+
+    await waitFor(() => expect(screen.getAllByText(greetingReply().reply)).toHaveLength(1));
+    // Settle any effects that might still be in flight before counting.
+    await waitFor(() => expect(getRequests({ method: "POST", path: "/api/v1/character/runs/r1/creation" })).toHaveLength(1));
+    expect(screen.getAllByText("Tavern Keeper")).toHaveLength(1);
+    expect(screen.getAllByText(greetingReply().reply)).toHaveLength(1);
   });
 
   it("AC4: 'Back to the run' opens the leave dialog, and 'Leave' returns to the run", async () => {
