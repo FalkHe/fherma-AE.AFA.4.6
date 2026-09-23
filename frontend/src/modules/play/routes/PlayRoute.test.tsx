@@ -17,12 +17,35 @@
 // A regression back to the old `maxHeight: "100%"` chain would fail this
 // exact assertion while still passing every jsdom-scroll test that mocks
 // its own metrics, which is why those don't already catch it.
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderApp } from "../../../test/render";
 import { mockRoute } from "../../../test/network";
+
+// Sprint 010/07 WI6, I6 ← AC1/AC2/AC3/AC4. `PlayScreen` now mounts
+// `useRunNotices`, which opens a real `EventSource` -- jsdom has none, so
+// this stands in for it exactly like `useRunNotices.test.tsx`'s own fake:
+// the route's tests below never drive it (no test here asserts on a live
+// tick), it only needs to exist so mounting the screen doesn't throw.
+class FakeEventSource {
+  static readonly CLOSED = 2;
+  readonly CLOSED = FakeEventSource.CLOSED;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  close(): void {}
+  addEventListener(): void {}
+  removeEventListener(): void {}
+}
+
+beforeEach(() => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const USER = { id: "01ARZ3NDEKTSV4RRFFQ69G5FAV", username: "thorin", createdAt: "2026-09-08T12:34:56.789012+00:00" };
 
@@ -218,5 +241,66 @@ describe("PlayRoute on /runs/:runId/play (AC2, AC6, AC7)", () => {
     }
 
     expect(heights.some((height) => height.includes("vh"))).toBe(true);
+  });
+
+  it("AC1: sending words shows the player row at once and the composer closes with the turn-running line", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockEvents("run-1");
+    // Left pending on purpose: this checks the state right after send, before
+    // any settle -- the mutation never needs to resolve for this assertion.
+    mockRoute("POST", "/api/v1/game/runs/run-1/turn", () => new Promise(() => {}));
+
+    renderApp(["/runs/run-1/play"]);
+
+    const input = await screen.findByLabelText("What do you do?");
+    const user = userEvent.setup();
+    await user.type(input, "I open the door.");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("I open the door.")).toBeInTheDocument();
+    expect(screen.getByText("Rosalind Thorn")).toBeInTheDocument();
+    expect(screen.getByText("The Dungeon Master has the floor.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("What do you do?")).not.toBeInTheDocument();
+  });
+
+  it("AC4: a mid-turn transcript (awaiting none, last event not a narration) shows the thinking line and keeps the composer closed", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-1/events", {
+      status: 200,
+      body: {
+        events: [
+          { id: "e1", type: "player_action", turnId: "t1", payload: { text: "I attack." }, createdAt: "2026-09-08T21:02:00+00:00" },
+        ],
+        awaiting: "none",
+      },
+    });
+
+    renderApp(["/runs/run-1/play"]);
+
+    expect(await screen.findByText("The Dungeon Master is thinking…")).toBeInTheDocument();
+    expect(screen.getByText("The Dungeon Master has the floor.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("What do you do?")).not.toBeInTheDocument();
+  });
+
+  it("AC3: a transcript ending in narration (awaiting none) shows no thinking line and reopens the composer", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-1/events", {
+      status: 200,
+      body: {
+        events: [
+          { id: "e1", type: "narration", turnId: "t1", payload: { text: "The door creaks open." }, createdAt: "2026-09-08T21:02:00+00:00" },
+        ],
+        awaiting: "none",
+      },
+    });
+
+    renderApp(["/runs/run-1/play"]);
+
+    expect(await screen.findByLabelText("What do you do?")).toBeInTheDocument();
+    expect(screen.queryByText("The Dungeon Master is thinking…")).not.toBeInTheDocument();
+    expect(screen.queryByText("The Dungeon Master has the floor.")).not.toBeInTheDocument();
   });
 });
