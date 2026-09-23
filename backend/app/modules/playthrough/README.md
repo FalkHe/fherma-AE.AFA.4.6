@@ -374,7 +374,12 @@ Service functions (`service.py`), called as `service.f(...)`:
   call runs a second time before its own `interrupt()` resolves; a second
   call for the same `turn_id`/`actor_id`/`kind` with no `roll` answering it
   yet returns the first call's own event rather than writing a duplicate,
-  orphaned one.
+  orphaned one. Guarded (sprint 010/10, ← finding): raises `ValueError`,
+  naming what was wrong, for an `actor_id` that is not a member's own
+  character, a `kind` outside `ability_check`/`saving_throw`/`initiative`/
+  `custom` (a monster's attack is never a hero's roll), or a `custom` roll
+  whose `context["expression"]` names no dice (a bare constant such as
+  `"10"` is not a roll) — before any event is written.
 - `resolve_roll_request` — answers a `roll_requested` event by id: re-uses
   the formula that event already stored rather than deriving it again,
   rolls it through `dice.roll`, and appends the resulting `roll` event —
@@ -397,6 +402,23 @@ Service functions (`service.py`), called as `service.f(...)`:
   finding out who goes first spends nobody's turn, so there is nothing here
   for a pass or a refusal to be recorded against. Full behaviour is
   `docs/modules/playthrough.md` §20.
+- `resolve_actor_ref` / `describe_scene_creatures` (sprint 010/10, ←
+  finding: a scene with several identically-named monsters gave the DM
+  agent no way to tell them apart, and no actionable way back when it
+  named the wrong one). `resolve_actor_ref(run_id, ref)` resolves an
+  `actor_id`-shaped string to one `GameObject`: an id match wins outright;
+  failing that, `ref` is matched case-insensitively against every living,
+  positioned creature's own `name` in the run, the first (by id) winning a
+  tie, raising `GameObjectNotFoundError(ref)` when neither matches. Callers
+  (`game.agent.tools`) use this as a fallback when an id lookup fails, not
+  a replacement for it. `describe_scene_creatures(run_id, scene_id=…|
+  near_actor_id=…)` reads every creature positioned in one scene — id
+  first, `role` (`player`/`monster`/`npc`, the last two told apart by
+  whether the stat block carries an attack, there being no authored
+  hostile/friendly flag), `is_alive`, HP, AC and named attacks — the shape
+  `game`'s own scene rendering, `get_scene` and every lookup-failure hint
+  are all built from, so a creature's own attacks are named consistently
+  everywhere the model can see them.
 - `passive_check` — no dice at all: adds the named ability's modifier to
   `10` and weighs the result against `dc`, returning the pass/fail outcome
   directly and appending one DM-visible `tool_call` event carrying that

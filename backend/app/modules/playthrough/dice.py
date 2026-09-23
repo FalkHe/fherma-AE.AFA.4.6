@@ -131,15 +131,28 @@ def _select_attack(attacks: list[Attack], name: str | None) -> Attack:
     Matched case-insensitively (← finding, sprint 010/09): the model calls
     this with whatever casing it narrates the attack in (e.g. `"sling"`),
     not necessarily the authored title case (`"Sling"`), and a DM-self-roll
-    for a monster's attack must not fail on that alone."""
+    for a monster's attack must not fail on that alone.
+
+    Every failure names the actor's own available attacks (← finding,
+    sprint 010/10): an empty list raises its own distinct message rather
+    than falling into "more than one attack is available" with nothing to
+    choose from, and an unknown name or an omitted one with several to
+    pick from both list what *is* there, so the caller's next attempt can
+    get `context['attack']` right without another guess."""
+    if not attacks:
+        raise ValueError("this actor has no attacks")
     if name is not None:
         for attack in attacks:
             if attack.name.casefold() == name.casefold():
                 return attack
-        raise ValueError(f"no attack named {name!r}")
+        available = ", ".join(a.name for a in attacks)
+        raise ValueError(f"no attack named {name!r}; this actor's attacks are: {available}")
     if len(attacks) == 1:
         return attacks[0]
-    raise ValueError("more than one attack is available; context['attack'] must name one")
+    available = ", ".join(a.name for a in attacks)
+    raise ValueError(
+        f"more than one attack is available; context['attack'] must name one of: {available}"
+    )
 
 
 def _attacks_for(

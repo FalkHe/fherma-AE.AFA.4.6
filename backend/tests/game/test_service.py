@@ -1201,7 +1201,8 @@ def test_load_context_injects_scene_party_and_recap_into_system_prompt(monkeypat
         ),
         _QueryResult(scalars_list=[char]),
         _QueryResult(scalars_list=[shortsword, healing_potion]),
-        _QueryResult(scalars_list=[monster, fixture]),
+        _QueryResult(scalars_list=[monster]),
+        _QueryResult(scalars_list=[fixture]),
     ]
     query_idx = 0
 
@@ -1271,7 +1272,7 @@ def test_load_context_injects_scene_party_and_recap_into_system_prompt(monkeypat
         "Rosalind (id: char-1): HP 15/15, AC 16, status: alive, "
         "carried items: [Shortsword (id: shortsword-1), Healing Potion (id: potion-1)]"
     ) in content
-    assert "Goblin Lookout (id: gob-1, HP: 6/6, AC: 13)" in content
+    assert "id gob-1: Goblin Lookout (npc), HP 6/6, AC 13, alive, attacks: none" in content
     assert "Oak Chest (id: chest-1, kind: fixture)" in content
     assert "### Awaiting\n- roll:ability_check:dexterity" in content
     assert "You arrived at the tavern in the dead of night." in content

@@ -6,6 +6,7 @@ what the model reads to decide when and how to call it.
 (← 005-D2/D6).
 """
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain_core.tools import tool
@@ -40,6 +41,12 @@ from app.modules.game.agent.state import (
 )
 from app.modules.playthrough import models as playthrough_models
 from app.modules.playthrough import service as playthrough_service
+from app.modules.playthrough.errors import (
+    GameObjectNotFoundError,
+    HitNotUsableError,
+    ObjectNotReachableError,
+    RollNotUsableError,
+)
 from app.modules.playthrough.schemas import RollKind
 from app.modules.srd import service as srd_service
 from app.modules.srd.errors import SrdCorpusEmptyError
@@ -58,6 +65,71 @@ async def _resolve_campaign_and_version(
         c_ver = version or run.content_version
         return c_id, c_ver
     raise ValueError("campaign_id and version must be provided when no run_id is in context.")
+
+
+## Actor resolution -- shared by every tool that rolls or acts for a
+## non-default actor (sprint 010/10, ← finding: a scene with several
+## identically-named monsters, and the model with no way to tell them
+## apart, made a monster's turn silently attack the wrong creature).
+async def _living_scene_creatures(
+    ctx: DmContext, *, near_actor_id: str | None
+) -> list[dict[str, Any]]:
+    """The living creatures of the current scene, id first, each with its
+    own attack names -- what a lookup failure hands back instead of a bare
+    refusal, so the model's next call names a real id."""
+    if not ctx.run_id:
+        return []
+    creatures = await playthrough_service.describe_scene_creatures(
+        ctx.db, run_id=ctx.run_id, near_actor_id=near_actor_id
+    )
+    return [c for c in creatures if c["is_alive"]]
+
+
+async def _actor_not_found_hint(ctx: DmContext, ref: str) -> dict[str, Any]:
+    """The structured, actionable result a lookup failure hands back
+    instead of a bare "refused"."""
+    return {
+        "status": "actor_not_found",
+        "message": (
+            f"No living creature in this scene has id or name {ref!r}. Re-read the "
+            "scene and call again with one of the ids listed in living_creatures."
+        ),
+        "living_creatures": await _living_scene_creatures(ctx, near_actor_id=ctx.actor_id),
+    }
+
+
+async def _resolve_actor_ref(ctx: DmContext, ref: str) -> str | None:
+    """`ref` matched by name against the run's own living creatures
+    (`playthrough_service.resolve_actor_ref`), for a caller that already
+    tried `ref` as an id and had it refused. `None` when nothing matches
+    either -- the caller returns `_actor_not_found_hint` in that case."""
+    if not ctx.run_id:
+        return None
+    try:
+        actor = await playthrough_service.resolve_actor_ref(ctx.db, run_id=ctx.run_id, ref=ref)
+    except GameObjectNotFoundError:
+        return None
+    return actor.id
+
+
+async def _run_for_actor(
+    ctx: DmContext, ref: str, call: Callable[[str], Awaitable[Any]]
+) -> tuple[str, Any, dict[str, Any] | None]:
+    """Runs `call(actor_id)`, first with `ref` as given -- an unchanged id
+    still resolves exactly as before, with no extra lookup (existing
+    callers, and every test that stubs the mechanic itself, are
+    unaffected). Only on `GameObjectNotFoundError` does it retry once
+    against `ref` resolved by name. Returns `(actor_id, result, None)` on
+    success, or `(ref, None, hint)` -- `hint` a structured, actionable
+    result the caller returns as-is -- when neither the id nor a living
+    creature's name in this scene matches `ref` at all."""
+    try:
+        return ref, await call(ref), None
+    except GameObjectNotFoundError:
+        resolved = await _resolve_actor_ref(ctx, ref)
+        if resolved is None:
+            return ref, None, await _actor_not_found_hint(ctx, ref)
+        return resolved, await call(resolved), None
 
 
 ## Roll Tools
@@ -114,23 +186,47 @@ async def roll_dice(
     (optional, defaults to current actor). `context` names what the rules need:
     {"ability": "dexterity"} for a check or save, {"attack": "<name>"} for
     attack/damage, {"expression": "2d6+1"} only for kind custom, {} for
-    initiative. The server derives the formula from the character sheet;
-    you get back the formula, the faces, the modifier and the total."""
+    initiative. `actor_id` accepts a creature id or its name (case-
+    insensitive, matched against the scene's living creatures) -- always
+    prefer the id `get_scene`/the game context already gave you when a
+    name could mean more than one creature. The server derives the
+    formula from the character sheet; you get back the formula, the
+    faces, the modifier and the total. A lookup or attack-name problem
+    never refuses bare: it returns `status`, `message` and
+    `living_creatures` (id, name, role, HP, attacks) instead, so your next
+    call can name the right id and attack."""
     ctx = runtime.context
-    target_actor_id = actor_id or ctx.actor_id
-    if not target_actor_id:
+    ref = actor_id or ctx.actor_id
+    if not ref:
         raise ValueError(
             "actor_id is required for roll_dice when no default actor is set in context."
         )
-    event = await playthrough_service.roll(
-        ctx.db,
-        user_id=ctx.user_id,
-        actor_id=target_actor_id,
-        kind=kind,
-        context=context.model_dump(exclude_none=True),
-        visibility="player",
-        turn_id=ctx.turn_id,
-    )
+
+    async def _do_roll(actor: str):
+        return await playthrough_service.roll(
+            ctx.db,
+            user_id=ctx.user_id,
+            actor_id=actor,
+            kind=kind,
+            context=context.model_dump(exclude_none=True),
+            visibility="player",
+            turn_id=ctx.turn_id,
+        )
+
+    try:
+        target_actor_id, event, hint = await _run_for_actor(ctx, ref, _do_roll)
+    except ValueError as exc:
+        if kind not in ("attack", "damage"):
+            raise
+        return {
+            "status": "no_attack",
+            "actor_id": ref,
+            "message": str(exc),
+            "living_creatures": await _living_scene_creatures(ctx, near_actor_id=ctx.actor_id),
+        }
+    if hint is not None:
+        return hint
+
     payload = event.payload
     return {
         "roll_id": event.id,
@@ -251,11 +347,27 @@ async def get_scene(
     version: str | None = None,
 ) -> dict[str, Any]:
     """Load authored scene facts, exits, secret DCs, NPC intentions, and placement
-    references by scene ID."""
+    references by scene ID. When a run is in context, also returns
+    `creatures_present`: the scene's own live creatures, id first, with
+    `role` (player/monster/npc), HP and attack names -- so several
+    identically-named monsters can still be told apart and targeted by id
+    (sprint 010/10, ← finding)."""
     ctx = runtime.context
     c_id, c_ver = await _resolve_campaign_and_version(ctx, campaign_id, version)
     scene = content_service.load_scene(c_id, c_ver, scene_id)
-    return scene.model_dump()
+    result = scene.model_dump()
+    if ctx.run_id:
+        try:
+            result["creatures_present"] = await playthrough_service.describe_scene_creatures(
+                ctx.db, run_id=ctx.run_id, scene_id=scene_id, campaign_id=c_id, version=c_ver
+            )
+        except Exception:
+            # Defensive, exactly `agent/nodes.py`'s own `_build_game_context`
+            # pattern: a test's stub `db` carries no real rows to query, and
+            # this addition must degrade to no creature data rather than
+            # break scene loading itself.
+            result["creatures_present"] = []
+    return result
 
 
 @tool(GET_OBJECT_TOOL)
@@ -351,16 +463,23 @@ async def request_player_roll(
     actor_id: str | None = None,
     context: RollContext | None = None,
 ) -> dict[str, Any]:
-    """Ask the player to make a roll of `kind` (ability_check, saving_throw, attack, etc).
-    Use this, never `roll_dice`, for any ability check or saving throw made
-    by a player character; the player rolls, not you. Interrupts execution
-    and waits for the player to resolve the roll - do not also call
-    `roll_dice`, `resolve_check` or `resolve_save` for the same check.
-    `actor_id` is the character making the roll (defaults to current actor).
+    """Ask the player to make a roll of `kind` (ability_check, saving_throw,
+    initiative, or a rare bespoke custom roll -- never attack or damage,
+    which always go through `roll_dice`, for every actor including the
+    hero). Use this, never `roll_dice`, for any ability check or saving
+    throw made by a player character; the player rolls, not you. Interrupts
+    execution and waits for the player to resolve the roll - do not also
+    call `roll_dice`, `resolve_check` or `resolve_save` for the same check.
+    `actor_id` must be the party's own character (defaults to current
+    actor) -- a monster or NPC has no player to ask, and this tool refuses
+    it. A monster's attack is never resolved as a hero's saving throw.
     `context` provides mechanics context: for an ability check or saving
     throw, always include `ability`, `skill` (or `null` when none applies)
     and `dc`, e.g. {"ability": "wisdom", "skill": "perception", "dc": 13},
-    or {"ability": "dexterity", "skill": null, "dc": 15} for a save."""
+    or {"ability": "dexterity", "skill": null, "dc": 15} for a save. A
+    `custom` roll's `context["expression"]` must be a real dice expression
+    (e.g. "2d6+1") -- a plain number is refused, never turned into a
+    roll."""
     ctx = runtime.context
     target_actor_id = actor_id or ctx.actor_id
     if not target_actor_id:
@@ -618,22 +737,40 @@ async def attack(
     """Resolve an attack roll against a target creature's armour class.
     `target_id` is the creature being attacked.
     `roll_id` is the ID of an attack roll (kind='attack') consumed by this attack.
-    `actor_id` is the attacking character/creature (defaults to current actor).
-    `item_id` is the weapon/item being used (optional)."""
+    `actor_id` is the attacking character/creature (defaults to current actor);
+    accepts a creature id or its name, matched case-insensitively against
+    the scene's living creatures.
+    `item_id` is the weapon/item being used (optional). A lookup problem --
+    the actor or target not found or not in the same scene -- never
+    refuses bare: it returns `status`, `message` and `living_creatures`
+    instead, so your next call can name the right id."""
     ctx = runtime.context
-    target_actor_id = actor_id or ctx.actor_id
-    if not target_actor_id:
+    ref = actor_id or ctx.actor_id
+    if not ref:
         raise ValueError("actor_id is required for attack when no default actor is set in context.")
 
-    outcome = await playthrough_service.attack(
-        ctx.db,
-        user_id=ctx.user_id,
-        actor_id=target_actor_id,
-        target_id=target_id,
-        item_id=item_id,
-        roll_id=roll_id,
-        turn_id=ctx.turn_id,
-    )
+    async def _do_attack(actor: str) -> str:
+        return await playthrough_service.attack(
+            ctx.db,
+            user_id=ctx.user_id,
+            actor_id=actor,
+            target_id=target_id,
+            item_id=item_id,
+            roll_id=roll_id,
+            turn_id=ctx.turn_id,
+        )
+
+    try:
+        target_actor_id, outcome, hint = await _run_for_actor(ctx, ref, _do_attack)
+    except (GameObjectNotFoundError, ObjectNotReachableError) as exc:
+        return {
+            "status": "not_in_scene",
+            "actor_id": ref,
+            "message": str(exc),
+            "living_creatures": await _living_scene_creatures(ctx, near_actor_id=ctx.actor_id),
+        }
+    if hint is not None:
+        return hint
 
     hit_id = None
     if outcome in ("hit", "crit"):
@@ -670,16 +807,33 @@ async def damage(
     """Apply damage from a landed attack hit (hit_id) to the target creature.
     `target_id` is the wounded target creature.
     `roll_id` is the ID of a damage roll (kind='damage') consumed by this damage call.
-    `hit_id` is the event ID of the landed attack tool_call."""
+    `hit_id` is the event ID of the landed attack tool_call. A lookup or
+    validity problem never refuses bare: it returns `status` and `message`
+    (plus `living_creatures` when the target could not be found), so your
+    next call can be right."""
     ctx = runtime.context
-    applied = await playthrough_service.damage(
-        ctx.db,
-        user_id=ctx.user_id,
-        target_id=target_id,
-        roll_id=roll_id,
-        hit_id=hit_id,
-        turn_id=ctx.turn_id,
-    )
+    try:
+        applied = await playthrough_service.damage(
+            ctx.db,
+            user_id=ctx.user_id,
+            target_id=target_id,
+            roll_id=roll_id,
+            hit_id=hit_id,
+            turn_id=ctx.turn_id,
+        )
+    except GameObjectNotFoundError as exc:
+        return {
+            "status": "not_found",
+            "target_id": target_id,
+            "message": str(exc),
+            "living_creatures": await _living_scene_creatures(ctx, near_actor_id=ctx.actor_id),
+        }
+    except (HitNotUsableError, RollNotUsableError) as exc:
+        return {
+            "status": "rejected",
+            "target_id": target_id,
+            "message": str(exc),
+        }
     return {
         "status": "ok",
         "target_id": target_id,

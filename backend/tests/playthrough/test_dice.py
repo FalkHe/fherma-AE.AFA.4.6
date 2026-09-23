@@ -255,6 +255,21 @@ def test_derive_formula_attack_from_a_monster_with_several_requires_the_name(mon
         dice.derive_formula("attack", actor, {}, campaign_id=CAMPAIGN_ID, version=VERSION)
 
 
+def test_derive_formula_attack_from_a_monster_with_no_attacks_names_that_clearly(monkeypatch):
+    # ← sprint 010/10 finding: an empty attacks list used to fall into
+    # "more than one attack is available" -- nothing was available at all,
+    # and the model had no way to tell the two failures apart.
+    monkeypatch.setattr(
+        dice.content_service,
+        "load_object_template",
+        lambda campaign_id, version, template_id: _goblin_template([]),
+    )
+    actor = _creature()
+
+    with pytest.raises(ValueError, match="no attacks"):
+        dice.derive_formula("attack", actor, {}, campaign_id=CAMPAIGN_ID, version=VERSION)
+
+
 # --- derive_formula: ability_check / saving_throw / initiative -------------
 
 

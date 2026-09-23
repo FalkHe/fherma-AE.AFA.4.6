@@ -167,29 +167,45 @@ async def _build_game_context(ctx: DmContext) -> str:
             except Exception:
                 pass
 
-            # Present objects & creatures in this scene
-            scene_objs_result = await ctx.db.execute(
+            # Present objects & creatures in this scene. Creatures are id
+            # first (sprint 010/10, ← finding: several identically-named
+            # monsters -- "Goblin Raider" x4 -- gave the model no way to
+            # tell them apart, and it aimed a monster's attack at an NPC
+            # instead), each tagged `player`/`monster`/`npc`, alive/HP and
+            # its own named attacks, via the one shared reader
+            # `playthrough_service.describe_scene_creatures` also backs
+            # `get_scene` and every combat tool's own actor lookup with.
+            scene_creatures = await playthrough_service.describe_scene_creatures(
+                ctx.db,
+                run_id=ctx.run_id,
+                scene_id=current_scene_id,
+                campaign_id=campaign_id,
+                version=content_version,
+            )
+            creatures = [
+                f"id {c['id']}: {c['name']} ({c['role']}), "
+                f"HP {c['current_hp']}/{c['max_hp']}, AC {c['armour_class']}, "
+                f"{'alive' if c['is_alive'] else 'down'}, "
+                f"attacks: {', '.join(c['attacks']) if c['attacks'] else 'none'}"
+                for c in scene_creatures
+                if c["role"] != "player"
+            ]
+
+            fixtures_items_result = await ctx.db.execute(
                 select(playthrough_models.GameObject).where(
                     playthrough_models.GameObject.campaign_run_id == ctx.run_id,
                     playthrough_models.GameObject.scene_id == current_scene_id,
                     playthrough_models.GameObject.owner_object_id.is_(None),
+                    playthrough_models.GameObject.kind.in_(("item", "fixture")),
                 )
             )
-            scene_objects = list(scene_objs_result.scalars().all())
-            creatures = [
-                f"{obj.name} (id: {obj.id}, HP: {obj.current_hp}/{obj.max_hp}, "
-                f"AC: {obj.armour_class})"
-                for obj in scene_objects
-                if obj.kind == "creature" and obj.member_id is None
-            ]
             fixtures_items = [
                 f"{obj.name} (id: {obj.id}, kind: {obj.kind})"
-                for obj in scene_objects
-                if obj.kind in ("item", "fixture")
+                for obj in fixtures_items_result.scalars().all()
             ]
 
             if creatures:
-                scene_info.append(f"- Creatures present: {', '.join(creatures)}")
+                scene_info.append(f"- Creatures present: {'; '.join(creatures)}")
             if fixtures_items:
                 scene_info.append(f"- Objects & fixtures: {', '.join(fixtures_items)}")
 

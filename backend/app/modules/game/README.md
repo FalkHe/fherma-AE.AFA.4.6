@@ -32,7 +32,15 @@ or writes an event.
   010/03) sets it `False` so `record_action` (`agent/nodes.py`) writes no
   player row for a turn with no player text.
 - `agent/tools.py` — the tools the DM may call; each is a thin call into
-  `playthrough.service` or `content.service`.
+  `playthrough.service` or `content.service`. `roll_dice`, `attack` and
+  `damage` accept an `actor_id` that is a real id or, when that lookup
+  fails, a creature's own name (`playthrough_service.resolve_actor_ref`,
+  sprint 010/10, ← finding); an actor or attack that still can't be
+  resolved returns a structured `{status, message, living_creatures}`
+  result instead of raising, so the model's next call can name a real id
+  — never a bare `"refused: …"`. `get_scene` adds `creatures_present`
+  (`playthrough_service.describe_scene_creatures`) when a run is in
+  context, the same shape the game context below renders.
 - `prompts/v<n>/system/dm.md` — the DM system prompt, resolved through
   `core/prompts/` as `game/system/dm`.
 - `commands.py` — `app game play --user <id> [--run-id <run-id>] [--actor
@@ -119,3 +127,17 @@ or writes an event.
   at all, e.g. an opening turn that crashed before its first narration),
   `run_turn` mints one on the spot so the resumed leg, and the
   `TurnOutcome` it returns, always carry a real turn id.
+- `agent/nodes.py`'s `_build_game_context` renders the current scene's own
+  creatures id first — `id <id>: <name> (<player|monster|npc>), HP …, AC
+  …, alive|down, attacks: …` (sprint 010/10, ← finding: several
+  identically-named monsters, e.g. three `Goblin Raider`s, were otherwise
+  untellable apart, and a monster with no attacks looked no different from
+  one that could act) — via `playthrough_service.describe_scene_creatures`,
+  the same reader `get_scene` and every combat tool's own lookup-failure
+  hint use, so a creature's id, role and attacks read the same everywhere
+  the model can see them. `request_player_roll` (`playthrough.service`)
+  now refuses an actor that is not the party's own character, a kind that
+  is not the player's to roll (attack/damage always go through
+  `roll_dice`, for every actor including the hero), and a `custom`
+  expression with no dice in it (a bare `"10"` used to render as a "Roll
+  10" button with nothing to roll).
