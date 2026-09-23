@@ -1202,8 +1202,8 @@ def test_ac5_attack_resolves_from_a_carried_rows_own_state_and_a_template_item_s
         )
         assert damage_roll.payload["formula"] == "1d6+3"
 
-        # The seed hero's `shepherds-knife` -- a real content template --
-        # still resolves through the unchanged path.
+        # The seed hero's `shepherds-knife` uses its carried-row ID, which
+        # is the ID the game context exposes to the DM.
         seed_user_id, seed_run, seed_character = await _reach_lair_maw(
             playthrough_db, username="seed-still-works"
         )
@@ -1218,7 +1218,7 @@ def test_ac5_attack_resolves_from_a_carried_rows_own_state_and_a_template_item_s
             user_id=seed_user_id,
             actor_id=seed_character.id,
             kind="attack",
-            context={"item_id": KNIFE_TEMPLATE},
+            context={"item_id": knife_id},
             face=15,
             turn_id=seed_turn_id,
         )

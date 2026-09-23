@@ -147,14 +147,19 @@ def _attacks_for(
 ) -> list[Attack]:
     """A carried row's own attacks when `item` is given (sprint 009-02,
     WI2, AC5 -- a sheet-born weapon row has no content template to read),
-    otherwise an item template's attacks when `item_id` names one, otherwise
-    the actor's own stat block -- a monster's attack is not an item (brief
-    WI1)."""
+    falling back to that row's item template for seeded equipment; otherwise
+    an item template's attacks when `item_id` names one, otherwise the
+    actor's own stat block -- a monster's attack is not an item (brief WI1)."""
     if item is not None:
         attacks = item.state.get("attacks", [])
-        if not attacks:
-            raise ValueError(f"object has no attacks: {item.id}")
-        return [Attack.model_validate(a) for a in attacks]
+        if attacks:
+            return [Attack.model_validate(a) for a in attacks]
+        if item.template_id is not None:
+            template = content_service.load_object_template(campaign_id, version, item.template_id)
+            if not isinstance(template, ItemTemplate):
+                raise ValueError(f"object template is not an item: {item.template_id}")
+            return template.attacks
+        raise ValueError(f"object has no attacks: {item.id}")
     if item_id is not None:
         template = content_service.load_object_template(campaign_id, version, item_id)
         if not isinstance(template, ItemTemplate):
