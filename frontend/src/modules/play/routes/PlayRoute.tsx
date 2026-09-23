@@ -37,7 +37,7 @@
 // from here means giving *this* screen a genuine, viewport-relative height
 // and letting the transcript fill whatever is left of it via flex, rather
 // than reaching into `core/layout` (out of this work item's ownership).
-import type { ReactElement } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import Alert from "@mui/material/Alert";
@@ -77,8 +77,17 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // names no actor, so the caller supplies it from here (README.md
   // "Surface").
   const heroName = table.heroes[0]?.name ?? "";
-  const { rows, awaiting, turnUnfinished } = usePlayTranscript(runId, heroName);
+  // Fed to `usePlayTranscript`'s fallback poll below (sprint 010/07 WI7
+  // round 2, ← AC2/AC4) -- a ref rather than `isSending` itself, since
+  // `isSending` only exists once `useTakeTurn` has been called, and
+  // `useTakeTurn` in turn needs this hook's own `rows` (`usePlayTranscript.ts`).
+  const isSendingRef = useRef(false);
+  const { rows, awaiting, turnUnfinished } = usePlayTranscript(runId, heroName, { isSendingRef });
   const { send, isSending, pending } = useTakeTurn({ runId, rows });
+
+  useEffect(() => {
+    isSendingRef.current = isSending;
+  }, [isSending]);
 
   // Live updates (sprint 010/07 WI6, I6 ← AC2): every `updated` notice off
   // the run's own stream just means "re-read the transcript" — the same

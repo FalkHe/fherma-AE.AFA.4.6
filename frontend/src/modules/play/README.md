@@ -110,7 +110,11 @@ module owns everything past "Start adventure" / "Continue".
 - `hooks/usePlayTranscript.ts` — also exposes `turnUnfinished`: true when
   the last recorded event is not the closing `narration` (a turn writes its
   `player_action` first and its `narration` last, everything else lands in
-  between), false on an empty transcript.
+  between), false on an empty transcript. Also takes an `isSendingRef`
+  option and re-reads itself every few seconds (`refetchInterval`, override
+  via `pollIntervalMs`) for as long as that ref reads true or the read
+  itself still looks mid-turn — a fallback for when the notice stream drops
+  or delays a tick (sprint 010/07 round 2, ← AC2/AC4).
 - `hooks/useTakeTurn.ts` — `useTakeTurn({ runId, rows }) →
   { send, isSending, pending }`, the one write behind a turn
   (`POST …/game/runs/{runId}/turn`). `send` shows the player's words at once

@@ -21,6 +21,35 @@ interface TranscriptState {
   turnUnfinished: boolean;
 }
 
+// Fallback poll while a turn is running (sprint 010/07 WI7 round 2, ← AC2/
+// AC4): the notice stream (`useRunNotices.ts`) is meant to be what triggers
+// a re-read, but a dropped or delayed tick must not leave the screen
+// stalled, so this query also re-reads itself on a plain interval for as
+// long as a turn looks like it is still going.
+//
+// `isSendingRef` is a ref, not a plain boolean, on purpose: `useTakeTurn`
+// needs this hook's own `rows` to build its send-time snapshot
+// (`PlayRoute.tsx`), so by the time `useTakeTurn`'s `isSending` exists, this
+// hook has already been called for the render -- there is no boolean to
+// pass in yet. A ref sidesteps that: the caller hands over the same ref
+// object on every render (stable identity, so `useQuery` never sees it as a
+// changed option) and syncs its `.current` from its own effect once
+// `isSending` is known, mirroring `useRunNotices.ts`'s `onTickRef`.
+// `refetchInterval` itself only ever runs after render (on the interval
+// timer or after a fetch settles), so by the time it reads `.current` the
+// ref has always caught up.
+export interface IsSendingRef {
+  readonly current: boolean;
+}
+
+interface UsePlayTranscriptOptions {
+  isSendingRef?: IsSendingRef;
+  /** Test-only override for the fallback poll's interval. */
+  pollIntervalMs?: number;
+}
+
+const DEFAULT_POLL_INTERVAL_MS = 3000;
+
 type EventsRead = components["schemas"]["EventsRead"];
 
 async function fetchTranscript(runId: string, heroName: string): Promise<TranscriptState> {
@@ -41,10 +70,21 @@ async function fetchTranscript(runId: string, heroName: string): Promise<Transcr
   return { rows: toTranscriptRows(events, heroName), awaiting: result.awaiting, turnUnfinished: isTurnUnfinished(events) };
 }
 
-export function usePlayTranscript(runId: string, heroName: string) {
+export function usePlayTranscript(runId: string, heroName: string, options: UsePlayTranscriptOptions = {}) {
+  const { isSendingRef, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS } = options;
   const query = useQuery({
     queryKey: ["transcript", runId],
     queryFn: () => fetchTranscript(runId, heroName),
+    // A function, not a plain interval, so it can read the query's own
+    // freshest data (`query.state.data`) rather than the value this hook
+    // last returned to its caller -- reading the latter here would be
+    // circular, since `turnUnfinished` below is that very return value
+    // (TanStack v5: `refetchInterval` receives the `Query` itself).
+    refetchInterval: (latest) => {
+      const data = latest.state.data;
+      const stillRunning = (isSendingRef?.current ?? false) || (data !== undefined && data.awaiting === "none" && data.turnUnfinished);
+      return stillRunning ? pollIntervalMs : false;
+    },
   });
 
   return {

@@ -8,7 +8,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { createQueryClient } from "../../../core/queryClient";
-import { mockRoute } from "../../../test/network";
+import { getRequests, mockRoute } from "../../../test/network";
 import { usePlayTranscript } from "./usePlayTranscript";
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -88,5 +88,52 @@ describe("usePlayTranscript", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(false));
     expect(result.current.rows).toEqual([]);
+  });
+
+  // Fallback poll (sprint 010/07 WI7 round 2, ← AC2/AC4): a live tick off
+  // the notice stream is meant to be what triggers a re-read, but the
+  // screen must not depend on it alone -- a transcript that still looks
+  // mid-turn (awaiting none, last event not a narration) keeps re-reading
+  // itself on its own. `pollIntervalMs` is overridden to a few
+  // milliseconds so this does not wait out the real 3s default.
+  it("re-reads on a short interval while the last event is not yet the closing narration", async () => {
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-4/events", {
+      status: 200,
+      body: {
+        events: [
+          { id: "e1", type: "player_action", turnId: "t1", payload: { text: "I attack." }, createdAt: "2026-09-08T21:02:00+00:00" },
+        ],
+        awaiting: "none",
+      },
+    });
+
+    renderHook(() => usePlayTranscript("run-4", "Rosalind Thorn", { pollIntervalMs: 20 }), { wrapper });
+
+    await waitFor(() =>
+      expect(
+        getRequests({ method: "GET", path: "/api/v1/playthrough/campaign/run-4/events" }).length,
+      ).toBeGreaterThan(1),
+    );
+  });
+
+  it("does not re-read once the last event is the closing narration", async () => {
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-5/events", {
+      status: 200,
+      body: {
+        events: [
+          { id: "e1", type: "narration", turnId: "t1", payload: { text: "Done." }, createdAt: "2026-09-08T21:02:00+00:00" },
+        ],
+        awaiting: "none",
+      },
+    });
+
+    const { result } = renderHook(() => usePlayTranscript("run-5", "Rosalind Thorn", { pollIntervalMs: 20 }), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(getRequests({ method: "GET", path: "/api/v1/playthrough/campaign/run-5/events" }).length).toBe(1);
   });
 });

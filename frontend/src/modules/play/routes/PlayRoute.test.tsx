@@ -22,13 +22,14 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderApp } from "../../../test/render";
-import { mockRoute } from "../../../test/network";
+import { getRequests, mockRoute } from "../../../test/network";
 
 // Sprint 010/07 WI6, I6 ← AC1/AC2/AC3/AC4. `PlayScreen` now mounts
 // `useRunNotices`, which opens a real `EventSource` -- jsdom has none, so
-// this stands in for it exactly like `useRunNotices.test.tsx`'s own fake:
-// the route's tests below never drive it (no test here asserts on a live
-// tick), it only needs to exist so mounting the screen doesn't throw.
+// this stands in for it exactly like `useRunNotices.test.tsx`'s own fake.
+// Instances are kept (sprint 010/07 WI7 round 2, ← AC2) so a test can reach
+// back into the one `PlayScreen` opened and drive its `onmessage` directly,
+// the same way `useRunNotices.test.tsx` drives its own fake.
 class FakeEventSource {
   static readonly CLOSED = 2;
   readonly CLOSED = FakeEventSource.CLOSED;
@@ -37,9 +38,16 @@ class FakeEventSource {
   close(): void {}
   addEventListener(): void {}
   removeEventListener(): void {}
+
+  constructor() {
+    eventSources.push(this);
+  }
 }
 
+let eventSources: FakeEventSource[] = [];
+
 beforeEach(() => {
+  eventSources = [];
   vi.stubGlobal("EventSource", FakeEventSource);
 });
 
@@ -302,5 +310,25 @@ describe("PlayRoute on /runs/:runId/play (AC2, AC6, AC7)", () => {
     expect(await screen.findByLabelText("What do you do?")).toBeInTheDocument();
     expect(screen.queryByText("The Dungeon Master is thinking…")).not.toBeInTheDocument();
     expect(screen.queryByText("The Dungeon Master has the floor.")).not.toBeInTheDocument();
+  });
+
+  it("AC2: an 'updated' notice off the stream re-reads the transcript", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockEvents("run-1");
+
+    renderApp(["/runs/run-1/play"]);
+
+    await screen.findByRole("heading", { level: 1, name: "Goblins of Greenhollow" });
+    expect(eventSources).toHaveLength(1);
+    const before = getRequests({ method: "GET", path: "/api/v1/playthrough/campaign/run-1/events" }).length;
+
+    eventSources[0].onmessage?.({ data: JSON.stringify({ type: "updated", id: "evt-1" }) } as MessageEvent);
+
+    await waitFor(() =>
+      expect(
+        getRequests({ method: "GET", path: "/api/v1/playthrough/campaign/run-1/events" }).length,
+      ).toBeGreaterThan(before),
+    );
   });
 });
