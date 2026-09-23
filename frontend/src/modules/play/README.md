@@ -82,6 +82,63 @@ module owns everything past "Start adventure" / "Continue".
 - `components/formatClockTime.ts` — the "21:02"-style clock read `Narration`/
   `PlayerRow` share, `Intl.DateTimeFormat` only (no date library).
 
+## Owns (sprint 010/07 — taking a turn)
+
+- `components/Composer.tsx` — `Composer({ state, onSend })`,
+  `state: "open" | "turnRunning" | "awaitingChoice" | "awaitingRoll"`. Open
+  renders a real text-field-and-Send form, submitting on Enter or the
+  button; `onSend` never fires on empty or untrimmed text. Every other
+  state renders one muted, centred, in-voice line with nothing clickable —
+  a running turn, a pending question or a pending roll already say what is
+  happening, so the field stays closed rather than accepting words nobody
+  can act on yet.
+- `components/ThinkingLine.tsx` — the "Dungeon Master is thinking" line: a
+  small spinner plus one wording, wrapped in `aria-live="polite"` so
+  assistive tech announces it once without interrupting anything else being
+  read. It only draws the line; the caller decides when a turn is running
+  and mounts it only then.
+- `components/Transcript.tsx` — also takes an optional `thinking` flag
+  (`TranscriptProps`); when true it renders `ThinkingLine` at the foot of
+  the scroll container, below every row already recorded, so rolls and
+  system lines stay above it as they land.
+- `hooks/useRunNotices.ts` — `useRunNotices(runId, onTick)` opens
+  `GET …/campaign/{runId}/stream` as an `EventSource` (`withCredentials`,
+  cookie auth), calls `onTick` once per `updated` notice, and reopens
+  itself a couple of seconds after a fatal close — an ordinary server close
+  (the server ends every stream after five minutes) is left to the
+  browser's own built-in reconnect.
+- `hooks/usePlayTranscript.ts` — also exposes `turnUnfinished`: true when
+  the last recorded event is not the closing `narration` (a turn writes its
+  `player_action` first and its `narration` last, everything else lands in
+  between), false on an empty transcript. Also takes an `isSendingRef`
+  option and re-reads itself every few seconds (`refetchInterval`, override
+  via `pollIntervalMs`) for as long as that ref reads true or the read
+  itself still looks mid-turn — a fallback for when the notice stream drops
+  or delays a tick (sprint 010/07 round 2, ← AC2/AC4).
+- `hooks/useTakeTurn.ts` — `useTakeTurn({ runId, rows }) →
+  { send, isSending, pending }`, the one write behind a turn
+  (`POST …/game/runs/{runId}/turn`). `send` shows the player's words at once
+  rather than waiting on the network: it snapshots the row ids already on
+  screen, opens `pending` with the text and a timestamp taken then and
+  there, and only after that fires the mutation. `pending` clears itself
+  once the real `player_action` row lands in `rows` (an id the snapshot
+  didn't have) or the moment the mutation settles at all, so a failed turn
+  never leaves a ghost row behind. Either way, settling invalidates the
+  transcript query so the next read picks up whatever the turn actually
+  recorded.
+
+  `PlayRoute` composes these into the play screen: it appends `pending` (if
+  any) to `usePlayTranscript`'s own rows as one more `player` row before
+  handing them to `Transcript`, subscribes to `useRunNotices` to invalidate
+  the same transcript query on every server tick, and derives the
+  composer's state and the thinking line from the same two reads —
+  `awaiting` picks `awaitingRoll`/`awaitingChoice` outright; otherwise a
+  turn counts as running while the mutation is in flight (`isSending`) or,
+  after a reload mid-turn with nothing pending, while `turnUnfinished` is
+  still true — and that one `turnRunning` flag drives both the transcript's
+  `thinking` prop and the composer's `"turnRunning"` state together, so
+  either always mirrors the other.
+
 ## Surface
 
 - `TranscriptRow`, `SystemKey`, `EventRead` (re-exported) — consumed by
@@ -91,3 +148,6 @@ module owns everything past "Start adventure" / "Continue".
 - `Transcript` — consumed by WI4's play screen route.
 - WI3 (stay-at-latest) and WI4 (the screen itself) build on top of this file
   set in parallel, per sprint 010/06's plan.
+- `Composer`, `useRunNotices`, `useTakeTurn` and `usePlayTranscript`'s
+  `turnUnfinished` — consumed by `routes/PlayRoute.tsx` (sprint 010/07 WI6)
+  to drive sending a turn, live updates and the composer/thinking state.

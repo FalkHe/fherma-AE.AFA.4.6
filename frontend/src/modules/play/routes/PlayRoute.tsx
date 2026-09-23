@@ -19,10 +19,14 @@
 // its first fetch with an empty hero name before the table read lands,
 // and nothing would ever refetch it once the real name is known.
 //
-// No party rail and no composer this sprint (sprint brief: "leave room for
-// them per D12 but do not build them"). With neither built yet, D12's wide
-// and narrow layouts (§2, §5) already coincide: one column, the header
-// above the transcript, capped at the design's own chat column width.
+// No party rail yet (sprint brief: "leave room for it per D12 but do not
+// build it"). The composer joins this sprint (010/07 WI6, I6), pinned below
+// the transcript inside the same bounded-height `Stack` -- `flexShrink: 0`
+// so it keeps its own height and the transcript above it keeps claiming the
+// rest via `flex: "1 1 auto"`. With no party rail built yet, D12's wide and
+// narrow layouts (§2, §5) still coincide: one column, the header above the
+// transcript and the composer below it, capped at the design's own chat
+// column width.
 //
 // The transcript is meant to be the thing that scrolls, not the page (D12
 // §2: "the transcript keeps itself at the newest entry"). Every ancestor
@@ -33,8 +37,9 @@
 // from here means giving *this* screen a genuine, viewport-relative height
 // and letting the transcript fill whatever is left of it via flex, rather
 // than reaching into `core/layout` (out of this work item's ownership).
-import type { ReactElement } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 import { Link as RouterLink, useParams } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -46,7 +51,11 @@ import { useTranslation } from "react-i18next";
 
 import { usePlayTable, type PlayTable } from "../hooks/usePlayTable";
 import { usePlayTranscript } from "../hooks/usePlayTranscript";
+import { useRunNotices } from "../hooks/useRunNotices";
+import { useTakeTurn } from "../hooks/useTakeTurn";
 import { Transcript } from "../components/Transcript";
+import { Composer, type ComposerState } from "../components/Composer";
+import type { TranscriptRow } from "../transcript";
 
 interface PlayScreenProps {
   runId: string;
@@ -63,11 +72,56 @@ const APP_BAR_HEIGHT_PX = { xs: 56 + 1, sm: 64 + 1 };
 
 function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   const { t } = useTranslation("play");
+  const queryClient = useQueryClient();
   // One hero per run (D9) — the transcript's own `player_action` payload
   // names no actor, so the caller supplies it from here (README.md
   // "Surface").
   const heroName = table.heroes[0]?.name ?? "";
-  const { rows } = usePlayTranscript(runId, heroName);
+  // Fed to `usePlayTranscript`'s fallback poll below (sprint 010/07 WI7
+  // round 2, ← AC2/AC4) -- a ref rather than `isSending` itself, since
+  // `isSending` only exists once `useTakeTurn` has been called, and
+  // `useTakeTurn` in turn needs this hook's own `rows` (`usePlayTranscript.ts`).
+  const isSendingRef = useRef(false);
+  const { rows, awaiting, turnUnfinished } = usePlayTranscript(runId, heroName, { isSendingRef });
+  const { send, isSending, pending } = useTakeTurn({ runId, rows });
+
+  useEffect(() => {
+    isSendingRef.current = isSending;
+  }, [isSending]);
+
+  // Live updates (sprint 010/07 WI6, I6 ← AC2): every `updated` notice off
+  // the run's own stream just means "re-read the transcript" — the same
+  // re-read a turn's own settle already triggers, so both paths share one
+  // query key and one cache entry.
+  useRunNotices(runId, () => {
+    // `cancelRefetch` lives on `invalidateQueries`'s second argument, not
+    // inside the filters object -- same note as `useTakeTurn.ts`'s own call.
+    void queryClient.invalidateQueries({ queryKey: ["transcript", runId] }, { cancelRefetch: false });
+  });
+
+  // The player's own words show at once, before the network round-trip
+  // that records them completes (AC1) — appended as a `player` row on top
+  // of whatever the last transcript read holds, and dropped again the
+  // moment `useTakeTurn` clears `pending` (its own echo has landed, or the
+  // turn failed outright).
+  const displayRows: TranscriptRow[] = pending
+    ? [...rows, { kind: "player", id: "pending", author: heroName, text: pending.text, at: pending.at }]
+    : rows;
+
+  // A turn is still running whenever the mutation itself is in flight, or
+  // -- after a reload mid-turn, when `useTakeTurn` holds nothing pending at
+  // all -- whenever the last recorded event is not yet the closing
+  // narration (AC4).
+  const turnRunning = isSending || (awaiting === "none" && turnUnfinished);
+
+  let composerState: ComposerState;
+  if (awaiting.startsWith("roll:")) {
+    composerState = "awaitingRoll";
+  } else if (awaiting.startsWith("answer:")) {
+    composerState = "awaitingChoice";
+  } else {
+    composerState = turnRunning ? "turnRunning" : "open";
+  }
 
   return (
     <Stack
@@ -113,7 +167,11 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
       </Stack>
 
       <Box sx={{ flex: "1 1 auto", minHeight: 0 }}>
-        <Transcript rows={rows} />
+        <Transcript rows={displayRows} thinking={turnRunning} />
+      </Box>
+
+      <Box sx={{ px: 4, flexShrink: 0 }}>
+        <Composer state={composerState} onSend={send} />
       </Box>
     </Stack>
   );
