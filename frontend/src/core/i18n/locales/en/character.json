@@ -7,7 +7,9 @@
     "you": "you",
     "placeholder": "Say what you like…",
     "send": "Send",
-    "error": "The tavern is noisy, I did not catch that. Say it again?"
+    "error": "The tavern is noisy, I did not catch that. Say it again?",
+    "transcript": "The conversation so far",
+    "jumpToLatest": "Jump to the latest"
   },
   "choices": {
     "takeReadyMade": "Take {{name}}",
@@ -48,8 +50,10 @@
   "review": {
     "title": "One last look",
     "subtitle": "This is who walks into the tavern. Saving makes it final for this run.",
+    "identity": "{{raceClass}} · Level {{level}} · {{alignment}}",
     "save": "Looks right, save",
-    "change": "Change something"
+    "change": "Change something",
+    "back": "Review and save"
   },
   "leave": {
     "title": "Leave character creation?",

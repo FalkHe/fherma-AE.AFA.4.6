@@ -5,7 +5,6 @@ checkpointer.
 
 import asyncio
 import sys
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,7 @@ from langchain_core.runnables import RunnableConfig
 
 from app.core.checkpointer import service as checkpointer_service
 from app.core.db import get_sessionmaker
+from app.core.ids import generate_id
 from app.core.llm.errors import LlmError
 from app.modules.game import service as game_service
 from app.modules.game.agent.state import DmContext
@@ -40,7 +40,7 @@ async def _run_turn(
             user_id=user_id,
             actor_id=actor_id,
             run_id=run_id,
-            turn_id=str(uuid.uuid4()),
+            turn_id=generate_id(),
         )
         return await game_service.turn(
             agent, thread_id=thread_id, context=context, player_text=text
@@ -63,7 +63,7 @@ async def _resume_turn(
             user_id=user_id,
             actor_id=actor_id,
             run_id=run_id,
-            turn_id=str(uuid.uuid4()),
+            turn_id=generate_id(),
         )
         return await game_service.resume(
             agent, thread_id=thread_id, context=context, resume_value=resume_value
@@ -208,7 +208,7 @@ def play(
         None, "--thread-id", help="Checkpointer thread id override, defaults to the run id."
     ),
 ) -> None:
-    active_thread_id = thread_id or run_id or str(uuid.uuid4())
+    active_thread_id = thread_id or run_id or generate_id()
     try:
         asyncio.run(
             _play(
