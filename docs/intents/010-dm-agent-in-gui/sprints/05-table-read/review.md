@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/66
 ---
 # Review: Sprint 05 — The play screen's own read
 
@@ -31,3 +31,4 @@ rather than keep a second shape.
 Brief: docs/intents/010-dm-agent-in-gui/sprints/05-table-read/brief.md
 
 ## Verdict
+Round 1: approve — a run under way now answers in one read with the adventure it is in, the scene the hero stands in, and every seated hero's whole sheet, so the play screen's header, party rail and full sheet all draw on the same answer and the run screen's character card keeps using it instead of a second one; a wound shows up on the next read, a run you are not seated at is still refused, and the adventure keeps its name after it ends rather than going blank.

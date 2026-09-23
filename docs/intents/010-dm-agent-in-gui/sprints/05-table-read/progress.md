@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-stage: draft
+stage: done
 ---
 # Progress: Sprint 05
 
@@ -23,3 +23,4 @@ Accepted the architect's assumptions: the play screen's back link reads the run'
 The ability-modifier formula exists in three places; this sprint makes one of them the shared one and leaves the third alone to keep the change small.
 
 ## Verify
+Round 1: approve, no failed criteria.
