@@ -5,11 +5,12 @@ import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "../../../test/render";
 import { PendingPrompt } from "./PendingPrompt";
+import type { PendingPrompt as PendingPromptModel } from "../transcript";
 import play from "../../../core/i18n/locales/en/play.json";
 
 describe("PendingPrompt", () => {
   it("AC1: renders one button per option, verbatim, and nothing else sends", () => {
-    const prompt = { kind: "choice", id: "p1", options: ["Open the door", "Search the room"] } as const;
+    const prompt: PendingPromptModel = { kind: "choice", id: "p1", options: ["Open the door", "Search the room"] };
     renderWithProviders(<PendingPrompt prompt={prompt} onChoose={vi.fn()} onRoll={vi.fn()} />);
 
     expect(screen.getByRole("button", { name: "Open the door" })).toBeInTheDocument();
@@ -19,7 +20,7 @@ describe("PendingPrompt", () => {
   });
 
   it("AC1: clicking an option button calls onChoose with that option's text", async () => {
-    const prompt = { kind: "choice", id: "p1", options: ["Open the door", "Search the room"] } as const;
+    const prompt: PendingPromptModel = { kind: "choice", id: "p1", options: ["Open the door", "Search the room"] };
     const onChoose = vi.fn();
     renderWithProviders(<PendingPrompt prompt={prompt} onChoose={onChoose} onRoll={vi.fn()} />);
 

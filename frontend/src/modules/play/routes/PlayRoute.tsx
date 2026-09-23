@@ -56,6 +56,7 @@ import { useRunNotices } from "../hooks/useRunNotices";
 import { useTakeTurn } from "../hooks/useTakeTurn";
 import { Transcript } from "../components/Transcript";
 import { Composer, type ComposerState } from "../components/Composer";
+import { PendingPrompt } from "../components/PendingPrompt";
 import type { TranscriptRow } from "../transcript";
 
 interface PlayScreenProps {
@@ -83,8 +84,13 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // `isSending` only exists once `useTakeTurn` has been called, and
   // `useTakeTurn` in turn needs this hook's own `rows` (`usePlayTranscript.ts`).
   const isSendingRef = useRef(false);
-  const { rows, awaiting, turnUnfinished } = usePlayTranscript(runId, heroName, { isSendingRef });
-  const { send, startOpening, isSending, pending } = useTakeTurn({ runId, rows });
+  // `pending` here is the transcript's own read of what the game is waiting
+  // on (`PendingPrompt`, `transcript.ts`) -- not to be confused with
+  // `useTakeTurn`'s own `pending`, the optimistic player row a turn just
+  // sent (renamed `pendingTurn` below); the two are unrelated shapes that
+  // happen to share a name across their own hooks.
+  const { rows, awaiting, turnUnfinished, pending } = usePlayTranscript(runId, heroName, { isSendingRef });
+  const { send, startOpening, roll, isSending, pending: pendingTurn } = useTakeTurn({ runId, rows });
 
   // Sprint 010/08 WI4, I5: a run just entered from the lobby carries
   // `{ startOpening: true }` in router state (`useEnterAdventure.ts`); this
@@ -112,8 +118,8 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // of whatever the last transcript read holds, and dropped again the
   // moment `useTakeTurn` clears `pending` (its own echo has landed, or the
   // turn failed outright).
-  const displayRows: TranscriptRow[] = pending
-    ? [...rows, { kind: "player", id: "pending", author: heroName, text: pending.text, at: pending.at }]
+  const displayRows: TranscriptRow[] = pendingTurn
+    ? [...rows, { kind: "player", id: "pending", author: heroName, text: pendingTurn.text, at: pendingTurn.at }]
     : rows;
 
   // A turn is still running whenever the mutation itself is in flight, or
@@ -122,13 +128,24 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // narration (AC4).
   const turnRunning = isSending || (awaiting === "none" && turnUnfinished);
 
+  // Sprint 010/09 WI5, I6: `isSending` wins outright -- the moment an answer
+  // or a roll is sent, the buttons must be gone even before the transcript
+  // re-read catches up and clears `awaiting` itself (the stale read still
+  // names the same prompt for a moment, which would otherwise reopen the
+  // buttons this render is meant to hide). Only once nothing is sending does
+  // a still-open `awaiting` marker pick the choice/roll line; last, the
+  // plain running/open split AC4 already covered.
   let composerState: ComposerState;
-  if (awaiting.startsWith("roll:")) {
+  if (isSending) {
+    composerState = "turnRunning";
+  } else if (awaiting.startsWith("roll:")) {
     composerState = "awaitingRoll";
   } else if (awaiting.startsWith("answer:")) {
     composerState = "awaitingChoice";
+  } else if (turnRunning) {
+    composerState = "turnRunning";
   } else {
-    composerState = turnRunning ? "turnRunning" : "open";
+    composerState = "open";
   }
 
   return (
@@ -175,7 +192,15 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
       </Stack>
 
       <Box sx={{ flex: "1 1 auto", minHeight: 0 }}>
-        <Transcript rows={displayRows} thinking={turnRunning} />
+        <Transcript
+          rows={displayRows}
+          thinking={turnRunning}
+          prompt={
+            pending !== null && !isSending ? (
+              <PendingPrompt prompt={pending} onChoose={send} onRoll={roll} />
+            ) : undefined
+          }
+        />
       </Box>
 
       <Box sx={{ px: 4, flexShrink: 0 }}>

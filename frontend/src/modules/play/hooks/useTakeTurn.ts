@@ -91,5 +91,16 @@ export function useTakeTurn({ runId, rows }: UseTakeTurnArgs) {
     mutation.mutate(null);
   }
 
-  return { send, startOpening, isSending: mutation.isPending, pending };
+  // The roll button (sprint 010/09 WI5, I6): `{ text: null }`, same shape as
+  // `startOpening` -- the server rolls itself on a null text, and this route
+  // writes no player row either, so there is nothing optimistic to show
+  // here either. Kept as its own name (rather than only exporting
+  // `startOpening` under a second one) because the two call sites mean
+  // different things to a reader even though they share every line of
+  // implementation.
+  function roll(): void {
+    mutation.mutate(null);
+  }
+
+  return { send, startOpening, roll, isSending: mutation.isPending, pending };
 }

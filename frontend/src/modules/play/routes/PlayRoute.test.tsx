@@ -382,6 +382,83 @@ describe("PlayRoute on /runs/:runId/play (AC2, AC6, AC7)", () => {
     expect(screen.queryByLabelText("What do you do?")).not.toBeInTheDocument();
   });
 
+  it("shows choice buttons for a pending question; clicking one sends it as the player's own words ← I6", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-1/events", {
+      status: 200,
+      body: {
+        events: [
+          {
+            id: "e1",
+            type: "question",
+            turnId: "t1",
+            payload: { text: "Fight or flee?", options: ["Fight", "Flee"] },
+            createdAt: "2026-09-08T21:02:00+00:00",
+          },
+        ],
+        awaiting: "answer:e1",
+      },
+    });
+    mockRoute("POST", "/api/v1/game/runs/run-1/turn", () => new Promise(() => {}));
+
+    renderApp(["/runs/run-1/play"]);
+
+    expect(await screen.findByRole("button", { name: "Fight" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Flee" })).toBeInTheDocument();
+    expect(screen.getByText("The Dungeon Master is waiting on one of those.")).toBeInTheDocument();
+    expect(screen.queryByText("The Dungeon Master is thinking…")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("What do you do?")).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Flee" }));
+
+    expect(await screen.findByText("Flee")).toBeInTheDocument();
+    expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })).toEqual([
+      expect.objectContaining({ body: { text: "Flee" } }),
+    ]);
+    expect(screen.queryByRole("button", { name: "Fight" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Flee" })).not.toBeInTheDocument();
+    expect(screen.getByText("The Dungeon Master has the floor.")).toBeInTheDocument();
+  });
+
+  it("shows one roll button for a pending roll; clicking it asks the server to roll ← I6", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-1/events", {
+      status: 200,
+      body: {
+        events: [
+          {
+            id: "e1",
+            type: "roll_requested",
+            turnId: "t1",
+            payload: { formula: "1d20+3", context: { ability: "Dexterity" } },
+            createdAt: "2026-09-08T21:02:00+00:00",
+          },
+        ],
+        awaiting: "roll:e1",
+      },
+    });
+    mockRoute("POST", "/api/v1/game/runs/run-1/turn", () => new Promise(() => {}));
+
+    renderApp(["/runs/run-1/play"]);
+
+    const rollButton = await screen.findByRole("button", { name: /1d20\+3/ });
+    expect(screen.getAllByRole("button", { name: /1d20\+3/ })).toHaveLength(1);
+    expect(screen.getByText("The dice go first.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("What do you do?")).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(rollButton);
+
+    expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })).toEqual([
+      expect.objectContaining({ body: { text: null } }),
+    ]);
+    await waitFor(() => expect(screen.queryByRole("button", { name: /1d20\+3/ })).not.toBeInTheDocument());
+    expect(screen.getByText("The Dungeon Master has the floor.")).toBeInTheDocument();
+  });
+
   it("landing without the router flag posts no opening turn", async () => {
     stubAuthenticated();
     mockTable("run-1", TABLE);
