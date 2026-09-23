@@ -51,12 +51,35 @@ module owns everything past "Start adventure" / "Continue".
   voice) — either is correct; this module's own rows never have to reach
   into `common` for it.
 
+## Owns (WI2 — the transcript)
+
+- `components/Transcript.tsx` — `Transcript({ rows: TranscriptRow[] })`. Draws
+  D12 §2's four row kinds and no others, plus scene dividers and the empty
+  line; renders nothing it wasn't given (no invented dice verdict, no
+  invented check difficulty, ← sprint brief). Mounts WI3's
+  `useStickToLatest()` itself and puts `scrollRef` on the scrolling element;
+  `JumpToLatestPill` is rendered only while `!atBottom`.
+- `components/NarrationRow.tsx`, `PlayerRow.tsx` — the Dungeon Master's and
+  the player's rows; each takes its row's own fields (`text`/`at`,
+  `author`/`text`/`at`) straight through, no mapping. Author strings are
+  `t("narration.author")` and the passed-in hero name respectively — never
+  the other way round.
+- `components/SystemLine.tsx` — the only place any `system.<key>` string is
+  worded: `t(`system.${systemKey}`, values)`, wrapped in D12's leading/
+  trailing "·" (added here, not baked into `play.json`'s seven strings).
+- `components/DiceChip.tsx` — `label`/`notation`/`breakdown`/`total` as
+  given; carries no verdict mark, since one is never recorded.
+- `components/SceneDivider.tsx` — the scene's name, centred, `role=
+  "presentation"` (MUI's own guidance for a Divider that wraps text).
+- `components/formatClockTime.ts` — the "21:02"-style clock read `Narration`/
+  `PlayerRow` share, `Intl.DateTimeFormat` only (no date library).
+
 ## Surface
 
 - `TranscriptRow`, `SystemKey`, `EventRead` (re-exported) — consumed by
   WI2's row components.
 - `PlayTable` (re-exported `TableRead`) — consumed by WI4's header/party
   rail.
-- No component, route or scroll behaviour lives here yet — WI2 (rows), WI3
-  (stay-at-latest) and WI4 (the screen itself) build on top of this file set
-  in parallel, per sprint 010/06's plan.
+- `Transcript` — consumed by WI4's play screen route.
+- WI3 (stay-at-latest) and WI4 (the screen itself) build on top of this file
+  set in parallel, per sprint 010/06's plan.
