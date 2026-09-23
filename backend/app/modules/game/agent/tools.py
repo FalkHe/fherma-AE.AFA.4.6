@@ -6,6 +6,7 @@ what the model reads to decide when and how to call it.
 (← 005-D2/D6).
 """
 
+import functools
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -50,6 +51,38 @@ from app.modules.playthrough.errors import (
 from app.modules.playthrough.schemas import RollKind
 from app.modules.srd import service as srd_service
 from app.modules.srd.errors import SrdCorpusEmptyError
+
+
+def _serialized(fn):
+    """Serialises one tool's whole body against `ctx.db_lock` (sprint
+    010/11 round 4, Fault A -- ← finding): `ToolNode` runs a batch of tool
+    calls from the same `AIMessage` concurrently (`asyncio.gather`), but
+    every tool in one turn shares the same `AsyncSession` through
+    `DmContext.db` -- not safe for concurrent use. Two goblins attacking
+    in the same turn corrupted the session mid-flush and left a
+    `roll_requested` with no matching `roll`.
+
+    Applied directly under `@tool(...)`, closest to each plain `async def`
+    -- never through `ToolNode`'s own `awrap_tool_call` hook, which wraps
+    a bare `except Exception` around the whole call with no carve-out for
+    `ask_player`/`request_player_roll`'s own `interrupt()` (`agent/
+    nodes.py`'s `make_tools` has the full account). `functools.wraps`
+    keeps the original function's signature visible to `inspect.signature`
+    (`follow_wrapped=True` by default), so `@tool`'s own schema
+    introspection is unaffected; only the call is serialised, one tool at
+    a time, never the model's own request to call several."""
+
+    @functools.wraps(fn)
+    async def wrapped(*args, **kwargs):
+        runtime = kwargs.get("runtime")
+        if runtime is None:
+            runtime = next((a for a in args if isinstance(a, ToolRuntime)), None)
+        if runtime is None:
+            return await fn(*args, **kwargs)
+        async with runtime.context.db_lock:
+            return await fn(*args, **kwargs)
+
+    return wrapped
 
 
 async def _resolve_campaign_and_version(
@@ -171,6 +204,7 @@ class RollContext(BaseModel):
 
 
 @tool(ROLL_DICE_TOOL)
+@_serialized
 async def roll_dice(
     kind: RollKind,
     context: RollContext,
@@ -228,7 +262,7 @@ async def roll_dice(
         return hint
 
     payload = event.payload
-    return {
+    result: dict[str, Any] = {
         "roll_id": event.id,
         "kind": payload["kind"],
         "formula": payload["formula"],
@@ -236,9 +270,21 @@ async def roll_dice(
         "modifier": payload["modifier"],
         "total": payload["total"],
     }
+    if kind in ("attack", "damage"):
+        # Fault B (sprint 010/11 round 4, ← finding): a roll of this kind
+        # was made and never followed by the tool that resolves it, and
+        # the model decided the outcome itself instead. This number alone
+        # is not a hit, a miss, or an HP change -- say so right where the
+        # model reads the total, not only in the system prompt.
+        result["next_step"] = (
+            "This total does not decide hit/miss or damage by itself -- call "
+            f"{kind}(roll_id={event.id!r}, ...) next, before narrating anything about it."
+        )
+    return result
 
 
 @tool(RESOLVE_CHECK_TOOL)
+@_serialized
 async def resolve_check(
     roll_id: str,
     dc: int,
@@ -258,6 +304,7 @@ async def resolve_check(
 
 
 @tool(RESOLVE_SAVE_TOOL)
+@_serialized
 async def resolve_save(
     roll_id: str,
     dc: int,
@@ -277,6 +324,7 @@ async def resolve_save(
 
 
 @tool(PASSIVE_CHECK_TOOL)
+@_serialized
 async def passive_check(
     ability: str,
     dc: int,
@@ -309,6 +357,7 @@ async def passive_check(
 
 
 @tool(ROLL_INITIATIVE_TOOL)
+@_serialized
 async def roll_initiative(
     side_a_ids: list[str],
     side_b_ids: list[str],
@@ -340,6 +389,7 @@ async def roll_initiative(
 
 ## Content Read Tools
 @tool(GET_SCENE_TOOL)
+@_serialized
 async def get_scene(
     scene_id: str,
     runtime: ToolRuntime[DmContext],
@@ -371,6 +421,7 @@ async def get_scene(
 
 
 @tool(GET_OBJECT_TOOL)
+@_serialized
 async def get_object(
     object_id: str,
     runtime: ToolRuntime[DmContext],
@@ -396,6 +447,7 @@ async def get_object(
 
 
 @tool(GET_CAMPAIGN_TOOL)
+@_serialized
 async def get_campaign(
     runtime: ToolRuntime[DmContext],
     campaign_id: str | None = None,
@@ -425,6 +477,7 @@ async def get_campaign(
 
 ## Interrupt Tools
 @tool(ASK_PLAYER_TOOL)
+@_serialized
 async def ask_player(
     text: str,
     options: list[str],
@@ -457,6 +510,7 @@ async def ask_player(
 
 
 @tool(REQUEST_PLAYER_ROLL_TOOL)
+@_serialized
 async def request_player_roll(
     kind: RollKind,
     runtime: ToolRuntime[DmContext],
@@ -532,6 +586,7 @@ async def request_player_roll(
 
 ## Action Tools
 @tool(INTERACT_TOOL)
+@_serialized
 async def interact(
     object_id: str,
     action: str,
@@ -570,6 +625,7 @@ async def interact(
 
 
 @tool(TAKE_TOOL)
+@_serialized
 async def take(
     item_id: str,
     runtime: ToolRuntime[DmContext],
@@ -599,6 +655,7 @@ async def take(
 
 
 @tool(DROP_TOOL)
+@_serialized
 async def drop(
     item_id: str,
     runtime: ToolRuntime[DmContext],
@@ -628,6 +685,7 @@ async def drop(
 
 
 @tool(GIVE_TOOL)
+@_serialized
 async def give(
     item_id: str,
     to_id: str,
@@ -661,6 +719,7 @@ async def give(
 
 
 @tool(USE_ITEM_TOOL)
+@_serialized
 async def use_item(
     item_id: str,
     runtime: ToolRuntime[DmContext],
@@ -696,6 +755,7 @@ async def use_item(
 
 
 @tool(USE_EXIT_TOOL)
+@_serialized
 async def use_exit(
     exit_id: str,
     runtime: ToolRuntime[DmContext],
@@ -727,27 +787,56 @@ async def use_exit(
 
 ## Combat Tools
 @tool(ATTACK_TOOL)
+@_serialized
 async def attack(
     target_id: str,
     roll_id: str,
     runtime: ToolRuntime[DmContext],
     actor_id: str | None = None,
     item_id: str | None = None,
+    target_name: str | None = None,
 ) -> dict[str, Any]:
     """Resolve an attack roll against a target creature's armour class.
-    `target_id` is the creature being attacked.
+    `target_id` is the creature being attacked -- it must be one of
+    `creatures_present`'s own living entries in the actor's *current*
+    scene; never guess an id, and never attack someone the party has not
+    actually reached (moving to another scene always goes through
+    `use_exit` first).
     `roll_id` is the ID of an attack roll (kind='attack') consumed by this attack.
     `actor_id` is the attacking character/creature (defaults to current actor);
     accepts a creature id or its name, matched case-insensitively against
     the scene's living creatures.
-    `item_id` is the weapon/item being used (optional). A lookup problem --
-    the actor or target not found or not in the same scene -- never
-    refuses bare: it returns `status`, `message` and `living_creatures`
-    instead, so your next call can name the right id."""
+    `item_id` is the weapon/item being used (optional).
+    `target_name` is the name of who you mean to strike, exactly as
+    `creatures_present` names them (e.g. "Goblin Raider") -- optional, but
+    when given it is checked against `target_id`'s own resolved name and
+    the attack is refused, not silently redirected, on a mismatch (sprint
+    010/11 round 4, Fault D -- ← finding: an attack meant for "the nearest
+    goblin raider" landed on the innkeeper instead, because `target_id`
+    secretly named her). A lookup problem -- the actor or target not found,
+    not in the same scene, or `target_name` not matching `target_id` --
+    never refuses bare: it returns `status`, `message` and
+    `living_creatures` instead, so your next call can name the right id."""
     ctx = runtime.context
     ref = actor_id or ctx.actor_id
     if not ref:
         raise ValueError("actor_id is required for attack when no default actor is set in context.")
+
+    if target_name is not None:
+        creatures = await _living_scene_creatures(ctx, near_actor_id=ctx.actor_id)
+        matched = next((c for c in creatures if c["id"] == target_id), None)
+        if matched is None or matched["name"].casefold() != target_name.strip().casefold():
+            return {
+                "status": "target_mismatch",
+                "actor_id": ref,
+                "target_id": target_id,
+                "message": (
+                    f"target_name {target_name!r} does not match a living creature with id "
+                    f"{target_id!r} in this scene. Re-read creatures_present and call again "
+                    "with the id and name of who you actually mean to attack."
+                ),
+                "living_creatures": creatures,
+            }
 
     async def _do_attack(actor: str) -> str:
         return await playthrough_service.attack(
@@ -798,6 +887,7 @@ async def attack(
 
 
 @tool(DAMAGE_TOOL)
+@_serialized
 async def damage(
     target_id: str,
     roll_id: str,
@@ -845,6 +935,7 @@ async def damage(
 
 ## Memory Tools
 @tool(RECALL_TOOL)
+@_serialized
 async def recall(
     query: str,
     runtime: ToolRuntime[DmContext],
@@ -869,6 +960,7 @@ async def recall(
 
 ## Rules Tools
 @tool(LOOKUP_RULE_TOOL)
+@_serialized
 async def lookup_rule(
     query: str,
     runtime: ToolRuntime[DmContext],

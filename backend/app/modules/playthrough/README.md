@@ -601,10 +601,14 @@ Service functions (`service.py`), called as `service.f(...)`:
   `docs/modules/playthrough.md` §22.
 - `get_awaiting` — reads a run's open turn back from `events` alone and
   answers `"none"`, `"roll:<eventId>"` or `"answer:<eventId>"`: the id of
-  the newest `roll_requested` with no `roll` event answering it yet, else
-  the newest `question` with no `player_action` after it, else `"none"`.
-  No column records this; the same three-way answer is derived again on
-  every call. Called by the events route (below), never on its own.
+  the newest `roll_requested` with no `roll` event answering it yet
+  **and whose own actor is one of the party's own characters** (sprint
+  010/11 round 4, Fault A — ← finding: a session race left a monster's own
+  attack roll dangling, and `awaiting` read it back as a roll button for
+  the player, who has no such roll to make), else the newest `question`
+  with no `player_action` after it, else `"none"`. No column records this;
+  the same three-way answer is derived again on every call. Called by the
+  events route (below), never on its own.
 - `open_turn_id` (sprint 010/03) — the run's open turn id alone: whichever
   `turn_id` its newest event carries, or `None` when there is no event yet
   or the newest one carries no turn. `game.service.run_turn` calls this to

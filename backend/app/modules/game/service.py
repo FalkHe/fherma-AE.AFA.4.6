@@ -298,6 +298,22 @@ async def run_turn(
             )
             await turn(agent, thread_id=run_id, context=context, player_text=text)
         else:
+            # No real interrupt is pending and nothing is queued to retry
+            # -- the graph itself is not waiting on anything. A non-`"none"`
+            # `awaiting` here (sprint 010/11 round 4, Fault A -- ← finding)
+            # therefore names a *stale* request, never the player's own: a
+            # monster's own roll never reaches here (`get_awaiting` already
+            # excludes it), but an old row written before that fix, or a
+            # question nothing ever answered, still could. Refuse rather
+            # than silently writing a DM-led filler turn for it -- exactly
+            # the bad-option refusal the `answer` branch above already
+            # makes, reused here for the same "no write, no resume" shape.
+            pending_awaiting = await playthrough_service.get_awaiting(
+                db, user_id=user_id, run_id=run_id
+            )
+            if pending_awaiting != "none":
+                raise ActionNotAvailableError(awaiting=pending_awaiting, options=[])
+
             kind = "opening"
             turn_id = generate_id()
             context = DmContext(

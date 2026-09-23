@@ -3154,8 +3154,20 @@ async def get_awaiting(db: AsyncSession, *, user_id: str, run_id: str) -> str:
     most recently written event for `run_id` carries (`None` is a turn of
     its own, exactly as `_consume_roll` treats it); only that turn's own
     events are then read back, oldest first: the newest `roll_requested`
-    with no `roll` naming it in `requestId` yet, else the newest
-    `question` with no `player_action` written after it, else `"none"`.
+    with no `roll` naming it in `requestId` yet **and whose own actor is
+    one of the party's own characters** -- else the newest `question` with
+    no `player_action` written after it, else `"none"`.
+
+    The actor check (sprint 010/11 round 4, Fault A -- ← finding) exists
+    because `roll`/`roll_dice` write `roll_requested` and its own `roll`
+    as two separate rows, not one -- a session-level race (Fault A's own
+    concurrency fix aside, an old row written before that fix, or any
+    other way the pair falls out of sync) can leave a *monster's* attack
+    roll dangling with no matching `roll`. `awaiting` is read by the
+    player's own turn route and rendered as a roll button; a monster has
+    no player to press it, so a dangling monster roll must never surface
+    here -- it is skipped, not returned, and `get_awaiting` falls through
+    to the next candidate exactly as if that row did not exist.
     """
     await _require_member(db, run_id=run_id, user_id=user_id)
 
@@ -3173,9 +3185,24 @@ async def get_awaiting(db: AsyncSession, *, user_id: str, run_id: str) -> str:
         for event in events
         if event.type == "roll" and event.payload.get("requestId") is not None
     }
-    for event in reversed(events):
-        if event.type == "roll_requested" and event.id not in answered_request_ids:
-            return f"roll:{event.id}"
+    unanswered_requests = [
+        event
+        for event in events
+        if event.type == "roll_requested" and event.id not in answered_request_ids
+    ]
+    if unanswered_requests:
+        actor_ids = {
+            RollRequestedPayload.model_validate(event.payload).actor_id
+            for event in unanswered_requests
+        }
+        actors_result = await db.execute(
+            select(GameObject.id, GameObject.member_id).where(GameObject.id.in_(actor_ids))
+        )
+        member_id_by_actor = dict(actors_result.all())
+        for event in reversed(unanswered_requests):
+            actor_id = RollRequestedPayload.model_validate(event.payload).actor_id
+            if member_id_by_actor.get(actor_id) is not None:
+                return f"roll:{event.id}"
 
     question_events = [event for event in events if event.type == "question"]
     if question_events:

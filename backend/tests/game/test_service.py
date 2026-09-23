@@ -640,7 +640,13 @@ def test_the_model_cannot_supply_session_or_user_id():
     assert set(use_exit_schema["properties"]) == {"exit_id", "actor_id"}
 
     attack_schema = tools.attack.tool_call_schema.model_json_schema()
-    assert set(attack_schema["properties"]) == {"target_id", "roll_id", "actor_id", "item_id"}
+    assert set(attack_schema["properties"]) == {
+        "target_id",
+        "roll_id",
+        "actor_id",
+        "item_id",
+        "target_name",
+    }
 
     damage_schema = tools.damage.tool_call_schema.model_json_schema()
     assert set(damage_schema["properties"]) == {"target_id", "roll_id", "hit_id"}

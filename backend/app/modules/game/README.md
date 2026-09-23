@@ -15,7 +15,13 @@ or writes an event.
   point the HTTP route calls: it decides which of five kinds
   (`action`/`answer`/`roll`/`retry`/`opening`) a turn is from the run's own
   thread state and transcript, never from what the caller claims, and
-  returns a `TurnOutcome(turn_id, kind, awaiting)`.
+  returns a `TurnOutcome(turn_id, kind, awaiting)`. The `opening` leg
+  (sprint 010/11 round 4, Fault A — ← finding) first checks `get_awaiting`
+  itself: no real interrupt is pending and nothing is queued to retry, so
+  a non-`"none"` answer there names a stale or dangling request, never the
+  player's own — `{text: null}` against it now raises
+  `ActionNotAvailableError` rather than silently writing a DM-led filler
+  turn.
 - `errors.py` — `GameError`, the base every failure `run_turn` raises
   directly carries (`code`, `details`); a `PlaythroughError` raised inside
   `playthrough.service` propagates through unchanged instead.
@@ -25,12 +31,26 @@ or writes an event.
   `PlaythroughError`/`GameError` onto the one error envelope.
 - `agent/graph.py` — the `StateGraph`: `load_context -> record_action -> guard -> narrate -> (tools -> narrate)* -> record_narration -> END`.
 - `agent/nodes.py` — node factories, context hydration, and routing functions.
+  `narrate` rebuilds `_turn_mechanics_summary` fresh on every call (sprint
+  010/11 round 4, Faults B/C — ← finding: `tool_call attack` recorded
+  `hit` while the narration said "fails to connect", and a character at 0
+  HP was narrated standing): a "This Turn's Mechanical Results" block,
+  read back from this turn's own `tool_call`/`hp_changed`/`roll` events,
+  telling the model what actually happened (and flagging any
+  `attack`/`damage` roll no matching tool call has consumed yet) before
+  it narrates, with an explicit rule not to contradict it.
 - `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id,
   `record_action` —
   what tools need and the model must never supply) and readers.
   `record_action` defaults `True`; `run_turn`'s `opening` leg (sprint
   010/03) sets it `False` so `record_action` (`agent/nodes.py`) writes no
-  player row for a turn with no player text.
+  player row for a turn with no player text. `db_lock` (sprint 010/11
+  round 4, Fault A — ← finding) is an `asyncio.Lock` every tool call
+  serialises against (`agent/tools.py`'s `_serialized`): `ToolNode` runs a
+  batch of tool calls from one `AIMessage` concurrently, but they all
+  share this context's one `AsyncSession`, which is not safe for
+  concurrent use — two goblins attacking in the same turn corrupted the
+  session mid-flush and left a `roll_requested` with no matching `roll`.
 - `agent/tools.py` — the tools the DM may call; each is a thin call into
   `playthrough.service` or `content.service`. `roll_dice`, `attack` and
   `damage` accept an `actor_id` that is a real id or, when that lookup
@@ -40,7 +60,24 @@ or writes an event.
   result instead of raising, so the model's next call can name a real id
   — never a bare `"refused: …"`. `get_scene` adds `creatures_present`
   (`playthrough_service.describe_scene_creatures`) when a run is in
-  context, the same shape the game context below renders.
+  context, the same shape the game context below renders. `roll_dice`'s
+  own result carries a `next_step` hint for `kind="attack"/"damage"`
+  (sprint 010/11 round 4, Fault B — ← finding: three monster attack rolls
+  were made and never followed by `attack`, and the model decided the
+  miss itself) — that total alone is never a hit, a miss or damage;
+  `attack`/`damage` stay the only tools that decide either.
+  `attack` also takes an optional `target_name` (Fault D — ← finding: an
+  attack meant for "the nearest goblin raider" landed on the innkeeper,
+  AC 10, because `target_id` secretly named her): checked case-
+  insensitively against `target_id`'s own resolved name in the current
+  scene before any roll is spent, and refused with the creatures-present
+  hint on a mismatch rather than silently landing on the wrong creature.
+  Every tool is wrapped `@_serialized` (Fault A), which serialises the
+  call against `DmContext.db_lock` — applied directly under `@tool(...)`,
+  never through `ToolNode`'s own `awrap_tool_call` hook, which swallows
+  `ask_player`/`request_player_roll`'s own `interrupt()` into an ordinary
+  error message once any `handle_tool_errors` is set (a gap in
+  `ToolNode._arun_one` itself, not this module's own logic).
 - `prompts/v<n>/system/dm.md` — the DM system prompt, resolved through
   `core/prompts/` as `game/system/dm`.
 - `commands.py` — `app game play --user <id> [--run-id <run-id>] [--actor

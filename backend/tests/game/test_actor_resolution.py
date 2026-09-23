@@ -125,6 +125,91 @@ def test_attack_hands_back_a_structured_hint_when_the_actor_cannot_be_found():
     assert result["living_creatures"] == []
 
 
+def test_attack_refuses_a_target_name_that_does_not_match_the_resolved_target(monkeypatch):
+    """Sprint 010/11 round 4, Fault D -- ← finding: an attack meant for
+    "the nearest goblin raider" landed on the innkeeper instead, because
+    `target_id` secretly named her. `target_name` is checked against the
+    scene's own living creatures before any roll is spent."""
+    canned = [
+        {
+            "id": "mira-1",
+            "name": "Mira",
+            "role": "npc",
+            "is_alive": True,
+            "current_hp": 10,
+            "max_hp": 10,
+            "armour_class": 10,
+            "attacks": [],
+        }
+    ]
+
+    async def fake_describe(*args, **kwargs):
+        return canned
+
+    monkeypatch.setattr(tools.playthrough_service, "describe_scene_creatures", fake_describe)
+
+    called = False
+
+    async def spy_attack(*args, **kwargs):
+        nonlocal called
+        called = True
+        return "hit"
+
+    monkeypatch.setattr(tools.playthrough_service, "attack", spy_attack)
+
+    result = asyncio.run(
+        tools.attack.coroutine(
+            target_id="mira-1",
+            roll_id="roll-1",
+            runtime=_runtime(),
+            actor_id="hero-1",
+            target_name="Goblin Raider",
+        )
+    )
+
+    assert result["status"] == "target_mismatch"
+    assert result["living_creatures"] == canned
+    assert called is False, "the mismatch must be caught before any roll is spent"
+
+
+def test_attack_accepts_a_target_name_that_matches_case_insensitively(monkeypatch):
+    canned = [
+        {
+            "id": "gob-1",
+            "name": "Goblin Raider",
+            "role": "monster",
+            "is_alive": True,
+            "current_hp": 7,
+            "max_hp": 7,
+            "armour_class": 13,
+            "attacks": ["Rusty Shortsword"],
+        }
+    ]
+
+    async def fake_describe(*args, **kwargs):
+        return canned
+
+    monkeypatch.setattr(tools.playthrough_service, "describe_scene_creatures", fake_describe)
+
+    async def fake_attack(*args, **kwargs):
+        return "hit"
+
+    monkeypatch.setattr(tools.playthrough_service, "attack", fake_attack)
+
+    result = asyncio.run(
+        tools.attack.coroutine(
+            target_id="gob-1",
+            roll_id="roll-1",
+            runtime=_runtime(),
+            actor_id="hero-1",
+            target_name="goblin raider",
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert result["outcome"] == "hit"
+
+
 def test_attack_hands_back_a_structured_hint_when_the_actor_is_not_in_the_scene(monkeypatch):
     async def out_of_scene(*args, **kwargs):
         raise ObjectNotReachableError("target-1")

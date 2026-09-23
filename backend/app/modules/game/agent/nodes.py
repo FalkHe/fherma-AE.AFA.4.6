@@ -236,6 +236,134 @@ async def _build_game_context(ctx: DmContext) -> str:
         return ""
 
 
+def _fmt_success(success: bool) -> str:
+    return "succeeded" if success else "failed"
+
+
+async def _turn_mechanics_summary(ctx: DmContext) -> str:
+    """This turn's own recorded mechanical facts, read back from the
+    events it has actually written so far -- ground truth the narration
+    must not contradict (sprint 010/11 round 4, Fault C -- ← finding: a
+    `tool_call attack` recorded `hit` while the narration said "fails to
+    connect", and a character brought to 0 HP with `down: true` was
+    narrated standing "ready for your next move"). Rebuilt fresh on every
+    `narrate` call, never only at `load_context`, so it also covers
+    whatever the tools node just did this turn.
+
+    Also flags an `attack`/`damage` roll no `attack`/`damage` tool_call has
+    consumed yet (Fault B -- ← finding: three monster attack rolls were
+    made through `roll_dice` and never followed by `attack`; the model
+    decided the miss itself instead) -- `roll_dice(kind="attack"/"damage")`
+    stays a legitimate first step (the tool the roll is for `attack`/
+    `damage`'s own `roll_id` argument), so it is not refused outright, but
+    an unresolved one is called out here as exactly that: unresolved.
+
+    Degrades to `""` exactly `_build_game_context`'s own defensive pattern:
+    a test's stub `db` carries no real rows to query, and a turn with no
+    `run_id`/`turn_id` yet (there is nothing to summarise) has nothing to
+    add either.
+    """
+    no_context = ctx.db is None or ctx.run_id is None or ctx.turn_id is None
+    if no_context or not hasattr(ctx.db, "execute"):
+        return ""
+
+    try:
+        stmt = (
+            select(playthrough_models.Event)
+            .where(
+                playthrough_models.Event.campaign_run_id == ctx.run_id,
+                playthrough_models.Event.turn_id == ctx.turn_id,
+            )
+            .order_by(playthrough_models.Event.id)
+        )
+        result = await ctx.db.execute(stmt)
+        events = list(result.scalars().all())
+    except Exception:
+        return ""
+
+    # Every payload is stored through `append_event`'s own `model_dump(by_
+    # alias=True)` (`playthrough.service`), so a raw read here -- same as
+    # `playthrough.service`'s own `_hit_already_damaged` -- always uses the
+    # stored camelCase key (`rollIds`, `actorId`, `targetName`, ...), never
+    # the model's snake_case field name.
+    consumed_roll_ids = {
+        rid
+        for event in events
+        if event.type == "tool_call"
+        for rid in (event.payload.get("rollIds") or [])
+    }
+
+    lines: list[str] = []
+    for event in events:
+        payload = event.payload
+        if event.type == "tool_call":
+            name = payload.get("name")
+            outcome = payload.get("outcome", {})
+            args = payload.get("args", {})
+            ok = payload.get("result") == "ok"
+            if name == "attack":
+                if ok:
+                    lines.append(
+                        f"- ATTACK: {args.get('actorId')} vs {args.get('targetId')} -> "
+                        f"{outcome.get('outcome')} (total {outcome.get('total')} vs AC "
+                        f"{outcome.get('armourClass')})."
+                    )
+                else:
+                    lines.append(f"- ATTACK refused: {outcome.get('reason')}.")
+            elif name == "damage":
+                if ok:
+                    state = (
+                        "DOWN"
+                        if outcome.get("down")
+                        else ("alive" if outcome.get("isAlive") else "dead")
+                    )
+                    lines.append(
+                        f"- DAMAGE: {args.get('targetId')} took {outcome.get('applied')} damage, "
+                        f"HP now {outcome.get('currentHp')} ({state})."
+                    )
+                else:
+                    lines.append(f"- DAMAGE refused: {outcome.get('reason')}.")
+            elif name in ("resolve_check", "resolve_save"):
+                lines.append(f"- {name.upper()}: {_fmt_success(bool(outcome.get('success')))}.")
+            elif name == "passive_check":
+                lines.append(
+                    f"- PASSIVE CHECK: score {outcome.get('passiveScore')} vs DC "
+                    f"{outcome.get('dc')} -> {_fmt_success(bool(outcome.get('success')))}."
+                )
+        elif event.type == "hp_changed":
+            state = "DOWN" if payload.get("down") else ("alive" if payload.get("alive") else "dead")
+            lines.append(
+                f"- HP CHANGED: {payload.get('targetName')} {payload.get('before')} -> "
+                f"{payload.get('after')} ({state})."
+            )
+        elif (
+            event.type == "roll"
+            and payload.get("kind") in ("attack", "damage")
+            and event.id not in consumed_roll_ids
+        ):
+            lines.append(
+                f"- UNRESOLVED {payload.get('kind')} roll (total {payload.get('total')}) for "
+                f"actor {payload.get('actorId')}: no attack/damage tool call has consumed it "
+                "yet -- do not narrate a hit, miss, or damage for this roll until it does."
+            )
+
+    if not lines:
+        return ""
+
+    return (
+        "### This Turn's Mechanical Results (ground truth -- do not contradict)\n"
+        + "\n".join(lines)
+        + "\n\nRule: the results above were decided by the game's own tools, not by you. "
+        "Never say an attack landed when it recorded a miss, or missed when it recorded a "
+        "hit or crit; never describe any creature -- player character or monster -- as "
+        "unharmed, standing, fighting on, or able to act when an HP CHANGED line above marked "
+        "it DOWN or dead -- narrate a character down, unconscious or fallen, and a monster "
+        "dead, defeated or destroyed, never merely wounded or staggered; and never state a "
+        "hit, miss, or damage amount for a roll marked UNRESOLVED above until the matching "
+        "attack/damage tool call actually happens."
+    )
+
+
 def make_load_context() -> Node:
     async def load_context(state: DmState, *, runtime: ToolRuntime[DmContext]) -> dict:
         ctx = runtime.context
@@ -302,12 +430,19 @@ def route_after_guard(state: DmState) -> str:
 def make_narrate(model: BaseChatModel, system_prompt: str) -> Node:
     bound = model.bind_tools(TOOLS)
 
-    async def narrate(state: DmState) -> dict:
+    async def narrate(state: DmState, *, runtime: ToolRuntime[DmContext]) -> dict:
         context = state.get("context", "")
+        parts = [system_prompt]
         if context:
-            full_system = f"{system_prompt}\n\n## Current Game Context\n{context}"
-        else:
-            full_system = system_prompt
+            parts.append(f"## Current Game Context\n{context}")
+        # Rebuilt fresh on every call, not only the turn's first (Fault C,
+        # ← finding): this node runs again after `tools`, so a mechanic
+        # this turn already resolved is ground truth the model must not
+        # contradict by the time it narrates.
+        mechanics = await _turn_mechanics_summary(runtime.context)
+        if mechanics:
+            parts.append(mechanics)
+        full_system = "\n\n".join(parts)
         system = SystemMessage(content=full_system)
         reply = await llm_service.ainvoke_chat(bound, [system, *state["messages"]], label="narrate")
         return {"messages": [reply]}
@@ -320,6 +455,15 @@ def _handle_tool_error(exc: Exception) -> str:
 
 
 def make_tools() -> ToolNode:
+    # Tool bodies serialise themselves against `ctx.db_lock`
+    # (`agent/tools.py`'s `_serialized`) rather than this node reaching
+    # for `ToolNode`'s own `awrap_tool_call` hook (sprint 010/11 round 4,
+    # Fault A -- ← finding): `ToolNode._arun_one` wraps *that* hook's own
+    # call in a bare `except Exception`, with no `GraphBubbleUp` carve-out
+    # the way its inner `_execute_tool_async` has -- installing it here,
+    # with `handle_tool_errors` set, silently swallowed `ask_player`'s and
+    # `request_player_roll`'s own `interrupt()` into an ordinary error
+    # message instead of actually pausing the turn.
     return ToolNode(TOOLS, handle_tool_errors=_handle_tool_error)
 
 
