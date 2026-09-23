@@ -53,7 +53,13 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
 
   return (
     <Stack spacing={4} sx={{ maxWidth: "var(--width-chat)" }}>
-      <Stack spacing={1}>
+      {/* `px: 4` matches `Transcript.tsx`'s own card padding (`p: 4`,
+          `theme.spacing(4)` = the design system's `--sp-4` token) exactly —
+          without it, the header's text sits flush against the page's own
+          slim outer gutter while the card's text sits inset by its own
+          padding, so the two visibly fail to line up at narrow widths (D12
+          §5) even though their outer edges already coincide. */}
+      <Stack spacing={1} sx={{ px: 4 }}>
         {table.campaignTitle !== null && (
           <Link component={RouterLink} to={`/runs/${runId}`} sx={{ alignSelf: "flex-start" }}>
             {t("header.back", { campaign: table.campaignTitle })}
