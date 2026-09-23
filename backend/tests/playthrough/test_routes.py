@@ -106,6 +106,20 @@ def _make_character(**overrides):
         member_id=generate_id(),
         template_id=None,
         instance_key="pc:member-placeholder:1",
+        state={
+            "abilities": {
+                "strength": 10,
+                "dexterity": 14,
+                "constitution": 12,
+                "intelligence": 10,
+                "wisdom": 13,
+                "charisma": 8,
+            },
+            "race": "Human",
+            "character_class": "Fighter",
+            "background": "A soldier of the border watch.",
+            "appearance": "Weathered and grim.",
+        },
     )
     fields.update(overrides)
     return SimpleNamespace(**fields)
@@ -345,7 +359,7 @@ def test_get_run_overview_response_has_exactly_the_camelcase_field_set(
                 username="aragorn",
                 role="owner",
                 ready=False,
-                character_name=None,
+                character=None,
             )
         ],
         adventures=[
@@ -388,7 +402,7 @@ def test_get_run_overview_response_has_exactly_the_camelcase_field_set(
         "username",
         "role",
         "ready",
-        "characterName",
+        "character",
     }
     assert set(body["adventures"][0].keys()) == {"id", "title", "introExcerpt", "status"}
 
@@ -514,7 +528,17 @@ def test_create_character_response_has_exactly_the_camelcase_field_set(
 
     assert response.status_code == 201, response.text
     body = response.json()
-    assert set(body.keys()) == {"id", "name", "currentHp", "maxHp", "armourClass"}
+    assert set(body.keys()) == {
+        "id",
+        "name",
+        "currentHp",
+        "maxHp",
+        "armourClass",
+        "race",
+        "characterClass",
+        "level",
+        "appearance",
+    }
 
 
 def test_create_character_without_session_cookie_returns_401(client, monkeypatch):

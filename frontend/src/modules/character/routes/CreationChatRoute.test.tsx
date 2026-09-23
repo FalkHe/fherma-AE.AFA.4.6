@@ -2,8 +2,16 @@
 // SheetPanel.test.tsx, since it needs no route at all). Rendered through the
 // real guard via `renderApp`, so the session read it makes is always
 // stubbed first, matching every other route suite in this tree.
+//
+// Sprint 009-07, WI1 — the review/save describe block below. `SheetPanel`
+// renders alongside `ReviewPanel` on the wide layout this suite's stubbed
+// `matchMedia` produces (research.md Decision 1's "one `if`" swap only
+// touches `Transcript`/`OfferedChoices`), so every assertion on the review's
+// own copy is scoped with `within` against the panel's own
+// `aria-label={review.title}` region — otherwise a bare `getByText` would
+// match the live sheet panel's identical field values too.
 import { describe, expect, it } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderApp } from "../../../test/render";
@@ -22,7 +30,7 @@ const OVERVIEW = {
   campaignTitle: "The Rotting Stump",
   campaignSummary: "A pub that hides in the wood and only opens for people it likes.",
   unavailable: false,
-  members: [{ userId: "u1", username: "thorin", role: "owner", ready: false, characterName: null }],
+  members: [{ userId: "u1", username: "thorin", role: "owner", ready: false, character: null }],
   adventures: [],
 };
 
@@ -152,5 +160,175 @@ describe("CreationChatRoute on /runs/:runId/create-character (AC1, AC2, AC4-AC6)
 
     expect(screen.queryByText(/chat\.\w+/)).not.toBeInTheDocument();
     expect(screen.queryByText(/character:/)).not.toBeInTheDocument();
+  });
+});
+
+const FULL_SHEET = {
+  name: "Pip Underbough",
+  race: "Halfling",
+  characterClass: "Rogue",
+  level: 1,
+  alignment: "Chaotic Good",
+  abilities: { strength: 8, dexterity: 16, constitution: 14, intelligence: 12, wisdom: 10, charisma: 13 },
+  maxHp: 9,
+  armourClass: 14,
+  speed: 25,
+  skills: ["Stealth", "Sleight of Hand"],
+  equipment: ["Rapier", "Leather armour"],
+  appearance: "Barely three feet of him, all elbows and grin.",
+  backstory: "Raised in the kitchens of a river inn.",
+};
+
+function reviewReply(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    conversationId: "conv-1",
+    reply: "That's everyone. Here's Pip Underbough, ready to walk in.",
+    sheet: FULL_SHEET,
+    step: "review",
+    stepNumber: 7,
+    canSave: true,
+    saved: false,
+    error: false,
+    readyMadeName: null,
+    ...overrides,
+  };
+}
+
+function findReviewRegion() {
+  return screen.findByRole("region", { name: character.review.title });
+}
+
+describe("CreationChatRoute's review and save (sprint 009-07, WI1, AC1-AC3, AC5-AC6)", () => {
+  it("AC1: a review reply renders every field of the finished sheet and both buttons", async () => {
+    stubAuthenticated();
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: reviewReply() });
+
+    renderApp(["/runs/r1/create-character"]);
+
+    const region = await findReviewRegion();
+    const scoped = within(region);
+
+    expect(scoped.getByText("Pip Underbough")).toBeInTheDocument();
+    expect(scoped.getByText("Halfling")).toBeInTheDocument();
+    expect(scoped.getByText("Rogue")).toBeInTheDocument();
+    expect(scoped.getByText("1")).toBeInTheDocument();
+    expect(scoped.getByText("Chaotic Good")).toBeInTheDocument();
+    expect(scoped.getByText("9")).toBeInTheDocument();
+    expect(scoped.getByText("14")).toBeInTheDocument();
+    expect(scoped.getByText("25")).toBeInTheDocument();
+    expect(scoped.getByText("8 (−1)")).toBeInTheDocument();
+    expect(scoped.getByText("Stealth, Sleight of Hand")).toBeInTheDocument();
+    expect(scoped.getByText("Rapier, Leather armour")).toBeInTheDocument();
+    expect(scoped.getByText(FULL_SHEET.appearance)).toBeInTheDocument();
+    expect(scoped.getByText(FULL_SHEET.backstory)).toBeInTheDocument();
+    expect(scoped.getByRole("button", { name: character.review.save })).toBeInTheDocument();
+    expect(scoped.getByRole("button", { name: character.review.change })).toBeInTheDocument();
+  });
+
+  it("AC2: 'Change something' posts its own text and brings the transcript back; 'Looks right, save' posts its own text", async () => {
+    stubAuthenticated();
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: reviewReply() });
+    mockRoute("POST", "/api/v1/character/creation/conv-1/messages", {
+      status: 200,
+      body: reviewReply({ reply: "What would you like to change?" }),
+    });
+
+    const app = renderApp(["/runs/r1/create-character"]);
+    await findReviewRegion();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: character.review.change }));
+
+    expect(screen.queryByRole("region", { name: character.review.title })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(character.review.change)).toBeInTheDocument());
+    expect(screen.getByLabelText(character.chat.placeholder)).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(getRequests({ method: "POST", path: "/api/v1/character/creation/conv-1/messages" })).toHaveLength(1),
+    );
+    expect(getRequests({ method: "POST", path: "/api/v1/character/creation/conv-1/messages" })[0].body).toEqual({
+      text: "Change something",
+    });
+
+    app.unmount();
+
+    stubAuthenticated();
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: reviewReply() });
+    mockRoute("POST", "/api/v1/character/creation/conv-1/messages", { status: 200, body: reviewReply({ saved: false }) });
+
+    renderApp(["/runs/r1/create-character"]);
+    await findReviewRegion();
+
+    await user.click(screen.getByRole("button", { name: character.review.save }));
+
+    await waitFor(() =>
+      expect(getRequests({ method: "POST", path: "/api/v1/character/creation/conv-1/messages" })).toHaveLength(2),
+    );
+    expect(getRequests({ method: "POST", path: "/api/v1/character/creation/conv-1/messages" })[1].body).toEqual({
+      text: "Looks right, save",
+    });
+  });
+
+  it("AC3: a saved:true reply lands on /runs/r1 and a second overview GET is recorded", async () => {
+    stubAuthenticated();
+    mockRoute("GET", "/api/v1/playthrough/runs/r1/overview", [
+      { status: 200, body: OVERVIEW },
+      { status: 200, body: { ...OVERVIEW, members: [{ userId: "u1", username: "thorin", role: "owner", ready: true, character: null }] } },
+    ]);
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: reviewReply() });
+    mockRoute("POST", "/api/v1/character/creation/conv-1/messages", {
+      status: 200,
+      body: reviewReply({ saved: true, reply: "Written down. Off you go." }),
+    });
+
+    const app = renderApp(["/runs/r1"]);
+
+    const createButton = await screen.findByRole("link", { name: "Create character" });
+    const user = userEvent.setup();
+    await user.click(createButton);
+
+    await waitFor(() => expect(app.getPathname()).toBe("/runs/r1/create-character"));
+    await findReviewRegion();
+
+    await user.click(screen.getByRole("button", { name: character.review.save }));
+
+    await waitFor(() => expect(app.getPathname()).toBe("/runs/r1"));
+    await waitFor(() =>
+      expect(getRequests({ method: "GET", path: "/api/v1/playthrough/runs/r1/overview" })).toHaveLength(2),
+    );
+  });
+
+  it("AC5: an error:true reply to the save keeps the review on screen with the in-voice line", async () => {
+    stubAuthenticated();
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: reviewReply() });
+    mockRoute("POST", "/api/v1/character/creation/conv-1/messages", {
+      status: 200,
+      body: reviewReply({ error: true, reply: character.chat.error }),
+    });
+
+    renderApp(["/runs/r1/create-character"]);
+    await findReviewRegion();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: character.review.save }));
+
+    expect(await screen.findByText(character.chat.error)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: character.review.title })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: character.review.save })).toBeInTheDocument();
+  });
+
+  it("AC6: the review's copy equals the values in character.json", async () => {
+    stubAuthenticated();
+    mockRoute("POST", "/api/v1/character/runs/r1/creation", { status: 201, body: reviewReply() });
+
+    renderApp(["/runs/r1/create-character"]);
+
+    const region = await findReviewRegion();
+    expect(within(region).getByRole("heading", { name: character.review.title })).toBeInTheDocument();
+    expect(within(region).getByText(character.review.subtitle)).toBeInTheDocument();
+    expect(within(region).getByRole("button", { name: character.review.save })).toBeInTheDocument();
+    expect(within(region).getByRole("button", { name: character.review.change })).toBeInTheDocument();
+
+    expect(screen.queryByText(/review\.\w+/)).not.toBeInTheDocument();
   });
 });

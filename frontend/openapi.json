@@ -1376,16 +1376,15 @@
             "type": "boolean",
             "title": "Ready"
           },
-          "characterName": {
+          "character": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/CharacterRead"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Charactername"
+            ]
           }
         },
         "type": "object",
@@ -1394,10 +1393,10 @@
           "username",
           "role",
           "ready",
-          "characterName"
+          "character"
         ],
         "title": "CampaignRunMemberRead",
-        "description": "One seat in `GET /runs/{runId}/overview` (WI2, AC3) -- `userId,\nusername, role, ready, characterName`. `ready` is `characterName is not\nNone`; a non-player creature never counts, since only a member's own\ncharacter carries `objects.member_id`."
+        "description": "One seat in `GET /runs/{runId}/overview` (WI2, AC3; sprint 009-07 --\nthe character card rides here whole) -- `userId, username, role, ready,\ncharacter`. `ready` is `character is not None`; a non-player creature\nnever counts, since only a member's own character carries\n`objects.member_id`."
       },
       "CampaignRunOverviewRead": {
         "properties": {
@@ -1799,6 +1798,22 @@
           "armourClass": {
             "type": "integer",
             "title": "Armourclass"
+          },
+          "race": {
+            "type": "string",
+            "title": "Race"
+          },
+          "characterClass": {
+            "type": "string",
+            "title": "Characterclass"
+          },
+          "level": {
+            "type": "integer",
+            "title": "Level"
+          },
+          "appearance": {
+            "type": "string",
+            "title": "Appearance"
           }
         },
         "type": "object",
@@ -1807,10 +1822,14 @@
           "name",
           "currentHp",
           "maxHp",
-          "armourClass"
+          "armourClass",
+          "race",
+          "characterClass",
+          "level",
+          "appearance"
         ],
         "title": "CharacterRead",
-        "description": "The character, on the wire -- `id, name, currentHp, maxHp,\narmourClass` and nothing else (I2): no state, no keys, no ownership."
+        "description": "The character, on the wire -- `id, name, currentHp, maxHp,\narmourClass, race, characterClass, level, appearance` and nothing else\n(I2; sprint 009-07 adds the four card facts -- \u2190 research Decision 5):\nno full state, no keys, no ownership. `race`/`characterClass`/`level`/\n`appearance` are read off the object's `state` column\n(`CharacterState`), never stored as columns of their own."
       },
       "CreationReply": {
         "properties": {

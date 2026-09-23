@@ -38,7 +38,11 @@ from app.modules.auth import service as auth_service
 from app.modules.character import service as character_service
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import CampaignRunNotFoundError
-from app.modules.playthrough.schemas import CampaignRunMemberRead, CampaignRunOverviewRead
+from app.modules.playthrough.schemas import (
+    CampaignRunMemberRead,
+    CampaignRunOverviewRead,
+    CharacterRead,
+)
 from app.modules.users import service as users_service
 from tests.factories import make_session, make_user
 
@@ -85,7 +89,19 @@ def run_overview(monkeypatch, signed_in):
                     username="aragorn",
                     role="owner",
                     ready=has_character,
-                    character_name="Existing Hero" if has_character else None,
+                    character=CharacterRead(
+                        id="existing-hero",
+                        name="Existing Hero",
+                        current_hp=10,
+                        max_hp=10,
+                        armour_class=12,
+                        race="Human",
+                        character_class="Fighter",
+                        level=1,
+                        appearance="Weathered and grim.",
+                    )
+                    if has_character
+                    else None,
                 )
             ],
             adventures=[],

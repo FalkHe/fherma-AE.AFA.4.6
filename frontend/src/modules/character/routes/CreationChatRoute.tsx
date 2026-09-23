@@ -1,11 +1,22 @@
-// `/runs/:runId/create-character` (sprint 009-06, WI1, AC1-AC6). A reload
-// remounts this route and starts a fresh conversation — nothing about it is
-// stored in the browser (research.md Decision 1) — so `useBeforeUnload`
-// (research.md fact 2: the one exit-warning hook that works without a data
-// router; a plain listener re-exported off "react-router" itself, unlike
-// `useBlocker`) is the only guard against losing it that way; the one
-// in-app exit, "Back to the run", opens `LeaveDialog` instead of navigating
-// directly (Decision 3). Browser Back is not intercepted, by the same fact.
+// `/runs/:runId/create-character` (sprint 009-06, WI1, AC1-AC6; sprint
+// 009-07, WI1, AC1/AC2/AC5). A reload remounts this route and starts a fresh
+// conversation — nothing about it is stored in the browser (research.md
+// Decision 1) — so `useBeforeUnload` (research.md fact 2: the one
+// exit-warning hook that works without a data router; a plain listener
+// re-exported off "react-router" itself, unlike `useBlocker`) is the only
+// guard against losing it that way; the one in-app exit, "Back to the run",
+// opens `LeaveDialog` instead of navigating directly (Decision 3). Browser
+// Back is not intercepted, by the same fact.
+//
+// `ReviewPanel` replaces `Transcript`/`OfferedChoices` once
+// `step === "review" && canSave` (sprint 009-07 research.md Decision 1) —
+// the composer stays either way. "Change something" (Decision 2) is
+// remembered as the transcript length at the moment it was clicked: the
+// review stays dismissed until at least two player turns have landed since
+// — the "Change something" message itself, and one further message that
+// actually describes the change — so the very reply to "Change something"
+// can never immediately re-open the review even if it still reports
+// `review`/`canSave` unchanged.
 import { useState } from "react";
 import { useBeforeUnload, useNavigate, useParams } from "react-router";
 import Box from "@mui/material/Box";
@@ -21,6 +32,7 @@ import { useCreationChat } from "../hooks/useCreationChat";
 import { Transcript } from "../components/Transcript";
 import { Composer } from "../components/Composer";
 import { OfferedChoices } from "../components/OfferedChoices";
+import { ReviewPanel } from "../components/ReviewPanel";
 import { SheetPanel } from "../components/SheetPanel";
 import { LeaveDialog } from "../components/LeaveDialog";
 
@@ -34,8 +46,10 @@ export function CreationChatRoute() {
   const theme = useTheme();
   const collapsed = useMediaQuery(theme.breakpoints.down("md"));
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
 
-  const { turns, sheet, step, stepNumber, readyMadeName, isSending, failed, send, retry } = useCreationChat(runId!);
+  const { turns, sheet, step, stepNumber, canSave, readyMadeName, isSending, failed, send, retry } =
+    useCreationChat(runId!);
 
   useBeforeUnload(() => {
     // No return value needed for the app's own state — nothing here is
@@ -45,8 +59,22 @@ export function CreationChatRoute() {
 
   const hasPlayerTurn = turns.some((turn) => turn.speaker === "player");
 
+  const playerTurnsSinceDismissal =
+    dismissedAt === null ? Infinity : turns.slice(dismissedAt).filter((turn) => turn.speaker === "player").length;
+  const reviewDismissed = dismissedAt !== null && playerTurnsSinceDismissal < 2;
+  const showReview = step === "review" && canSave && !reviewDismissed;
+
   function handleLeave() {
     navigate(`/runs/${runId}`);
+  }
+
+  function handleSave() {
+    send(t("review.save"));
+  }
+
+  function handleChangeSomething() {
+    setDismissedAt(turns.length);
+    send(t("review.change"));
   }
 
   return (
@@ -77,14 +105,20 @@ export function CreationChatRoute() {
         }}
       >
         <Stack spacing={4}>
-          <Transcript turns={turns} failed={failed} onRetry={retry} />
-          <OfferedChoices
-            step={step}
-            stepNumber={stepNumber}
-            readyMadeName={readyMadeName}
-            hasPlayerTurn={hasPlayerTurn}
-            onPick={send}
-          />
+          {showReview && sheet ? (
+            <ReviewPanel sheet={sheet} failed={failed} errorText={t("chat.error")} onSave={handleSave} onChange={handleChangeSomething} />
+          ) : (
+            <>
+              <Transcript turns={turns} failed={failed} onRetry={retry} />
+              <OfferedChoices
+                step={step}
+                stepNumber={stepNumber}
+                readyMadeName={readyMadeName}
+                hasPlayerTurn={hasPlayerTurn}
+                onPick={send}
+              />
+            </>
+          )}
           <Composer onSend={send} disabled={isSending} />
         </Stack>
 

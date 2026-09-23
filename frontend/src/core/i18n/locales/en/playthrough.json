@@ -16,7 +16,11 @@
     },
     "card": {
       "noCharacter": "No character yet",
-      "createCharacter": "Create character"
+      "createCharacter": "Create character",
+      "ready": "Ready",
+      "raceClass": "{{race}} {{characterClass}} · Level {{level}}",
+      "hp": "HP {{value}}",
+      "ac": "AC {{value}}"
     },
     "invite": {
       "title": "Invite a player",

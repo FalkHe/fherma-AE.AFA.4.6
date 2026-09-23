@@ -600,6 +600,37 @@ def _member_row(*, member_id="member-1", run_id="run-1", user_id="user-1", role=
     return CampaignRunMember(id=member_id, campaign_run_id=run_id, user_id=user_id, role=role)
 
 
+def _character_object(**overrides) -> GameObject:
+    fields = {
+        "id": "character-1",
+        "campaign_run_id": "run-1",
+        "member_id": "member-1",
+        "kind": "creature",
+        "instance_key": "pc:member-1:1",
+        "name": "Rosalind Thorn",
+        "current_hp": 9,
+        "max_hp": 9,
+        "armour_class": 14,
+        "is_alive": True,
+        "state": {
+            "abilities": {
+                "strength": 8,
+                "dexterity": 16,
+                "constitution": 14,
+                "intelligence": 12,
+                "wisdom": 10,
+                "charisma": 13,
+            },
+            "race": "Halfling",
+            "character_class": "Rogue",
+            "background": "Raised in the kitchens of a river inn.",
+            "appearance": "Barely three feet of him, all elbows and grin.",
+        },
+    }
+    fields.update(overrides)
+    return GameObject(**fields)
+
+
 def test_get_run_overview_members_carry_username_and_role():
     run = _make_campaign_run(id="run-1")
     member = _member_row()
@@ -618,7 +649,7 @@ def test_get_run_overview_members_carry_username_and_role():
     assert overview.members[0].role == "owner"
 
 
-def test_get_run_overview_ready_is_false_with_a_null_character_name():
+def test_get_run_overview_ready_is_false_with_no_character():
     run = _make_campaign_run(id="run-1")
     member = _member_row()
     row = (_member_row(), "aragorn", None)
@@ -632,13 +663,13 @@ def test_get_run_overview_ready_is_false_with_a_null_character_name():
     overview = asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
 
     assert overview.members[0].ready is False
-    assert overview.members[0].character_name is None
+    assert overview.members[0].character is None
 
 
 def test_get_run_overview_ready_is_true_once_the_member_owns_a_character():
     run = _make_campaign_run(id="run-1")
     member = _member_row()
-    row = (_member_row(), "frodo", "Rosalind Thorn")
+    row = (_member_row(), "frodo", _character_object())
     db = FakeSession(
         FakeResult(scalar=member),
         FakeResult(scalar=run),
@@ -649,7 +680,12 @@ def test_get_run_overview_ready_is_true_once_the_member_owns_a_character():
     overview = asyncio.run(service.get_run_overview(db, user_id="user-1", run_id="run-1"))
 
     assert overview.members[0].ready is True
-    assert overview.members[0].character_name == "Rosalind Thorn"
+    character = overview.members[0].character
+    assert character.name == "Rosalind Thorn"
+    assert character.race == "Halfling"
+    assert character.character_class == "Rogue"
+    assert character.level == 1
+    assert character.appearance == "Barely three feet of him, all elbows and grin."
 
 
 def test_get_run_overview_member_query_joins_the_character_by_member_id_and_kind():

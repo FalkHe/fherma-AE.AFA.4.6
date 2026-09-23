@@ -9,8 +9,19 @@
 // `CreationReply` plus the field WI0 adds this sprint) so `OfferedChoices`
 // can offer the gate's "Take <name>" button without parsing it out of the
 // greeting's prose.
+//
+// `canSave` (sprint 009-07, WI1, research.md Decision 1/6) lets the route
+// gate `ReviewPanel` on `step === "review" && canSave`. A `saved: true`
+// reply invalidates the run overview and navigates back to the run — the
+// same invalidate-then-navigate shape `useStartCampaignRun` already uses,
+// needed because the overview's 30s `staleTime` would otherwise show the
+// stale, not-yet-ready party. An `error: true` reply (the save failed) is
+// applied to `turns`/`failed` only, deliberately leaving `sheet`/`step`/
+// `canSave` at their previous value — otherwise a save failure could drop
+// the player out of the review they were trying to confirm (← AC5).
 import { useEffect, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 
 import { api } from "../../../core/api/client";
@@ -34,23 +45,40 @@ type CreationReplyResult = {
 
 export function useCreationChat(runId: string) {
   const { t } = useTranslation("character");
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<SheetSoFar | null>(null);
   const [step, setStep] = useState<CreationStep | null>(null);
   const [stepNumber, setStepNumber] = useState(0);
+  const [canSave, setCanSave] = useState(false);
   const [readyMadeName, setReadyMadeName] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const lastSentRef = useRef<string | null>(null);
 
   function applyReply(reply: CreationReply) {
     setConversationId(reply.conversationId);
-    setSheet(reply.sheet);
-    setStep(reply.step);
-    setStepNumber(reply.stepNumber);
     setReadyMadeName(reply.readyMadeName ?? null);
     setFailed(reply.error);
     setTurns((previous) => [...previous, { speaker: "keeper", text: reply.reply }]);
+
+    if (reply.error) {
+      // Leave `sheet`/`step`/`canSave` exactly as they were — a failed save
+      // must not drop the player out of the review (← AC5, research.md
+      // Decision 6).
+      return;
+    }
+
+    setSheet(reply.sheet);
+    setStep(reply.step);
+    setStepNumber(reply.stepNumber);
+    setCanSave(reply.canSave);
+
+    if (reply.saved) {
+      void queryClient.invalidateQueries({ queryKey: ["runOverview", runId] });
+      navigate(`/runs/${runId}`);
+    }
   }
 
   function handleRequestFailure() {
@@ -118,6 +146,7 @@ export function useCreationChat(runId: string) {
     sheet,
     step,
     stepNumber,
+    canSave,
     readyMadeName,
     isSending: sendMutation.isPending,
     failed,

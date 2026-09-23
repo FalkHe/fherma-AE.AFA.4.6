@@ -46,17 +46,37 @@ class CampaignRunSummaryRead(CamelModel):
     unavailable: bool
 
 
+class CharacterRead(CamelModel):
+    """The character, on the wire -- `id, name, currentHp, maxHp,
+    armourClass, race, characterClass, level, appearance` and nothing else
+    (I2; sprint 009-07 adds the four card facts -- ← research Decision 5):
+    no full state, no keys, no ownership. `race`/`characterClass`/`level`/
+    `appearance` are read off the object's `state` column
+    (`CharacterState`), never stored as columns of their own."""
+
+    id: str
+    name: str
+    current_hp: int
+    max_hp: int
+    armour_class: int
+    race: str
+    character_class: str
+    level: int
+    appearance: str
+
+
 class CampaignRunMemberRead(CamelModel):
-    """One seat in `GET /runs/{runId}/overview` (WI2, AC3) -- `userId,
-    username, role, ready, characterName`. `ready` is `characterName is not
-    None`; a non-player creature never counts, since only a member's own
-    character carries `objects.member_id`."""
+    """One seat in `GET /runs/{runId}/overview` (WI2, AC3; sprint 009-07 --
+    the character card rides here whole) -- `userId, username, role, ready,
+    character`. `ready` is `character is not None`; a non-player creature
+    never counts, since only a member's own character carries
+    `objects.member_id`."""
 
     user_id: str
     username: str
     role: str
     ready: bool
-    character_name: str | None
+    character: CharacterRead | None
 
 
 class CampaignRunAdventureRead(CamelModel):
@@ -145,17 +165,6 @@ class AdventureRunRead(CamelModel):
     adventure_id: str
     status: str
     started_at: datetime
-
-
-class CharacterRead(CamelModel):
-    """The character, on the wire -- `id, name, currentHp, maxHp,
-    armourClass` and nothing else (I2): no state, no keys, no ownership."""
-
-    id: str
-    name: str
-    current_hp: int
-    max_hp: int
-    armour_class: int
 
 
 class CharacterState(BaseModel):

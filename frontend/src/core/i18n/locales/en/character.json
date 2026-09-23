@@ -38,9 +38,18 @@
       },
       "hitPoints": "Hit points",
       "armourClass": "Armour class",
+      "speed": "Speed",
       "skills": "Skills",
-      "equipment": "Equipment"
+      "equipment": "Equipment",
+      "looks": "Looks",
+      "story": "Story"
     }
+  },
+  "review": {
+    "title": "One last look",
+    "subtitle": "This is who walks into the tavern. Saving makes it final for this run.",
+    "save": "Looks right, save",
+    "change": "Change something"
   },
   "leave": {
     "title": "Leave character creation?",

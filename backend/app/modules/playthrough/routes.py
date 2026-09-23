@@ -124,7 +124,7 @@ async def create_character(
         )
     except PlaythroughError as exc:
         raise ApiError(exc.code) from exc
-    return CharacterRead.model_validate(character)
+    return service.character_read(character)
 
 
 @router.post(

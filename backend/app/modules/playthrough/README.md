@@ -108,9 +108,10 @@ commands and the notes below the service list.
   `/campaign/{runId}`, which the path parameter would shadow).
 - `GET /api/v1/playthrough/runs/{runId}/overview` — one run read as a full
   overview screen (WI2, AC3): the run itself, every member with username,
-  role, a `ready` flag and the character's name when one exists, and the
-  campaign's adventures in the campaign's own order with a clipped intro
-  and a `done`/`active`/`unplayed` status — `CampaignRunOverviewRead`. A
+  role, a `ready` flag and the character card (sprint 009-07) when one
+  exists, and the campaign's adventures in the campaign's own order with a
+  clipped intro and a `done`/`active`/`unplayed` status —
+  `CampaignRunOverviewRead`. A
   run whose pinned campaign or version no longer loads still answers `200`
   with `unavailable: true`, no campaign copy and an empty adventure list
   (AC2's twin); `members` is unaffected. A non-member and an unknown id
@@ -153,7 +154,11 @@ commands and the notes below the service list.
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else. A character reads as `id, name, currentHp, maxHp,
-armourClass` and nothing else — `CharacterRead`. An adventure run reads as
+armourClass, race, characterClass, level, appearance` and nothing else —
+`CharacterRead` (sprint 009-07 adds the four card facts, read off the
+object's `state` column through `CharacterState`; `service.character_read`
+is the one place that builds it, shared by the overview and the `POST
+…/character` route). An adventure run reads as
 `id, adventureId, status, startedAt` and nothing else — `AdventureRunRead`.
 An event reads as `id, type, turnId, payload, createdAt` and nothing else —
 `EventRead`; no `visibility`, no cost, no run id. The events route itself
@@ -172,9 +177,10 @@ A run overview (`GET /runs/{runId}/overview`, `CampaignRunOverviewRead`)
 reads as `id, campaignId, contentVersion, title, status, createdAt,
 campaignTitle, campaignSummary, unavailable, members, adventures` and
 nothing else. A member (`CampaignRunMemberRead`) reads as `userId,
-username, role, ready, characterName` — `ready` is `characterName is not
-null`; a non-player creature never flips it, since only a member's own
-character carries `objects.memberId`. An adventure
+username, role, ready, character` — `ready` is `character is not null`;
+`character` is the member's own `CharacterRead` or `null`. A non-player
+creature never flips `ready`, since only a member's own character carries
+`objects.memberId`. An adventure
 (`CampaignRunAdventureRead`) reads as `id, title, introExcerpt, status` —
 `id` is the campaign's adventure id, not the `adventure_runs` row id, and
 `introExcerpt` is the intro clipped to 200 characters at a word boundary
@@ -205,12 +211,17 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `get_campaign_run` — one run by id.
 - `get_run_overview` — one run's aggregate overview (WI2, AC3): members
   from one query joining `campaign_run_members` to `users` and
-  outer-joining `objects` on `member_id == member.id AND kind ==
-  'creature'`, adventures from `_load_pinned(run)` paired with this run's
-  own `adventure_runs` rows, in the campaign's own order. `None` from
-  `_load_pinned` means `unavailable`, no campaign copy and no adventures —
-  `members` is unaffected. Reads only: no commit, no status change, no
-  event.
+  outer-joining the whole `objects` entity on `member_id == member.id AND
+  kind == 'creature'` (sprint 009-07: the full object, not just its name,
+  so `character_read` can build the card), adventures from
+  `_load_pinned(run)` paired with this run's own `adventure_runs` rows, in
+  the campaign's own order. `None` from `_load_pinned` means `unavailable`,
+  no campaign copy and no adventures — `members` is unaffected. Reads
+  only: no commit, no status change, no event.
+- `character_read` (sprint 009-07) — the one place a character `GameObject`
+  becomes a `CharacterRead`, reading `race`/`characterClass`/`level`/
+  `appearance` off `CharacterState.model_validate(obj.state)`; shared by
+  `get_run_overview` and the `POST …/character` route.
 - `_excerpt` — clips text to 200 characters at the last word boundary
   before the cut, `rstrip()`ped and closed with `…`; unchanged when it
   already fits.

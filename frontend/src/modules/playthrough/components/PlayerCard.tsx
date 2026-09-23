@@ -8,6 +8,12 @@
 // state-box fill) still tracks `ready` so a party that already has its
 // characters reads differently from one that doesn't
 // (docs/design/dnd-app-dashboard-design/project/CampaignRun.dc.html:39-59).
+//
+// Once a member has finished creation (sprint 009-07, WI1, AC4), `member.
+// character` carries the whole `CharacterRead` and this card renders
+// `CharacterCard` in place of the ready/not-ready row and its "Create
+// character" link — a saved character has no edit affordance (D14 §1.15),
+// so there is nothing left for that link to do.
 import type { ReactElement } from "react";
 import { Link as RouterLink } from "react-router";
 import Avatar from "@mui/material/Avatar";
@@ -18,10 +24,11 @@ import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { Feather, Shield } from "lucide-react";
+import { Feather } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { RunMember } from "../hooks/useRunOverview";
+import { CharacterCard } from "./CharacterCard";
 
 export interface PlayerCardProps {
   member: RunMember;
@@ -66,33 +73,33 @@ export function PlayerCard({ member, createHref }: PlayerCardProps): ReactElemen
           </Box>
         </Stack>
 
-        <Box
-          sx={(theme) => ({
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 4,
-            flexWrap: "wrap",
-            p: 4,
-            borderRadius: theme.shape.borderRadiusOrganicSoft,
-            backgroundColor: member.ready ? "var(--accent-secondary-quiet)" : "var(--surface-inset)",
-            border: `1px solid ${member.ready ? "var(--accent-secondary)" : "var(--border-hairline)"}`,
-          })}
-        >
-          <Stack direction="row" spacing={3} sx={{ alignItems: "center", minWidth: 0 }}>
-            {member.ready ? (
-              <Shield size={16} aria-hidden color="var(--moss-300)" />
-            ) : (
+        {member.character ? (
+          <CharacterCard character={member.character} />
+        ) : (
+          <Box
+            sx={(theme) => ({
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 4,
+              flexWrap: "wrap",
+              p: 4,
+              borderRadius: theme.shape.borderRadiusOrganicSoft,
+              backgroundColor: "var(--surface-inset)",
+              border: "1px solid var(--border-hairline)",
+            })}
+          >
+            <Stack direction="row" spacing={3} sx={{ alignItems: "center", minWidth: 0 }}>
               <Feather size={16} aria-hidden color="var(--text-muted)" />
-            )}
-            <Typography variant="body2" noWrap>
-              {member.characterName ?? t("party.card.noCharacter")}
-            </Typography>
-          </Stack>
-          <Button variant="outlined" size="small" component={RouterLink} to={createHref}>
-            {t("party.card.createCharacter")}
-          </Button>
-        </Box>
+              <Typography variant="body2" noWrap>
+                {t("party.card.noCharacter")}
+              </Typography>
+            </Stack>
+            <Button variant="outlined" size="small" component={RouterLink} to={createHref}>
+              {t("party.card.createCharacter")}
+            </Button>
+          </Box>
+        )}
       </CardContent>
     </Card>
   );
