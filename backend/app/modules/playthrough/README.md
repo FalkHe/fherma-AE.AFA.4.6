@@ -87,12 +87,18 @@ Owns a player's playthrough of a campaign and who may act in it.
   expression on anything else. `derive_formula(kind, actor, context, *,
   campaign_id, version, item=None)` maps a `RollKind` and an actor to the
   formula that kind implies: an item's or a stat block's own attack
-  (chosen by name through `context["attack"]`, never by position), an
+  (chosen by name through `context["attack"]`, matched case-insensitively
+  — sprint 010/09, ← finding: a self-rolling DM tool call may not echo a
+  content-authored attack name's exact casing — never by position), an
   ability's own modifier (SRD floor division) for `ability_check` /
   `saving_throw`, Dexterity for `initiative`, or, for `custom` alone,
-  `context["expression"]` verbatim. For `attack`/`damage`, an `item` row
-  (sprint 009-02, WI2, AC5 — a sheet-born weapon row with no content
-  template) reads its attacks from its own `state["attacks"]`; otherwise
+  `context["expression"]` verbatim. A missing `context["ability"]` (or an
+  unrecognised one) or a missing `context["expression"]` raises `ValueError`
+  naming what is missing (sprint 010/09, ← finding) rather than a bare
+  `KeyError` the calling tool cannot recover from. For `attack`/`damage`,
+  an `item` row (sprint 009-02, WI2, AC5 — a sheet-born weapon row with no
+  content template) reads its attacks from its own `state["attacks"]`;
+  otherwise
   `context["item_id"]`'s content template, when given, or the actor's own
   stat block, exactly as before. Neither function has a `formula`,
   `modifier`, `bonus`, `faces` or `total` parameter — there is no argument
@@ -362,11 +368,20 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `request_player_roll` — derives the formula from `kind` and the actor via
   `dice.derive_formula`, then appends a player-visible `roll_requested`
   event naming the kind, the actor and that formula. No dice are rolled and
-  no total exists yet — only the request is on record.
+  no total exists yet — only the request is on record. Idempotent within
+  one `turn_id` (sprint 010/09, ← finding): a LangGraph resume re-executes
+  the calling `request_player_roll` tool's coroutine from the top, so this
+  call runs a second time before its own `interrupt()` resolves; a second
+  call for the same `turn_id`/`actor_id`/`kind` with no `roll` answering it
+  yet returns the first call's own event rather than writing a duplicate,
+  orphaned one.
 - `resolve_roll_request` — answers a `roll_requested` event by id: re-uses
   the formula that event already stored rather than deriving it again,
   rolls it through `dice.roll`, and appends the resulting `roll` event —
   dice, modifier and total — at the same visibility the request carried.
+  Idempotent for the same reason `request_player_roll` is (sprint 010/09,
+  ← finding): a second call naming a `request_id` that already has a
+  `roll` returns that `roll` again rather than rolling twice.
 - `roll` — derives, rolls and appends the `roll` event in one call, `dm`
   visibility unless told otherwise; the path for a creature's own roll, or
   any roll the player must not see. Writes its own `roll_requested` event

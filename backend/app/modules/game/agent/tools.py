@@ -11,6 +11,7 @@ from typing import Any
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolRuntime
 from langgraph.types import interrupt
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.modules.content import service as content_service
@@ -60,16 +61,56 @@ async def _resolve_campaign_and_version(
 
 
 ## Roll Tools
+class RollContext(BaseModel):
+    """What the server needs to derive a roll's formula, named explicitly
+    so the model fills the right fields for `kind` instead of guessing at
+    an opaque object (← evidence: an empty `{}` context on an
+    `ability_check` used to fail with a bare `KeyError`, which the model
+    could not recover from). Which fields matter depends on `kind`:
+    `ability_check` / `saving_throw` need `ability` (`dc` and `skill`
+    score and label the roll for the player); `attack` / `damage` may
+    name `item_id` and/or `attack`; `custom` needs `expression`;
+    `initiative` needs nothing. Unused fields are simply left `null`.
+    """
+
+    ability: str | None = Field(
+        default=None,
+        description="Required for ability_check/saving_throw: one of the lowercase SRD "
+        "ability names strength, dexterity, constitution, intelligence, wisdom, charisma.",
+    )
+    skill: str | None = Field(
+        default=None,
+        description="The named skill for a check (e.g. 'perception'), or null when none applies.",
+    )
+    dc: int | None = Field(
+        default=None, description="Difficulty Class, 1-30, for an ability_check or saving_throw."
+    )
+    item_id: str | None = Field(
+        default=None, description="The weapon/item object id being used, for attack/damage."
+    )
+    attack: str | None = Field(
+        default=None,
+        description="Which of the actor's named attacks to use, for attack/damage, when it "
+        "has more than one.",
+    )
+    expression: str | None = Field(
+        default=None, description="Dice expression, e.g. '2d6+1' -- required for kind=custom only."
+    )
+
+
 @tool(ROLL_DICE_TOOL)
 async def roll_dice(
     kind: RollKind,
-    context: dict[str, Any],
+    context: RollContext,
     runtime: ToolRuntime[DmContext],
     actor_id: str | None = None,
 ) -> dict[str, Any]:
-    """Roll dice for an actor. Call this for every roll - never
-    invent a result. `kind` is one of attack, damage, ability_check,
-    saving_throw, initiative, custom. `actor_id` is the acting character's id
+    """Roll dice for a roll the player does not make themselves: NPCs,
+    monsters, hidden rolls, damage, initiative and anything else uncertain
+    that is not a player character's ability check or saving throw - those
+    go through `request_player_roll` instead. Never invent a result. `kind`
+    is one of attack, damage, ability_check, saving_throw, initiative,
+    custom. `actor_id` is the acting character's id
     (optional, defaults to current actor). `context` names what the rules need:
     {"ability": "dexterity"} for a check or save, {"attack": "<name>"} for
     attack/damage, {"expression": "2d6+1"} only for kind custom, {} for
@@ -86,7 +127,7 @@ async def roll_dice(
         user_id=ctx.user_id,
         actor_id=target_actor_id,
         kind=kind,
-        context=context,
+        context=context.model_dump(exclude_none=True),
         visibility="player",
         turn_id=ctx.turn_id,
     )
@@ -308,10 +349,13 @@ async def request_player_roll(
     kind: RollKind,
     runtime: ToolRuntime[DmContext],
     actor_id: str | None = None,
-    context: dict[str, Any] | None = None,
+    context: RollContext | None = None,
 ) -> dict[str, Any]:
     """Ask the player to make a roll of `kind` (ability_check, saving_throw, attack, etc).
-    Interrupts execution and waits for the player to resolve the roll.
+    Use this, never `roll_dice`, for any ability check or saving throw made
+    by a player character; the player rolls, not you. Interrupts execution
+    and waits for the player to resolve the roll - do not also call
+    `roll_dice`, `resolve_check` or `resolve_save` for the same check.
     `actor_id` is the character making the roll (defaults to current actor).
     `context` provides mechanics context: for an ability check or saving
     throw, always include `ability`, `skill` (or `null` when none applies)
@@ -323,13 +367,14 @@ async def request_player_roll(
         raise ValueError(
             "actor_id is required for request_player_roll when no default actor is set in context."
         )
+    context_dict = context.model_dump(exclude_none=True) if context is not None else {}
 
     event = await playthrough_service.request_player_roll(
         ctx.db,
         user_id=ctx.user_id,
         actor_id=target_actor_id,
         kind=kind,
-        context=context or {},
+        context=context_dict,
         turn_id=ctx.turn_id,
     )
 
@@ -340,35 +385,20 @@ async def request_player_roll(
             "kind": kind,
             "formula": event.payload["formula"],
             "actor_id": target_actor_id,
-            "context": context or {},
+            "context": context_dict,
         }
     )
 
-    # Check if a roll answering this request was already recorded before resume
-    run_id = getattr(event, "campaign_run_id", ctx.run_id)
-    roll_event = None
-    if run_id:
-        stmt = select(playthrough_models.Event).where(
-            playthrough_models.Event.campaign_run_id == run_id,
-            playthrough_models.Event.type == "roll",
-        )
-        result = await ctx.db.execute(stmt)
-        roll_event = next(
-            (
-                e
-                for e in result.scalars().all()
-                if isinstance(getattr(e, "payload", None), dict)
-                and e.payload.get("request_id") == event.id
-            ),
-            None,
-        )
-    if roll_event is None:
-        roll_event = await playthrough_service.resolve_roll_request(
-            ctx.db,
-            user_id=ctx.user_id,
-            request_id=event.id,
-            turn_id=ctx.turn_id,
-        )
+    # `request_player_roll`/`resolve_roll_request` are both idempotent
+    # (playthrough.service), so a resume replaying this coroutine from the
+    # top hands back the same `roll_requested` and the same `roll` rather
+    # than writing either twice.
+    roll_event = await playthrough_service.resolve_roll_request(
+        ctx.db,
+        user_id=ctx.user_id,
+        request_id=event.id,
+        turn_id=ctx.turn_id,
+    )
 
     payload = roll_event.payload
     return {

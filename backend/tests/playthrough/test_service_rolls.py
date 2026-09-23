@@ -341,6 +341,139 @@ def test_roll_derives_and_rolls_in_one_call_with_no_prior_request(playthrough_db
     asyncio.run(_scenario())
 
 
+# --- idempotency across a LangGraph interrupt replay (sprint 010/09) ------
+# `request_player_roll`'s own tool coroutine (`game/agent/tools.py`) calls
+# `service.request_player_roll` *before* it calls `interrupt()`; on resume,
+# LangGraph re-executes that coroutine from the top, so this call, and the
+# `resolve_roll_request` call after the interrupt, each run a second time
+# with the same `turn_id`/`actor_id`/`kind` (`request_id`, for the second).
+# Both must hand back the first call's own event rather than writing a
+# second one -- a real DB round trip is the only way to see a genuine
+# duplicate row, hence `@pytest.mark.database` rather than `FakeSession`.
+
+
+@pytest.mark.database
+def test_request_player_roll_is_idempotent_within_one_turn(playthrough_db):
+    async def _scenario():
+        user_id = generate_id()
+        await _insert_user(playthrough_db, user_id, username="request-replay")
+        await playthrough_db.commit()
+        _, character = await _new_character(playthrough_db, user_id=user_id)
+        turn_id = generate_id()
+
+        first = await service.request_player_roll(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            kind="ability_check",
+            context={"ability": "wisdom"},
+            turn_id=turn_id,
+        )
+        # The replay: same turn, same actor, same kind, nothing resolved it
+        # in between -- exactly what a re-executed tool coroutine sends.
+        second = await service.request_player_roll(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            kind="ability_check",
+            context={"ability": "wisdom"},
+            turn_id=turn_id,
+        )
+
+        assert second.id == first.id
+
+        count = (
+            await playthrough_db.execute(
+                text(
+                    "SELECT count(*) FROM events "
+                    "WHERE type = 'roll_requested' AND turn_id = :turn_id"
+                ),
+                {"turn_id": turn_id},
+            )
+        ).scalar_one()
+        assert count == 1
+
+    asyncio.run(_scenario())
+
+
+@pytest.mark.database
+def test_request_player_roll_does_not_reuse_an_already_answered_request(playthrough_db):
+    # A second, genuinely new roll of the same kind for the same actor in
+    # the same turn (e.g. two separate checks in one DM reply) must not be
+    # folded into the first one just because kind/actor/turn line up.
+    async def _scenario():
+        user_id = generate_id()
+        await _insert_user(playthrough_db, user_id, username="request-new")
+        await playthrough_db.commit()
+        _, character = await _new_character(playthrough_db, user_id=user_id)
+        turn_id = generate_id()
+
+        first = await service.request_player_roll(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            kind="ability_check",
+            context={"ability": "wisdom"},
+            turn_id=turn_id,
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(dice, "_rng", lambda: _ScriptedRandom(iter([10])))
+            await service.resolve_roll_request(
+                playthrough_db, user_id=user_id, request_id=first.id, turn_id=turn_id
+            )
+
+        second = await service.request_player_roll(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            kind="ability_check",
+            context={"ability": "strength"},
+            turn_id=turn_id,
+        )
+
+        assert second.id != first.id
+
+    asyncio.run(_scenario())
+
+
+@pytest.mark.database
+def test_resolve_roll_request_is_idempotent_within_one_turn(playthrough_db):
+    async def _scenario():
+        user_id = generate_id()
+        await _insert_user(playthrough_db, user_id, username="resolve-replay")
+        await playthrough_db.commit()
+        _, character = await _new_character(playthrough_db, user_id=user_id)
+
+        requested = await service.request_player_roll(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            kind="ability_check",
+            context={"ability": "wisdom"},
+        )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(dice, "_rng", lambda: _ScriptedRandom(iter([7])))
+            first = await service.resolve_roll_request(
+                playthrough_db, user_id=user_id, request_id=requested.id
+            )
+        # The replay: the same request, resolved again.
+        second = await service.resolve_roll_request(
+            playthrough_db, user_id=user_id, request_id=requested.id
+        )
+
+        assert second.id == first.id
+
+        count = (
+            await playthrough_db.execute(
+                text("SELECT count(*) FROM events WHERE type = 'roll'"),
+            )
+        ).scalar_one()
+        assert count == 1
+
+    asyncio.run(_scenario())
+
+
 @pytest.mark.database
 def test_passive_check_fails_when_the_passive_score_is_below_the_dc(playthrough_db):
     async def _scenario():

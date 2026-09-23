@@ -70,6 +70,7 @@ from app.modules.playthrough.schemas import (
     Item,
     NarrationRead,
     RollKind,
+    RollPayload,
     RollRequestedPayload,
     RunCost,
     TableAdventure,
@@ -1115,6 +1116,48 @@ async def _append_roll(
     )
 
 
+async def _find_pending_roll_request(
+    db: AsyncSession, *, run_id: str, turn_id: str, actor_id: str, kind: RollKind
+) -> Event | None:
+    """The most recent `roll_requested` this turn for `actor_id`/`kind` that
+    no `roll` has answered yet, or `None`.
+
+    Reads every payload back through `RollRequestedPayload`/`RollPayload`
+    rather than raw dict keys: `append_event` stores a payload's camelCase
+    wire alias (`CamelModel`), so a plain `payload.get("request_id")`
+    against the stored row silently never matches (← finding, sprint
+    010/09). Backs `request_player_roll`'s own idempotency: a LangGraph
+    resume re-executes the calling tool's code from the top, including
+    whatever ran before its `interrupt()`, so the same `turn_id`/
+    `actor_id`/`kind` seen twice in one turn is the same request replaying,
+    not a second one.
+    """
+    stmt = (
+        select(Event)
+        .where(
+            Event.campaign_run_id == run_id,
+            Event.turn_id == turn_id,
+            Event.type.in_(("roll_requested", "roll")),
+        )
+        .order_by(Event.id)
+    )
+    result = await db.execute(stmt)
+    events = list(result.scalars().all())
+    answered_request_ids = {
+        RollPayload.model_validate(e.payload).request_id for e in events if e.type == "roll"
+    }
+    candidates = [
+        e
+        for e in events
+        if e.type == "roll_requested"
+        and e.id not in answered_request_ids
+        and (requested := RollRequestedPayload.model_validate(e.payload))
+        and requested.actor_id == actor_id
+        and requested.kind == kind
+    ]
+    return candidates[-1] if candidates else None
+
+
 async def request_player_roll(
     db: AsyncSession,
     *,
@@ -1127,8 +1170,19 @@ async def request_player_roll(
     """Asks the player to make a roll of `kind`, appending `roll_requested`
     at `player` visibility -- the player is the one being asked. The
     event's own id is the request id `resolve_roll_request` answers later
-    (WI2, AC2)."""
+    (WI2, AC2).
+
+    Idempotent within one turn (sprint 010/09, ← finding): when `turn_id`
+    is given and an unanswered `roll_requested` for the same actor and kind
+    already exists on it, that event is returned again rather than a
+    second one being written -- see `_find_pending_roll_request`."""
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+    if turn_id is not None:
+        pending = await _find_pending_roll_request(
+            db, run_id=run.id, turn_id=turn_id, actor_id=actor_id, kind=kind
+        )
+        if pending is not None:
+            return pending
     event = await _append_roll_requested(
         db, run=run, actor=actor, kind=kind, context=context, visibility="player", turn_id=turn_id
     )
@@ -1137,16 +1191,37 @@ async def request_player_roll(
     return event
 
 
+async def _find_roll_answering(db: AsyncSession, *, run_id: str, request_id: str) -> Event | None:
+    """The `roll` event, if any, whose own `request_id` already answers
+    `request_id` -- read through `RollPayload` rather than a raw dict key,
+    for the same reason `_find_pending_roll_request` does."""
+    stmt = select(Event).where(Event.campaign_run_id == run_id, Event.type == "roll")
+    result = await db.execute(stmt)
+    for candidate in result.scalars().all():
+        if RollPayload.model_validate(candidate.payload).request_id == request_id:
+            return candidate
+    return None
+
+
 async def resolve_roll_request(
     db: AsyncSession, *, user_id: str, request_id: str, turn_id: str | None = None
 ) -> Event:
     """Answers the `roll_requested` event named `request_id` with a `roll`,
     re-using its stored `formula`, `kind`, `actor_id` and `visibility`
-    verbatim (WI2, AC2)."""
+    verbatim (WI2, AC2).
+
+    Idempotent (sprint 010/09, ← finding): a second call naming a
+    `request_id` that already has a `roll` -- the `request_player_roll`
+    tool calling this again because its own enclosing LangGraph node
+    replayed on resume -- returns that `roll` again rather than rolling a
+    second time."""
     request_event = await _get_roll_request_event(db, request_id)
     run = await _require_ready_or_active_run(
         db, run_id=request_event.campaign_run_id, user_id=user_id
     )
+    existing = await _find_roll_answering(db, run_id=run.id, request_id=request_id)
+    if existing is not None:
+        return existing
     event = await _append_roll(db, run=run, request_event=request_event, turn_id=turn_id)
     await db.commit()
     await db.refresh(event)

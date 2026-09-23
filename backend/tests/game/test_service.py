@@ -924,6 +924,38 @@ def test_request_player_roll_description_names_ability_skill_dc():
     assert "dc" in description.lower()
 
 
+def test_the_real_dm_prompt_sends_player_checks_through_request_player_roll():
+    # ← sprint 010/09 finding: without this, the model either self-rolled a
+    # player's own check via `roll_dice`, or narrated the DC/ability it
+    # meant to pass to `request_player_roll` as chat text instead of
+    # calling the tool at all.
+    prompt_text = service.load_prompt(service.SYSTEM_PROMPT_ID).text
+
+    assert "request_player_roll" in prompt_text
+    assert "never `roll_dice`" in prompt_text
+    assert "Decide the DC yourself" in prompt_text
+
+
+def test_roll_dice_and_request_player_roll_share_a_named_context_schema():
+    # ← sprint 010/09 finding: a bare `dict[str, Any]` context gives the
+    # provider no field names to fill, and an empty `{}` on an
+    # `ability_check` used to crash the tool with an opaque `KeyError`.
+    # `context` must now expose its own named, described properties.
+    for tool in (tools.roll_dice, tools.request_player_roll):
+        schema = tool.tool_call_schema.model_json_schema()
+        context_schema = schema["$defs"]["RollContext"]
+        assert set(context_schema["properties"]) == {
+            "ability",
+            "skill",
+            "dc",
+            "item_id",
+            "attack",
+            "expression",
+        }
+        for prop in context_schema["properties"].values():
+            assert prop.get("description")
+
+
 def test_tool_failure_is_caught_and_narrated_without_crashing(monkeypatch, prompt):
     from app.modules.playthrough.dice import InvalidDiceExpressionError
 

@@ -70,12 +70,29 @@ or writes an event.
 
 - The checkpointer uses `core/checkpointer/service.py` for Postgres session-level persistence, with `InMemorySaver` fallback for isolated unit testing.
 - Interrupt tools (`ask_player`, `request_player_roll`) pause turn execution via LangGraph `interrupt()` and resume seamlessly via `Command(resume=...)`.
-- The system prompt (sprint 010/09) instructs the DM to always pass
-  `context={"ability": <lowercase SRD name>, "skill": <skill or null>, "dc":
-  <number>}` on `request_player_roll` for ability checks and saving throws,
-  so the free-form `context` already on the wire carries what the play
-  screen needs to label and score the roll; the tool description repeats
-  the same requirement. Nothing else about the roll request changed.
+  A resume re-executes the whole tool coroutine from the top (LangGraph's
+  own documented behaviour), so any side effect before the `interrupt()`
+  call runs a second time — `request_player_roll`/`resolve_roll_request`
+  (`playthrough.service`) are the tools that matter here, and are made
+  idempotent there (sprint 010/09, ← finding) rather than in this module.
+- `roll_dice` and `request_player_roll` share one `context` shape,
+  `tools.RollContext` (sprint 010/09, ← finding): named, described fields
+  (`ability`, `skill`, `dc`, `item_id`, `attack`, `expression`) rather than
+  a bare `dict[str, Any]`, which gave the model no field names to fill and
+  let an empty `{}` reach `dice.derive_formula` as a valid call — the DM
+  would then either silently self-roll a player's own check through
+  `roll_dice`, or narrate the tool's own expected arguments as chat text
+  instead of calling it, and `request_player_roll` never produced a
+  pending roll in live play. The system prompt instructs the DM to always
+  pass `context={"ability": <lowercase SRD name>, "skill": <skill or
+  null>, "dc": <number>}` on `request_player_roll` for ability checks and
+  saving throws, and to route every player-character check/save through
+  `request_player_roll` rather than self-rolling it via `roll_dice`; the
+  tool descriptions repeat the same requirements. `dice.derive_formula`
+  also now raises an actionable `ValueError` (naming what is missing)
+  rather than a bare `KeyError` when a check/save/custom roll's context is
+  still incomplete despite the schema, so a model that gets it wrong once
+  can correct itself instead of retrying the same broken call.
 - The graph is async end to end because the mechanics are.
 - Tests monkeypatch `service.chat_model`, `service.load_prompt` and
   `tools.playthrough_service.roll`; call
