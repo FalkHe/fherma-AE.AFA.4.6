@@ -70,6 +70,12 @@ or writes an event.
 
 - The checkpointer uses `core/checkpointer/service.py` for Postgres session-level persistence, with `InMemorySaver` fallback for isolated unit testing.
 - Interrupt tools (`ask_player`, `request_player_roll`) pause turn execution via LangGraph `interrupt()` and resume seamlessly via `Command(resume=...)`.
+- The system prompt (sprint 010/09) instructs the DM to always pass
+  `context={"ability": <lowercase SRD name>, "skill": <skill or null>, "dc":
+  <number>}` on `request_player_roll` for ability checks and saving throws,
+  so the free-form `context` already on the wire carries what the play
+  screen needs to label and score the roll; the tool description repeats
+  the same requirement. Nothing else about the roll request changed.
 - The graph is async end to end because the mechanics are.
 - Tests monkeypatch `service.chat_model`, `service.load_prompt` and
   `tools.playthrough_service.roll`; call

@@ -313,7 +313,10 @@ async def request_player_roll(
     """Ask the player to make a roll of `kind` (ability_check, saving_throw, attack, etc).
     Interrupts execution and waits for the player to resolve the roll.
     `actor_id` is the character making the roll (defaults to current actor).
-    `context` provides mechanics context: e.g. {"ability": "dexterity"} for check/save."""
+    `context` provides mechanics context: for an ability check or saving
+    throw, always include `ability`, `skill` (or `null` when none applies)
+    and `dc`, e.g. {"ability": "wisdom", "skill": "perception", "dc": 13},
+    or {"ability": "dexterity", "skill": null, "dc": 15} for a save."""
     ctx = runtime.context
     target_actor_id = actor_id or ctx.actor_id
     if not target_actor_id:

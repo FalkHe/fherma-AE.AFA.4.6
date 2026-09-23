@@ -901,6 +901,22 @@ def test_the_real_dm_prompt_names_the_tool_and_the_graph_has_all_nodes():
     }
 
 
+def test_the_real_dm_prompt_requires_ability_skill_dc_in_roll_context():
+    prompt_text = service.load_prompt(service.SYSTEM_PROMPT_ID).text
+
+    assert "ability" in prompt_text
+    assert "skill" in prompt_text
+    assert "dc" in prompt_text.lower()
+
+
+def test_request_player_roll_description_names_ability_skill_dc():
+    description = tools.request_player_roll.description
+
+    assert "ability" in description
+    assert "skill" in description
+    assert "dc" in description.lower()
+
+
 def test_tool_failure_is_caught_and_narrated_without_crashing(monkeypatch, prompt):
     from app.modules.playthrough.dice import InvalidDiceExpressionError
 
