@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
+from app.core.db import get_db_session
 from app.core.ids import generate_id
 from app.core.settings import get_settings
 from app.modules.auth import service as auth_service
@@ -23,6 +24,7 @@ from app.modules.character import service as character_service
 from app.modules.character.errors import CharacterBuildError
 from app.modules.character.schemas import CharacterSheet
 from app.modules.content.schemas import Abilities
+from app.modules.playthrough import routes as playthrough_routes
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import (
     AdventureActiveError,
@@ -1335,4 +1337,106 @@ def test_stream_campaign_run_response_headers(client, monkeypatch, session_cooki
         assert response.headers["content-type"].startswith("text/event-stream")
         assert response.headers["cache-control"] == "no-cache"
         assert response.headers["x-accel-buffering"] == "no"
+        response.read()
+
+
+def test_stream_campaign_run_polls_open_their_own_session_not_the_request_scoped_one(
+    app, client, monkeypatch, session_cookie_header
+):
+    """FastAPI tears the request-scoped session down the moment the handler
+    returns, before the streaming body ever runs -- a poll against it
+    raises `sqlalchemy.exc.MissingGreenlet`. Each poll must instead open
+    its own session from `get_sessionmaker()` (`app.core.db`), never the
+    `db` the handler itself was given."""
+    _stub_auth(monkeypatch)
+    request_session = object()
+    app.dependency_overrides[get_db_session] = lambda: request_session
+
+    poll_session = object()
+
+    class _FakeSessionContext:
+        async def __aenter__(self):
+            return poll_session
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(
+        playthrough_routes, "get_sessionmaker", lambda: lambda: _FakeSessionContext()
+    )
+
+    seen_dbs = []
+    steady_id = generate_id()
+
+    async def fake_latest_event_id(db, **kwargs):
+        seen_dbs.append(db)
+        return steady_id
+
+    monkeypatch.setattr(playthrough_service, "latest_event_id", fake_latest_event_id)
+
+    with (
+        _pinned_sse_settings(monkeypatch, poll_interval="0.01", max_lifetime="0.05"),
+        client.stream(
+            "GET", _stream_path("some-run-id"), headers=session_cookie_header("a-valid-cookie")
+        ) as response,
+    ):
+        assert response.status_code == 200, response.read()
+        response.read()
+
+    # First call is the pre-stream membership check, still on the
+    # request-scoped session; every poll after it must be on the session
+    # `get_sessionmaker()` handed out instead.
+    assert len(seen_dbs) >= 2
+    assert seen_dbs[0] is request_session
+    assert all(db is poll_session for db in seen_dbs[1:])
+
+
+def test_stream_campaign_run_reads_auth_user_id_only_once(
+    client, monkeypatch, session_cookie_header
+):
+    """Regression: `service.latest_event_id`'s own rollback (service.py)
+    expires every attribute a real, ORM-loaded `auth.user` ever loaded --
+    a second `auth.user.id` read afterward would itself raise
+    `MissingGreenlet` the exact way a poll against the torn-down `db`
+    used to (found live, round-2 QA). `id` here answers once and raises
+    on any further read, the same shape an expired ORM attribute takes;
+    the handler must capture `user_id` before its first
+    `service.latest_event_id` call, never read `auth.user.id` again."""
+    session = make_session(user_id=USER_ID, csrf_token=CSRF_TOKEN)
+
+    class _UserIdReadOnce:
+        _reads = 0
+
+        @property
+        def id(self):
+            type(self)._reads += 1
+            if type(self)._reads > 1:
+                raise AssertionError("auth.user.id was read more than once")
+            return USER_ID
+
+    user = _UserIdReadOnce()
+
+    async def fake_resolve_session(db, *, token):
+        return session
+
+    async def fake_get_user_by_id(db, *, user_id):
+        return user
+
+    monkeypatch.setattr(auth_service, "resolve_session", fake_resolve_session)
+    monkeypatch.setattr(users_service, "get_user_by_id", fake_get_user_by_id)
+
+    steady_id = generate_id()
+
+    async def fake_latest_event_id(db, **kwargs):
+        return steady_id
+
+    monkeypatch.setattr(playthrough_service, "latest_event_id", fake_latest_event_id)
+
+    with (
+        _pinned_sse_settings(monkeypatch, poll_interval="0.01", max_lifetime="0.05"),
+        client.stream(
+            "GET", _stream_path("some-run-id"), headers=session_cookie_header("a-valid-cookie")
+        ) as response,
+    ):
+        assert response.status_code == 200, response.read()
         response.read()
