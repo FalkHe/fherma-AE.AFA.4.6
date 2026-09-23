@@ -20,17 +20,24 @@ export interface ComposerProps {
   onSend: (text: string) => void;
 }
 
-const CLOSED_KEYS: Record<Exclude<ComposerState, "open">, string> = {
-  turnRunning: "composer.turnRunning",
-  awaitingChoice: "composer.awaitingChoice",
-  awaitingRoll: "composer.awaitingRoll",
-};
-
 export function Composer({ state, onSend }: ComposerProps): ReactElement {
   const { t } = useTranslation("play");
   const [text, setText] = useState("");
 
   if (state !== "open") {
+    let line: string;
+    switch (state) {
+      case "turnRunning":
+        line = t("composer.turnRunning");
+        break;
+      case "awaitingChoice":
+        line = t("composer.awaitingChoice");
+        break;
+      case "awaitingRoll":
+        line = t("composer.awaitingRoll");
+        break;
+    }
+
     return (
       <Typography
         sx={{
@@ -40,7 +47,7 @@ export function Composer({ state, onSend }: ComposerProps): ReactElement {
           textAlign: "center",
         }}
       >
-        {t(CLOSED_KEYS[state])}
+        {line}
       </Typography>
     );
   }
