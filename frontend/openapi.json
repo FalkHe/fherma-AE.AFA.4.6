@@ -394,6 +394,68 @@
         }
       }
     },
+    "/api/v1/playthrough/runs/{run_id}/table": {
+      "get": {
+        "tags": [
+          "playthrough"
+        ],
+        "summary": "Get Table",
+        "operationId": "get_table_api_v1_playthrough_runs__run_id__table_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TableRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/playthrough/campaign/{run_id}": {
       "get": {
         "tags": [
@@ -1299,6 +1361,25 @@
         ],
         "title": "Abilities"
       },
+      "Ability": {
+        "properties": {
+          "score": {
+            "type": "integer",
+            "title": "Score"
+          },
+          "modifier": {
+            "type": "integer",
+            "title": "Modifier"
+          }
+        },
+        "type": "object",
+        "required": [
+          "score",
+          "modifier"
+        ],
+        "title": "Ability",
+        "description": "One ability score and its signed modifier, on the wire (WI1, sprint\n010/05) -- `modifier` is `dice.ability_modifier(score)`, computed once\nby `service.character_read` rather than left for a client to derive;\nit may be zero or negative."
+      },
       "AdventureRunRead": {
         "properties": {
           "id": {
@@ -1646,6 +1727,39 @@
         ],
         "title": "CampaignSummaryRead"
       },
+      "CharacterAbilities": {
+        "properties": {
+          "strength": {
+            "$ref": "#/components/schemas/Ability"
+          },
+          "dexterity": {
+            "$ref": "#/components/schemas/Ability"
+          },
+          "constitution": {
+            "$ref": "#/components/schemas/Ability"
+          },
+          "intelligence": {
+            "$ref": "#/components/schemas/Ability"
+          },
+          "wisdom": {
+            "$ref": "#/components/schemas/Ability"
+          },
+          "charisma": {
+            "$ref": "#/components/schemas/Ability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strength",
+          "dexterity",
+          "constitution",
+          "intelligence",
+          "wisdom",
+          "charisma"
+        ],
+        "title": "CharacterAbilities",
+        "description": "The character's six ability scores, each an `Ability` (WI1, sprint\n010/05) -- the wire twin of `content.schemas.Abilities`, which carries\nthe bare scores alone."
+      },
       "CharacterCreateRequest": {
         "properties": {
           "name": {
@@ -1811,9 +1925,23 @@
             "type": "integer",
             "title": "Level"
           },
+          "abilities": {
+            "$ref": "#/components/schemas/CharacterAbilities"
+          },
           "appearance": {
             "type": "string",
             "title": "Appearance"
+          },
+          "backstory": {
+            "type": "string",
+            "title": "Backstory"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "type": "array",
+            "title": "Items"
           }
         },
         "type": "object",
@@ -1826,10 +1954,13 @@
           "race",
           "characterClass",
           "level",
-          "appearance"
+          "abilities",
+          "appearance",
+          "backstory",
+          "items"
         ],
         "title": "CharacterRead",
-        "description": "The character, on the wire -- `id, name, currentHp, maxHp,\narmourClass, race, characterClass, level, appearance` and nothing else\n(I2; sprint 009-07 adds the four card facts -- \u2190 research Decision 5):\nno full state, no keys, no ownership. `race`/`characterClass`/`level`/\n`appearance` are read off the object's `state` column\n(`CharacterState`), never stored as columns of their own."
+        "description": "The character, on the wire -- `id, name, currentHp, maxHp,\narmourClass, race, characterClass, level, appearance, abilities,\nbackstory, items` and nothing else (I2; sprint 009-07 adds the four\ncard facts -- \u2190 research Decision 5; WI1 sprint 010/05 widens this to\nthe one hero shape shared by every read that already returns one --\nthe run overview, the `POST \u2026/character` route and intent 009's\ncharacter card): no full state, no keys, no ownership, and no\n`isAlive`/`down` (\u2190 D7 keeps conditions off the card). `race`/\n`characterClass`/`level`/`appearance`/`abilities`/`backstory` are read\noff the object's `state` column (`CharacterState`), never stored as\ncolumns of their own -- `backstory` is `CharacterState.background`\nunder its wire name. `items` is one entry per unit of carried\nquantity, supplied by the caller rather than queried inside\n`character_read`."
       },
       "CreationReply": {
         "properties": {
@@ -2034,6 +2165,25 @@
           "status"
         ],
         "title": "HealthRead"
+      },
+      "Item": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "Item",
+        "description": "One carried instance, on the wire (WI1, sprint 010/05) -- `id`,\n`name` only. One entry per unit of quantity: identical items arrive as\nseparate rows here, and the client groups them, never this shape."
       },
       "RegisterRequest": {
         "properties": {
@@ -2321,6 +2471,131 @@
           "campaignId"
         ],
         "title": "StartCampaignRunRequest"
+      },
+      "TableAdventure": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "runId": {
+            "type": "string",
+            "title": "Runid"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "runId",
+          "title",
+          "status"
+        ],
+        "title": "TableAdventure",
+        "description": "The current adventure, on the play screen's own read (WI2, sprint\n010/05, I1) -- `id` is the campaign's own adventure id (content),\n`runId` the `adventure_runs` row id, alongside `title` and `status`\n(`\"active\"`/`\"completed\"`, `adventure_runs.status` verbatim -- `use_exit`\nmarks a row `completed` without clearing anyone's position, so a\nfinished adventure still reads here rather than vanishing)."
+      },
+      "TableRead": {
+        "properties": {
+          "runId": {
+            "type": "string",
+            "title": "Runid"
+          },
+          "runTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtitle"
+          },
+          "runStatus": {
+            "type": "string",
+            "title": "Runstatus"
+          },
+          "campaignTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaigntitle"
+          },
+          "adventure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TableAdventure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TableScene"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "heroes": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterRead"
+            },
+            "type": "array",
+            "title": "Heroes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "runId",
+          "runTitle",
+          "runStatus",
+          "campaignTitle",
+          "adventure",
+          "scene",
+          "heroes"
+        ],
+        "title": "TableRead",
+        "description": "The play screen's whole answer, in one call (WI2, sprint 010/05,\nI1/I2): the run, its pinned campaign's title, the current adventure and\nscene, and every seated hero -- serves the screen's header, its party\nrail and its full character sheet alike.\n\n`adventure`/`scene` are anchored on the **acting caller's own hero**\n(its `objects.adventure_run_id`/`scene_id`), never on whichever\n`adventure_runs` row happens to read `status == 'active'` -- `use_exit`\ncompletes a row without clearing anyone's position, so an active-row\nanchor would blank the header at exactly the moment an adventure ends\n(\u2190 research). Both are `None` when no adventure was entered yet, the\ncaller has no hero on this run, or the pinned content no longer loads.\n`campaignTitle` is `None` exactly when the pinned content no longer\nloads (`_load_pinned` -> `None`), independent of either. `heroes` is\nevery member's character (`CharacterRead`, WI1), ordered by member id,\nempty before any character has been created -- a member with no\ncharacter yet contributes no row here, unlike `CampaignRunOverviewRead`\nwhich carries one row per member either way."
+      },
+      "TableScene": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "TableScene",
+        "description": "The scene the acting hero stands in, on the play screen's own read\n(WI2, sprint 010/05, I1) -- `id, name` and nothing else. `name` is the\npinned scene's own `title`."
       },
       "TurnRead": {
         "properties": {
