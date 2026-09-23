@@ -9,10 +9,10 @@ stage: running
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | run screen: Start adventure live |
-| 2 | running | opening send and one-shot flag |
-| 3 | running | empty line beside dividers |
-| 4 | open | wiring and READMEs |
+| 1 | done | Start adventure enters and opens play with the one-shot flag |
+| 2 | done | opening send without a player row; one-shot router flag |
+| 3 | done | empty line while only dividers are recorded |
+| 4 | done | play screen fires the opening once; READMEs |
 
 Status: `open | running | done | failed`
 
