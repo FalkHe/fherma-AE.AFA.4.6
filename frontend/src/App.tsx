@@ -14,6 +14,7 @@ import { AppShell } from "./core/layout/AppShell";
 import { DashboardRoute } from "./modules/playthrough/routes/DashboardRoute";
 import { RunRoute } from "./modules/playthrough/routes/RunRoute";
 import { CreationChatRoute } from "./modules/character/routes/CreationChatRoute";
+import { PlayRoute } from "./modules/play/routes/PlayRoute";
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/" element={<DashboardRoute />} />
         <Route path="/runs/:runId" element={<RunRoute />} />
         <Route path="/runs/:runId/create-character" element={<CreationChatRoute />} />
+        <Route path="/runs/:runId/play" element={<PlayRoute />} />
       </Route>
       <Route element={<RequireAnonymous><Outlet /></RequireAnonymous>}>
         <Route path="/signin" element={<SignInRoute />} />

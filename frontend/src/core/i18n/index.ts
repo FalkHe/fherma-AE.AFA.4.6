@@ -7,9 +7,10 @@ import common from "./locales/en/common.json";
 import auth from "./locales/en/auth.json";
 import playthrough from "./locales/en/playthrough.json";
 import character from "./locales/en/character.json";
+import play from "./locales/en/play.json";
 
 export const resources = {
-  en: { common, auth, playthrough, character },
+  en: { common, auth, playthrough, character, play },
 } as const;
 
 void i18next.use(initReactI18next).init({

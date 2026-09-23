@@ -146,11 +146,11 @@ describe("RunRoute's adventures section (sprint 007/06 WI1, AC1-AC5)", () => {
     stubAuthenticated();
     mockRoute("GET", "/api/v1/playthrough/runs/ready/overview", {
       status: 200,
-      body: { ...OVERVIEW, members: [READY_MEMBER], adventures: [adventure("a1", "A door in the wrong wood", "active")] },
+      body: { ...OVERVIEW, members: [READY_MEMBER], adventures: [adventure("a1", "A door in the wrong wood", "unplayed")] },
     });
     mockRoute("GET", "/api/v1/playthrough/runs/waiting/overview", {
       status: 200,
-      body: { ...OVERVIEW, members: [UNREADY_MEMBER], adventures: [adventure("a1", "A door in the wrong wood", "active")] },
+      body: { ...OVERVIEW, members: [UNREADY_MEMBER], adventures: [adventure("a1", "A door in the wrong wood", "unplayed")] },
     });
 
     const ready = renderApp(["/runs/ready"]);
@@ -181,7 +181,7 @@ describe("RunRoute's adventures section (sprint 007/06 WI1, AC1-AC5)", () => {
         members: [READY_MEMBER],
         adventures: [
           adventure("a1", "A door in the wrong wood", "done"),
-          adventure("a2", "The barrel argument", "active"),
+          adventure("a2", "The barrel argument", "unplayed"),
           adventure("a3", "Debts of the landlord", "unplayed"),
         ],
       },
@@ -203,7 +203,7 @@ describe("RunRoute's adventures section (sprint 007/06 WI1, AC1-AC5)", () => {
         members: [READY_MEMBER],
         adventures: [
           adventure("a1", "A door in the wrong wood", "done"),
-          adventure("a2", "The barrel argument", "active"),
+          adventure("a2", "The barrel argument", "unplayed"),
           adventure("a3", "Debts of the landlord", "unplayed"),
         ],
       },
@@ -214,5 +214,49 @@ describe("RunRoute's adventures section (sprint 007/06 WI1, AC1-AC5)", () => {
     const startButtons = await screen.findAllByRole("button", { name: "Start adventure" });
     expect(startButtons).toHaveLength(1);
     expect(startButtons[0]).toBeDisabled();
+  });
+});
+
+describe("RunRoute's adventure under way (sprint 010/06 WI5, AC1)", () => {
+  it("reads In progress and its Continue link opens the play screen for that run", async () => {
+    stubAuthenticated();
+    mockRoute("GET", "/api/v1/playthrough/runs/abc/overview", {
+      status: 200,
+      body: {
+        ...OVERVIEW,
+        members: [READY_MEMBER],
+        adventures: [adventure("a1", "A door in the wrong wood", "active")],
+      },
+    });
+
+    renderApp(["/runs/abc"]);
+
+    await screen.findByText("In progress");
+    const continueLink = screen.getByRole("link", { name: "Continue" });
+    expect(continueLink).toHaveAttribute("href", "/runs/abc/play");
+  });
+
+  it("leaves adventures in other states unchanged: done stays Done, an unplayed one after it stays Locked", async () => {
+    stubAuthenticated();
+    mockRoute("GET", "/api/v1/playthrough/runs/abc/overview", {
+      status: 200,
+      body: {
+        ...OVERVIEW,
+        members: [READY_MEMBER],
+        adventures: [
+          adventure("a1", "A door in the wrong wood", "done"),
+          adventure("a2", "The barrel argument", "active"),
+          adventure("a3", "Debts of the landlord", "unplayed"),
+        ],
+      },
+    });
+
+    renderApp(["/runs/abc"]);
+
+    await screen.findByText("In progress");
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(screen.getByText("Locked")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start adventure" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Continue" })).toHaveAttribute("href", "/runs/abc/play");
   });
 });

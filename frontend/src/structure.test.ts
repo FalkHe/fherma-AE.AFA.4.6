@@ -170,6 +170,9 @@ describe("Repo structure (UI-33, UI-34, UI-40, UI-43, criteria 42/43)", () => {
       // Sprint 009/06: the creation-chat page's own namespace — `chat.*`,
       // `choices.*`, `sheet.*`, `leave.*`.
       "i18n/locales/en/character.json",
+      // Sprint 010/06 WI1: the play screen's own namespace — `header.*`,
+      // `party.*`, `system.*` and every other D12 string that screen needs.
+      "i18n/locales/en/play.json",
       "queryClient.ts",
       // Sprint 007/03: the theme grew from a single `theme.ts` (removed)
       // into a directory, because AC1 needs somewhere to hold the design

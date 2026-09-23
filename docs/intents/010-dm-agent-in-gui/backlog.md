@@ -16,7 +16,7 @@ stage: approved
 | 03 | An action, answer, roll, retry or the opening of a new adventure can be sent to the game over the network | 01 | #57 | done |
 | 04 | Rule lookups and changes in the world become short lines the player can see | 01 | #58 | done |
 | 05 | One read gives the play screen its adventure, scene and each hero's hit points, armour class and sheet | 01 | #59 | done |
-| 06 | "Continue" opens play on its own screen with everything recorded so far; back returns to the lobby | 04, 05 | #60 | open |
+| 06 | "Continue" opens play on its own screen with everything recorded so far; back returns to the lobby | 04, 05 | #60 | done |
 | 07 | The player writes what they do, watches the Dungeon Master think as dice and questions appear, then reads the narration | 03, 06 | #61 | open |
 | 08 | "Start adventure" opens a new adventure straight into play, where the Dungeon Master writes the opening scene | 03, 07 | #62 | open |
 | 09 | When the Dungeon Master asks or calls for a roll, only the offered buttons work; the game rolls | 07 | #63 | open |
@@ -33,6 +33,8 @@ stage: approved
 - Not sprints: cost, model or tone on screen (← D8) · scene artwork (← D14) · replaying a finished adventure (← D11).
 
 ## Proposals
+
+- A check's difficulty and whether the roll made it are never written where a player can read them, so the dice chip cannot show D12's verdict; recording them is its own row.
 
 - The host's proxy may cut a request before D5's two minutes; 03 measures it and reports.
 - 009's sprint 07 (character card on the lobby) should reuse 05's read and 12's sheet.

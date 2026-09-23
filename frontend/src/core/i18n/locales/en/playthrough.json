@@ -31,11 +31,13 @@
     "heading": "Adventures",
     "waitingHint": "Every player needs a character before the first adventure can start.",
     "start": "Start adventure",
+    "continue": "Continue",
     "status": {
       "nextUp": "Next up",
       "waitingOnParty": "Waiting on party",
       "locked": "Locked",
-      "done": "Done"
+      "done": "Done",
+      "inProgress": "In progress"
     }
   },
   "dashboard": {

@@ -77,7 +77,10 @@ then its party and its adventures.
   the first unplayed one reads "Next up"/"Waiting on party" from whether
   every seated member is ready, later rows read "Locked", finished ones
   "Done", and a disabled "Start adventure" sits on the current row only
-  (sprint 007/06 WI1).
+  (sprint 007/06 WI1). An adventure already under way (`status: "active"`)
+  reads "In progress" instead, with a "Continue" link to that run's play
+  screen (`/runs/:runId/play`) rather than the disabled button (sprint
+  010/06 WI5).
 
 ## Surface
 
