@@ -32,3 +32,5 @@ already recorded.
 Brief: docs/intents/010-dm-agent-in-gui/sprints/03-turn-endpoint/brief.md
 
 ## Verdict
+Round 1: changes requested — pressing "Try again" after a turn that broke answered the player with a server error whenever the run had nothing recorded under a turn yet, and that path shipped unproven.
+Round 2: approve — retrying a turn that broke before anything had been recorded now carries on instead of answering with a server error, and the retry path is proven for real: the roll already made is not made again and a narration lands. A run can be played over the network — free words, a chosen answer, a rolled check, a retry after a break and an opening scene, with the game, never the caller, deciding which of these applies.

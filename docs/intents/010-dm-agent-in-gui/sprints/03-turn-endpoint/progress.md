@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-23
 updated: 2026-09-23
-stage: draft
+stage: done
 ---
 # Progress: Sprint 03
 
@@ -23,3 +23,4 @@ The acceptance tests drive the route with the turn engine stubbed, so they prove
 
 ## Verify
 Round 1: changes-requested — AC4: the retry path answered with a server error whenever the run had no turn-bearing event yet, and was never genuinely tested; review.md over the word cap.
+Round 2: approve, no failed criteria.
