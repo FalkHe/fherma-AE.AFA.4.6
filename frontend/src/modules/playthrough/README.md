@@ -80,7 +80,17 @@ then its party and its adventures.
   (sprint 007/06 WI1). An adventure already under way (`status: "active"`)
   reads "In progress" instead, with a "Continue" link to that run's play
   screen (`/runs/:runId/play`) rather than the disabled button (sprint
-  010/06 WI5).
+  010/06 WI5). The "Start adventure" button on the current unplayed row is
+  live while the party is ready (`useEnterAdventure`), disabled while its
+  request is in flight, and shows the shared retryable network-error line
+  for the section on failure (sprint 010/08 WI1).
+- `useEnterAdventure(runId)` — the one write behind "Start adventure":
+  `POST …/campaign/{runId}/adventure`, no body; a 409 `ADVENTURE_ACTIVE`
+  (another tab, or a retry racing the first success) counts as success too.
+  On success it invalidates the run overview and play-table reads and
+  navigates to that run's play screen (`/runs/:runId/play`) with router
+  state `{ startOpening: true }` — a one-shot flag `play`'s `PlayRoute`
+  reads and clears to fire the opening turn.
 
 ## Surface
 
