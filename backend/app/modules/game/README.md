@@ -76,13 +76,6 @@ or writes an event.
   so the free-form `context` already on the wire carries what the play
   screen needs to label and score the roll; the tool description repeats
   the same requirement. Nothing else about the roll request changed.
-- The prompt (sprint 010/09 follow-up) makes `request_player_roll` mandatory
-  for every player-character ability check or saving throw and forbids also
-  calling `roll_dice`/`resolve_check`/`resolve_save` for that same check;
-  `roll_dice`, `resolve_check`, `resolve_save` and `passive_check` stay for
-  NPC/monster rolls, hidden rolls and damage. `request_player_roll` itself
-  already interrupts the turn and waits for the resumed roll, so this was a
-  prompt-only fix — the DM never used to call it at all.
 - The graph is async end to end because the mechanics are.
 - Tests monkeypatch `service.chat_model`, `service.load_prompt` and
   `tools.playthrough_service.roll`; call

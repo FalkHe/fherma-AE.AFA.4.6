@@ -909,13 +909,6 @@ def test_the_real_dm_prompt_requires_ability_skill_dc_in_roll_context():
     assert "dc" in prompt_text.lower()
 
 
-def test_the_real_dm_prompt_sends_player_checks_through_request_player_roll():
-    prompt_text = service.load_prompt(service.SYSTEM_PROMPT_ID).text
-
-    assert "request_player_roll" in prompt_text
-    assert "never `roll_dice`" in prompt_text or "never roll_dice" in prompt_text
-
-
 def test_request_player_roll_description_names_ability_skill_dc():
     description = tools.request_player_roll.description
 

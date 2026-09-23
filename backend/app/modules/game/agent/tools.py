@@ -67,12 +67,9 @@ async def roll_dice(
     runtime: ToolRuntime[DmContext],
     actor_id: str | None = None,
 ) -> dict[str, Any]:
-    """Roll dice for a roll the player does not make themselves: NPCs,
-    monsters, hidden rolls, damage, initiative and anything else uncertain
-    that is not a player character's ability check or saving throw - those
-    go through `request_player_roll` instead. Never invent a result. `kind`
-    is one of attack, damage, ability_check, saving_throw, initiative,
-    custom. `actor_id` is the acting character's id
+    """Roll dice for an actor. Call this for every roll - never
+    invent a result. `kind` is one of attack, damage, ability_check,
+    saving_throw, initiative, custom. `actor_id` is the acting character's id
     (optional, defaults to current actor). `context` names what the rules need:
     {"ability": "dexterity"} for a check or save, {"attack": "<name>"} for
     attack/damage, {"expression": "2d6+1"} only for kind custom, {} for
@@ -314,10 +311,7 @@ async def request_player_roll(
     context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Ask the player to make a roll of `kind` (ability_check, saving_throw, attack, etc).
-    Use this, never `roll_dice`, for any ability check or saving throw made
-    by a player character; the player rolls, not you. Interrupts execution
-    and waits for the player to resolve the roll - do not also call
-    `roll_dice`, `resolve_check` or `resolve_save` for the same check.
+    Interrupts execution and waits for the player to resolve the roll.
     `actor_id` is the character making the roll (defaults to current actor).
     `context` provides mechanics context: for an ability check or saving
     throw, always include `ability`, `skill` (or `null` when none applies)
