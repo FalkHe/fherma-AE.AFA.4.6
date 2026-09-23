@@ -54,13 +54,16 @@ Owns a player's playthrough of a campaign and who may act in it.
 - The `events` table (`models.py`): one row per step of a campaign run's
   transcript -- narration, player action, a requested or resolved roll, a
   question put to the player, a tool call, a scene or adventure milestone, a
-  system message, or an error or warning -- `campaign_run_id`
+  system message, an error or warning, or one of four player-visible
+  mechanic outcomes added in sprint 010/04 (an item moved, hit points
+  changed, a way opened, a rule looked up) -- `campaign_run_id`
   (`ON DELETE CASCADE`) and an optional `actor_member_id`
   (`ON DELETE SET NULL` -- the event outlives the member); an optional
   `turn_id` with no foreign key, since no turn concept exists yet; a `type`
   limited to `narration` / `player_action` / `roll_requested` / `roll` /
   `question` / `tool_call` / `scene_entered` / `adventure_started` /
-  `adventure_completed` / `system` / `error` / `warning` and a `visibility`
+  `adventure_completed` / `system` / `error` / `warning` / `item_moved` /
+  `hp_changed` / `way_opened` / `rule_looked_up` and a `visibility`
   limited to `player` / `dm`; a non-nullable `payload`
   JSONB column with no default; optional `prompt_tokens`,
   `completion_tokens` and `cost_usd` (an exact `NUMERIC(12,6)`, never a
@@ -73,6 +76,10 @@ Owns a player's playthrough of a campaign and who may act in it.
   relationship.
 - The `events` embedding columns and index migration
   (`alembic/versions/0008_event_embeddings.py`).
+- The four-more-event-types migration, widening `ck_events_type` to sixteen
+  values (`alembic/versions/0010_more_event_types.py`, sprint 010/04),
+  self-reversing and additive-only like `0007`'s own `events.type` step,
+  which it mirrors.
 - The dice engine (`dice.py`): `roll(expression)` parses `NdM+-K` and rolls
   it behind an `_rng()` seam (swappable in tests for a scripted sequence of
   faces), capped at 20 dice of at most 100 faces, raising
@@ -159,6 +166,13 @@ An event reads as `id, type, turnId, payload, createdAt` and nothing else —
 `EventRead`; no `visibility`, no cost, no run id. The events route itself
 answers `{events, awaiting}` (`EventsRead`), not a bare array — `awaiting`
 is one of `"none"`, `"roll:<id>"` or `"answer:<id>"`.
+
+`payload: dict[str, Any]` passes through unmapped — a new `type` (like the
+four sprint 010/04 added: `item_moved`, `hp_changed`, `way_opened`,
+`rule_looked_up`) needs a migration, a payload model and a registry entry,
+and **no route, `EventRead`, `EventsRead` or generated client change** to
+reach a caller; older transcripts simply hold no rows of a kind that did
+not exist yet when they were written.
 
 A run summary (`GET /runs`, `CampaignRunSummaryRead`) reads as `id,
 campaignId, status, createdAt, campaignTitle, campaignSummary,
@@ -483,10 +497,12 @@ Service functions (`service.py`), called as `service.f(...)`:
   `events`. Takes the run, `type`, `visibility`, a payload (dict or the
   type's own payload model), and optionally `turn_id`, `actor_member_id`
   and a `core.llm.service.Usage`. Validates the payload against
-  `EVENT_PAYLOADS[type]`, the twelve-entry registry in `schemas.py`
+  `EVENT_PAYLOADS[type]`, the sixteen-entry registry in `schemas.py`
   (`narration`, `player_action`, `roll_requested`, `roll`, `question`,
   `tool_call`, `scene_entered`, `adventure_started`, `adventure_completed`,
-  `system`, `error`, `warning`), and stores it `model_dump(by_alias=True)`.
+  `system`, `error`, `warning`, plus `item_moved`, `hp_changed`,
+  `way_opened` and `rule_looked_up`, added in sprint 010/04), and stores it
+  `model_dump(by_alias=True)`.
   An unknown type or visibility, or a payload that fails its type's shape,
   raises `InvalidEventPayloadError` and writes nothing. `usage.cost_usd`
   becomes `Decimal(str(...))`, never `Decimal(float)`. `add`s and `flush`es

@@ -188,9 +188,11 @@ class GameObject(Base):
 
 
 class Event(Base):
-    """One of the twelve recorded event types -- narration, player action,
+    """One of the sixteen recorded event types -- narration, player action,
     dice rolls, questions, tool calls, scene/adventure lifecycle markers,
-    system and diagnostic notices -- in a campaign run's transcript.
+    system and diagnostic notices, plus four player-visible mechanic
+    outcomes added in sprint 010/04 (an item moved, hit points changed, a
+    way opened, a rule looked up) -- in a campaign run's transcript.
     `visibility` splits what the player sees from DM-only bookkeeping;
     `actor_member_id` is cleared, not cascaded, when the acting member is
     removed, so the event itself survives. `turn_id` has no referent yet --
@@ -207,7 +209,8 @@ class Event(Base):
         CheckConstraint(
             "type IN ('narration','player_action','roll_requested','roll','question',"
             "'tool_call','scene_entered','adventure_started','adventure_completed',"
-            "'system','error','warning')",
+            "'system','error','warning','item_moved','hp_changed','way_opened',"
+            "'rule_looked_up')",
             name="type",
         ),
         CheckConstraint("visibility IN ('player','dm')", name="visibility"),
