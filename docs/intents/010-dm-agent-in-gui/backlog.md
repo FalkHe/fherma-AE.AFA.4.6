@@ -34,6 +34,8 @@ stage: approved
 
 ## Proposals
 
+- A check's difficulty and whether the roll made it are never written where a player can read them, so the dice chip cannot show D12's verdict; recording them is its own row.
+
 - The host's proxy may cut a request before D5's two minutes; 03 measures it and reports.
 - 009's sprint 07 (character card on the lobby) should reuse 05's read and 12's sheet.
 - A finished campaign has nothing left on the lobby; no decision covers it.
