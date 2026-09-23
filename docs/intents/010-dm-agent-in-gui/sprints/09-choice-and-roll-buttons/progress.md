@@ -25,3 +25,4 @@ Local main carried an unpushed backlog commit that reached origin through the sp
 ## Backlog proposals
 
 ## Verify
+Round 1: approve, no failed criteria. Finding beside the criteria: the Dungeon Master's prompt never tells it when to hand the dice to the player, so every check so far was self-rolled and the roll button is unreachable in live play; fixed in the same sprint as a prompt change, then verified once more.

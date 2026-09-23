@@ -33,3 +33,4 @@ mid-way still keeps the thinking line until the long-wait sprint.
 Brief: docs/intents/010-dm-agent-in-gui/sprints/09-choice-and-roll-buttons/brief.md
 
 ## Verdict
+Round 1: approve — when the Dungeon Master puts a question, its answers stand as buttons and nothing else can be sent until one is picked; the pick appears as the player's own words and the turn carries on; a called check shows its difficulty with a single roll button whose press produces the dice result with its made-it or missed mark, all of it still waiting after closing and reopening the screen. Noted for follow-up: in live play the Dungeon Master still rolls checks itself instead of handing the dice over, so the roll button almost never comes up on its own.
