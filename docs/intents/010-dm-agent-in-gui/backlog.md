@@ -33,7 +33,6 @@ stage: approved
 - Not sprints: cost, model or tone on screen (← D8) · scene artwork (← D14) · replaying a finished adventure (← D11).
 
 ## Proposals
-- The Dungeon Master hands the dice to the hero: today it rolls every check itself, so the roll button of sprint 09 never appears in live play; needs prompt tuning against the live model.
 
 - A check's difficulty and whether the roll made it are never written where a player can read them, so the dice chip cannot show D12's verdict; recording them is its own row.
 
