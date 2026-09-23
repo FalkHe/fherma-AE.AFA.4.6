@@ -98,7 +98,17 @@ def run_overview(monkeypatch, signed_in):
                         race="Human",
                         character_class="Fighter",
                         level=1,
+                        abilities={
+                            "strength": {"score": 14, "modifier": 2},
+                            "dexterity": {"score": 12, "modifier": 1},
+                            "constitution": {"score": 13, "modifier": 1},
+                            "intelligence": {"score": 10, "modifier": 0},
+                            "wisdom": {"score": 10, "modifier": 0},
+                            "charisma": {"score": 8, "modifier": -1},
+                        },
                         appearance="Weathered and grim.",
+                        backstory="A soldier of the border watch.",
+                        items=[],
                     )
                     if has_character
                     else None,

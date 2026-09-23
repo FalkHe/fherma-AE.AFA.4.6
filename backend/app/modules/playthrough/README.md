@@ -100,7 +100,7 @@ Owns a player's playthrough of a campaign and who may act in it.
 
 ## Surface
 
-Eleven endpoints, in two path families under `/api/v1/playthrough`, all
+Twelve endpoints, in two path families under `/api/v1/playthrough`, all
 requiring an authenticated caller (`POST` and `PATCH` are also
 CSRF-guarded). Cost and rolling both have no endpoint at all — see the CLI
 commands and the notes below the service list.
@@ -123,6 +123,18 @@ commands and the notes below the service list.
   with `unavailable: true`, no campaign copy and an empty adventure list
   (AC2's twin); `members` is unaffected. A non-member and an unknown id
   are refused alike, exactly like every other read in this module.
+- `GET /api/v1/playthrough/runs/{runId}/table` — one read for the play
+  screen (WI2, sprint 010/05): the run, its pinned campaign's title, the
+  current adventure and scene, and every seated hero's full sheet —
+  `TableRead`, serving the screen's header, its party rail and the full
+  sheet alike in one call. The current adventure and scene are the
+  **caller's own hero**'s, never whichever `adventure_runs` row happens to
+  read `status == 'active'` — `use_exit` completes a row without ever
+  clearing anyone's position, so an active-row anchor would blank the
+  header at exactly the moment an adventure ends. Both are `null` when the
+  caller has no hero yet, the hero has entered no adventure, or the pinned
+  content no longer loads; `campaignTitle` is `null` under that last
+  condition alone. A non-member and an unknown id are refused alike.
 - `POST /api/v1/playthrough/campaign` with `{"campaignId": …}` — starts a
   campaign run, answering `201` and the run.
 - `GET /api/v1/playthrough/campaign` — the caller's runs, newest first,
@@ -161,11 +173,23 @@ commands and the notes below the service list.
 
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else. A character reads as `id, name, currentHp, maxHp,
-armourClass, race, characterClass, level, appearance` and nothing else —
-`CharacterRead` (sprint 009-07 adds the four card facts, read off the
-object's `state` column through `CharacterState`; `service.character_read`
-is the one place that builds it, shared by the overview and the `POST
-…/character` route). An adventure run reads as
+armourClass, race, characterClass, level, abilities, appearance, backstory,
+items` and nothing else — `CharacterRead`, the one hero shape shared by
+every read that already returns one (sprint 009-07 adds the four card
+facts; WI1 sprint 010/05 widens it further, no `isAlive`/`down` — ← D7).
+`abilities` is `{strength|dexterity|constitution|intelligence|wisdom|
+charisma: {score, modifier}}` — `Ability`'s `modifier` is
+`dice.ability_modifier(score)`, computed once server-side. `backstory` is
+`CharacterState.background` under its wire name; `appearance` and
+`backstory` answer `""`, never missing, for an unset value. `items` is
+`Item[]` (`id, name`), one entry per unit of carried quantity — identical
+items arrive as separate rows and the client groups them. `race`/
+`characterClass`/`level`/`appearance`/`abilities`/`backstory` are read off
+the object's `state` column through `CharacterState`; `service.
+character_read(obj, *, items=())` is the one place that builds it, shared
+by the overview, the table read and the `POST …/character` route —
+`items` are carried rows the caller already fetched, never queried inside
+`character_read` itself. An adventure run reads as
 `id, adventureId, status, startedAt` and nothing else — `AdventureRunRead`.
 An event reads as `id, type, turnId, payload, createdAt` and nothing else —
 `EventRead`; no `visibility`, no cost, no run id. The events route itself
@@ -203,6 +227,20 @@ with a trailing `…` when it was cut. `campaignTitle`/`campaignSummary` are
 pinned content no longer loads; `members` reads the same either way, since
 it never touches content.
 
+A table read (`GET /runs/{runId}/table`, `TableRead`, WI2 sprint 010/05)
+reads as `runId, runTitle, runStatus, campaignTitle, adventure, scene,
+heroes` and nothing else. `adventure` (`TableAdventure`) reads as `id`
+(the campaign's own adventure id), `runId` (the `adventure_runs` row id),
+`title`, `status` (`"active"`/`"completed"`, `adventure_runs.status`
+verbatim); `scene` (`TableScene`) reads as `id, name`. Both are the
+**caller's own hero**'s current position (its `objects.adventure_run_id`/
+`scene_id`), not whichever `adventure_runs` row reads `status == 'active'`
+— `use_exit` completes a row without clearing anyone's position, so an
+active-row anchor would blank the header at exactly the moment an
+adventure ends. `heroes` is every member's `CharacterRead`, ordered by
+member id — a seat with no character yet contributes no row here, unlike
+`CampaignRunOverviewRead.members`, which always carries one row per seat.
+
 Service functions (`service.py`), called as `service.f(...)`:
 
 - `list_run_summaries` — `list_campaign_runs`'s own rows and order,
@@ -232,10 +270,23 @@ Service functions (`service.py`), called as `service.f(...)`:
   the campaign's own order. `None` from `_load_pinned` means `unavailable`,
   no campaign copy and no adventures — `members` is unaffected. Reads
   only: no commit, no status change, no event.
+- `get_table` (WI2, sprint 010/05) — one aggregate read for the play
+  screen: members and their characters from the same join
+  `get_run_overview` uses, but only a seat with a character contributes a
+  `heroes` row; items the same grouped-query way. The current adventure
+  and scene are read off the **caller's own** member's character
+  (`objects.adventure_run_id`/`scene_id`), paired with that id's own
+  `adventure_runs` row and the pinned content's own adventure/scene titles
+  — never the `adventure_runs` row that happens to read `status ==
+  'active'`, since `use_exit` completes a row without ever clearing
+  anyone's position. Both `None` when the caller has no hero, the hero has
+  entered no adventure, or `_load_pinned(run)` answers `None`;
+  `campaignTitle` is `None` under that last condition alone. Reads only:
+  no commit, no status change, no event.
 - `character_read` (sprint 009-07) — the one place a character `GameObject`
   becomes a `CharacterRead`, reading `race`/`characterClass`/`level`/
   `appearance` off `CharacterState.model_validate(obj.state)`; shared by
-  `get_run_overview` and the `POST …/character` route.
+  `get_run_overview`, `get_table` and the `POST …/character` route.
 - `_excerpt` — clips text to 200 characters at the last word boundary
   before the cut, `rstrip()`ped and closed with `…`; unchanged when it
   already fits.

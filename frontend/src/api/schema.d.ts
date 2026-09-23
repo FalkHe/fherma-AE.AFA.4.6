@@ -141,6 +141,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/playthrough/runs/{run_id}/table": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Table */
+        get: operations["get_table_api_v1_playthrough_runs__run_id__table_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/playthrough/campaign/{run_id}": {
         parameters: {
             query?: never;
@@ -350,6 +367,19 @@ export interface components {
             charisma: number;
         };
         /**
+         * Ability
+         * @description One ability score and its signed modifier, on the wire (WI1, sprint
+         *     010/05) -- `modifier` is `dice.ability_modifier(score)`, computed once
+         *     by `service.character_read` rather than left for a client to derive;
+         *     it may be zero or negative.
+         */
+        Ability: {
+            /** Score */
+            score: number;
+            /** Modifier */
+            modifier: number;
+        };
+        /**
          * AdventureRunRead
          * @description One adventure run, on the wire -- `id, adventureId, status,
          *     startedAt` and nothing else (I1): the adventure run's internals
@@ -512,6 +542,20 @@ export interface components {
             adventureCount: number;
         };
         /**
+         * CharacterAbilities
+         * @description The character's six ability scores, each an `Ability` (WI1, sprint
+         *     010/05) -- the wire twin of `content.schemas.Abilities`, which carries
+         *     the bare scores alone.
+         */
+        CharacterAbilities: {
+            strength: components["schemas"]["Ability"];
+            dexterity: components["schemas"]["Ability"];
+            constitution: components["schemas"]["Ability"];
+            intelligence: components["schemas"]["Ability"];
+            wisdom: components["schemas"]["Ability"];
+            charisma: components["schemas"]["Ability"];
+        };
+        /**
          * CharacterCreateRequest
          * @description What a player submits to build a level-1 character; `builder.py`
          *     turns this into a `CharacterSheet` (validating and deriving everything
@@ -565,11 +609,19 @@ export interface components {
         /**
          * CharacterRead
          * @description The character, on the wire -- `id, name, currentHp, maxHp,
-         *     armourClass, race, characterClass, level, appearance` and nothing else
-         *     (I2; sprint 009-07 adds the four card facts -- ← research Decision 5):
-         *     no full state, no keys, no ownership. `race`/`characterClass`/`level`/
-         *     `appearance` are read off the object's `state` column
-         *     (`CharacterState`), never stored as columns of their own.
+         *     armourClass, race, characterClass, level, appearance, abilities,
+         *     backstory, items` and nothing else (I2; sprint 009-07 adds the four
+         *     card facts -- ← research Decision 5; WI1 sprint 010/05 widens this to
+         *     the one hero shape shared by every read that already returns one --
+         *     the run overview, the `POST …/character` route and intent 009's
+         *     character card): no full state, no keys, no ownership, and no
+         *     `isAlive`/`down` (← D7 keeps conditions off the card). `race`/
+         *     `characterClass`/`level`/`appearance`/`abilities`/`backstory` are read
+         *     off the object's `state` column (`CharacterState`), never stored as
+         *     columns of their own -- `backstory` is `CharacterState.background`
+         *     under its wire name. `items` is one entry per unit of carried
+         *     quantity, supplied by the caller rather than queried inside
+         *     `character_read`.
          */
         CharacterRead: {
             /** Id */
@@ -588,8 +640,13 @@ export interface components {
             characterClass: string;
             /** Level */
             level: number;
+            abilities: components["schemas"]["CharacterAbilities"];
             /** Appearance */
             appearance: string;
+            /** Backstory */
+            backstory: string;
+            /** Items */
+            items: components["schemas"]["Item"][];
         };
         /**
          * CreationReply
@@ -683,6 +740,18 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * Item
+         * @description One carried instance, on the wire (WI1, sprint 010/05) -- `id`,
+         *     `name` only. One entry per unit of quantity: identical items arrive as
+         *     separate rows here, and the client groups them, never this shape.
+         */
+        Item: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** RegisterRequest */
         RegisterRequest: {
             /** Username */
@@ -746,6 +815,75 @@ export interface components {
         StartCampaignRunRequest: {
             /** Campaignid */
             campaignId: string;
+        };
+        /**
+         * TableAdventure
+         * @description The current adventure, on the play screen's own read (WI2, sprint
+         *     010/05, I1) -- `id` is the campaign's own adventure id (content),
+         *     `runId` the `adventure_runs` row id, alongside `title` and `status`
+         *     (`"active"`/`"completed"`, `adventure_runs.status` verbatim -- `use_exit`
+         *     marks a row `completed` without clearing anyone's position, so a
+         *     finished adventure still reads here rather than vanishing).
+         */
+        TableAdventure: {
+            /** Id */
+            id: string;
+            /** Runid */
+            runId: string;
+            /** Title */
+            title: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "completed";
+        };
+        /**
+         * TableRead
+         * @description The play screen's whole answer, in one call (WI2, sprint 010/05,
+         *     I1/I2): the run, its pinned campaign's title, the current adventure and
+         *     scene, and every seated hero -- serves the screen's header, its party
+         *     rail and its full character sheet alike.
+         *
+         *     `adventure`/`scene` are anchored on the **acting caller's own hero**
+         *     (its `objects.adventure_run_id`/`scene_id`), never on whichever
+         *     `adventure_runs` row happens to read `status == 'active'` -- `use_exit`
+         *     completes a row without clearing anyone's position, so an active-row
+         *     anchor would blank the header at exactly the moment an adventure ends
+         *     (← research). Both are `None` when no adventure was entered yet, the
+         *     caller has no hero on this run, or the pinned content no longer loads.
+         *     `campaignTitle` is `None` exactly when the pinned content no longer
+         *     loads (`_load_pinned` -> `None`), independent of either. `heroes` is
+         *     every member's character (`CharacterRead`, WI1), ordered by member id,
+         *     empty before any character has been created -- a member with no
+         *     character yet contributes no row here, unlike `CampaignRunOverviewRead`
+         *     which carries one row per member either way.
+         */
+        TableRead: {
+            /** Runid */
+            runId: string;
+            /** Runtitle */
+            runTitle: string | null;
+            /** Runstatus */
+            runStatus: string;
+            /** Campaigntitle */
+            campaignTitle: string | null;
+            adventure: components["schemas"]["TableAdventure"] | null;
+            scene: components["schemas"]["TableScene"] | null;
+            /** Heroes */
+            heroes: components["schemas"]["CharacterRead"][];
+        };
+        /**
+         * TableScene
+         * @description The scene the acting hero stands in, on the play screen's own read
+         *     (WI2, sprint 010/05, I1) -- `id, name` and nothing else. `name` is the
+         *     pinned scene's own `title`.
+         */
+        TableScene: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
         };
         /**
          * TurnRead
@@ -1116,6 +1254,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CampaignRunOverviewRead"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_table_api_v1_playthrough_runs__run_id__table_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TableRead"];
                 };
             };
             /** @description Unauthorized */

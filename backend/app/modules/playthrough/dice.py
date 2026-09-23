@@ -95,10 +95,14 @@ def roll(expression: str) -> DiceRoll:
     return DiceRoll(faces=faces, modifier=modifier, total=sum(faces) + modifier)
 
 
-def _ability_modifier(score: int) -> int:
+def ability_modifier(score: int) -> int:
     """The SRD's own formula -- floor division, so a score of 7 gives -2,
     not -1 (the product owner's standing instruction: SRD rules win
-    wherever something is ambiguous)."""
+    wherever something is ambiguous). Public (WI1, sprint 010/05): the one
+    seam `character.builder.modifier` and `playthrough.service.character_read`
+    both call directly, rather than reaching into a private name across a
+    module boundary. `character.service._modifier` keeps its own,
+    deliberately undisturbed copy (← that sprint's own scope decision)."""
     return (score - 10) // 2
 
 
@@ -206,10 +210,10 @@ def derive_formula(
     if kind in ("ability_check", "saving_throw"):
         abilities = _actor_abilities(actor, campaign_id=campaign_id, version=version)
         score = getattr(abilities, context["ability"])
-        return _signed_d20(_ability_modifier(score))
+        return _signed_d20(ability_modifier(score))
 
     if kind == "initiative":
         abilities = _actor_abilities(actor, campaign_id=campaign_id, version=version)
-        return _signed_d20(_ability_modifier(abilities.dexterity))
+        return _signed_d20(ability_modifier(abilities.dexterity))
 
     raise ValueError(f"unknown roll kind: {kind}")
