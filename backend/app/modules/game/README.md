@@ -82,6 +82,11 @@ or writes an event.
   since the last `HumanMessage` (the boundary an interrupt survives) and
   passes the total as that turn's narration `usage=`; `playthrough.service`
   stores it and sums it back up per run.
+- `lookup_rule` writes a player-visible `rule_looked_up` entry
+  (`playthrough_service.record_rule_lookup`, sprint 010/04, I3) only when
+  the search actually matched and `ctx.run_id` is set; the entry carries
+  the best match's `heading_path`, never the rules text and never the
+  model's own query.
 - `run_turn`'s own building blocks are `thread_state()` (the checkpoint's
   pending interrupt, if any, plus whether a next step is queued at all —
   `ThreadState`) and `retry()` (`invoke(None)`, resuming a broken turn from

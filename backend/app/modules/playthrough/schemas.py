@@ -234,7 +234,9 @@ class RunCost(BaseModel):
 # `narration` (`text` only) and one `NoticePayload` shared by `system`,
 # `error` and `warning` (`message`, optional `details`). `EVENT_PAYLOADS`
 # is the registry `append_event` validates every write against -- the only
-# place these twelve names are declared.
+# place these sixteen names are declared: the twelve settled in intent 005,
+# plus four added by intent 010 sprint 04 (`item_moved`, `hp_changed`,
+# `way_opened`, `rule_looked_up`) per that sprint's plan, interface I1.
 
 RollKind = Literal["attack", "damage", "ability_check", "saving_throw", "initiative", "custom"]
 
@@ -311,10 +313,14 @@ class ToolCallPayload(EventPayload):
 
 
 class SceneEnteredPayload(EventPayload):
-    """`scene_entered` -- a move within an adventure."""
+    """`scene_entered` -- a move within an adventure. `scene_title` (sprint
+    010/04) is read from the destination's pinned content by the mechanic
+    that writes this event; it stays optional since older rows, written
+    before this field existed, carry none."""
 
     adventure_run_id: str
     scene_id: str
+    scene_title: str | None = None
 
 
 class AdventurePayload(EventPayload):
@@ -331,6 +337,56 @@ class NoticePayload(EventPayload):
     details: dict[str, Any] | None = None
 
 
+class ItemMovedPayload(EventPayload):
+    """`item_moved` (sprint 010/04, I1) -- a hero takes, drops or gives an
+    item, `movement` naming which. `to_id`/`to_name` name the receiver and
+    are only ever set for `movement="given"`; `take`/`drop` leave both
+    `None`."""
+
+    movement: Literal["taken", "dropped", "given"]
+    actor_id: str
+    actor_name: str
+    item_id: str
+    item_name: str
+    to_id: str | None = None
+    to_name: str | None = None
+
+
+class HpChangedPayload(EventPayload):
+    """`hp_changed` (sprint 010/04, I1) -- a target's hit points move from
+    `before` to `after`, alongside `max_hp` and the two derived flags
+    `alive`/`down` the mechanic already holds when it writes this."""
+
+    target_id: str
+    target_name: str
+    before: int
+    after: int
+    max_hp: int
+    alive: bool
+    down: bool
+
+
+class WayOpenedPayload(EventPayload):
+    """`way_opened` (sprint 010/04, I1) -- an interaction with a fixture
+    succeeded and changed something. `action` is the authored action
+    verbatim (e.g. `"pick_lock"`), never the model's own words; written on
+    success only -- a failed check changed nothing and leaves no row."""
+
+    actor_id: str
+    actor_name: str
+    object_id: str
+    object_name: str
+    action: str
+
+
+class RuleLookedUpPayload(EventPayload):
+    """`rule_looked_up` (sprint 010/04, I1) -- `topic` is the best match's
+    full `heading_path` (e.g. `"Chapter 7 › Using Ability Scores ›
+    Hiding"`), never the rules text and never the model's own query."""
+
+    topic: str
+
+
 EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     "narration": NarrationPayload,
     "player_action": PlayerActionPayload,
@@ -344,4 +400,8 @@ EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     "system": NoticePayload,
     "error": NoticePayload,
     "warning": NoticePayload,
+    "item_moved": ItemMovedPayload,
+    "hp_changed": HpChangedPayload,
+    "way_opened": WayOpenedPayload,
+    "rule_looked_up": RuleLookedUpPayload,
 }
