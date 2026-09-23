@@ -257,7 +257,17 @@ async def turn(
     and un-paraphrased. `before` bounds the collection to this turn, so an
     earlier turn's sheet is never repeated."""
     config = RunnableConfig(
-        **tracing.langchain_config("creation-turn"), configurable={"thread_id": thread_id}
+        **tracing.langchain_config(
+            "creation-turn",
+            metadata={
+                "thread_id": thread_id,
+                "user_id": context.user_id,
+                "campaign_id": context.run_id,
+                "agent": "character-creator",
+            },
+        ),
+        configurable={"thread_id": thread_id},
+        tags=["agent:character-creator"],
     )
     before = (await agent.aget_state(config)).values.get("messages", [])
     result: dict[str, Any] = await agent.ainvoke(

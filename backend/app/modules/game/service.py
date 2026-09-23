@@ -88,6 +88,23 @@ def _extract_turn_result(result: dict[str, Any], before_count: int) -> TurnResul
     )
 
 
+def _turn_config(*, thread_id: str, context: DmContext) -> RunnableConfig:
+    metadata = {
+        "thread_id": thread_id,
+        "user_id": context.user_id,
+        "agent": "dungeon-master",
+    }
+    if context.run_id is not None:
+        metadata["campaign_id"] = context.run_id
+    if context.turn_id is not None:
+        metadata["turn_id"] = context.turn_id
+    return RunnableConfig(
+        **tracing.langchain_config("dm-turn", metadata=metadata),
+        configurable={"thread_id": thread_id},
+        tags=["agent:dm"],
+    )
+
+
 async def turn(
     agent: CompiledStateGraph[DmState, DmContext],
     *,
@@ -97,9 +114,7 @@ async def turn(
 ) -> TurnResult:
     """`rolls` covers this turn only, hence the message count taken before
     invoking."""
-    config = RunnableConfig(
-        **tracing.langchain_config("dm-turn"), configurable={"thread_id": thread_id}
-    )
+    config = _turn_config(thread_id=thread_id, context=context)
     before = (await agent.aget_state(config)).values.get("messages", [])
     result = await agent.ainvoke(
         {"messages": [HumanMessage(content=player_text)]}, config=config, context=context
@@ -115,9 +130,7 @@ async def resume(
     resume_value: Any,
 ) -> TurnResult:
     """Resumes a paused agent thread from an interrupt."""
-    config = RunnableConfig(
-        **tracing.langchain_config("dm-turn"), configurable={"thread_id": thread_id}
-    )
+    config = _turn_config(thread_id=thread_id, context=context)
     before = (await agent.aget_state(config)).values.get("messages", [])
     result = await agent.ainvoke(Command(resume=resume_value), config=config, context=context)
     return _extract_turn_result(result, len(before))
@@ -134,9 +147,7 @@ async def retry(
     new human message (`turn`) or answering an interrupt (`resume`) --
     whatever step already completed (a roll already recorded, say) is not
     repeated, only whatever comes after it (sprint 010/03, I3)."""
-    config = RunnableConfig(
-        **tracing.langchain_config("dm-turn"), configurable={"thread_id": thread_id}
-    )
+    config = _turn_config(thread_id=thread_id, context=context)
     before = (await agent.aget_state(config)).values.get("messages", [])
     result = await agent.ainvoke(None, config=config, context=context)
     return _extract_turn_result(result, len(before))
