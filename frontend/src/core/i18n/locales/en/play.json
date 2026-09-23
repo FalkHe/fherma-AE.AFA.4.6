@@ -1,0 +1,48 @@
+{
+  "header": {
+    "back": "‹ {{campaign}}",
+    "scene": "{{scene}} · saved as you go"
+  },
+  "party": {
+    "heading": "Party",
+    "raceClass": "{{race}} {{characterClass}} · Level {{level}}",
+    "hp": "HP {{current}} / {{max}}",
+    "ac": "AC {{value}}"
+  },
+  "narration": {
+    "author": "The Dungeon Master"
+  },
+  "composer": {
+    "placeholder": "What do you do?",
+    "send": "Send",
+    "turnRunning": "The Dungeon Master has the floor.",
+    "awaitingChoice": "The Dungeon Master is waiting on one of those.",
+    "awaitingRoll": "The dice go first."
+  },
+  "thinking": {
+    "first": "The Dungeon Master is thinking…",
+    "long": "Still thinking. This one is taking its time — nothing is lost, the Dungeon Master is still at it."
+  },
+  "roll": {
+    "button": "Roll {{notation}}"
+  },
+  "system": {
+    "ruleLookedUp": "Checked the rules · {{topic}}",
+    "itemTaken": "{{name}} takes the {{item}}",
+    "itemDropped": "{{name}} drops the {{item}}",
+    "itemGiven": "{{name}} gives the {{item}} to {{to}}",
+    "hpChanged": "{{name}}: {{before}} → {{after}} hit points",
+    "wayOpened": "{{name}} · {{action}}",
+    "check": "{{ability}} ({{skill}})"
+  },
+  "failure": {
+    "line": "The Dungeon Master has lost the thread of that one. Nothing that already happened is lost — shall we pick it up again?",
+    "retry": "Try again"
+  },
+  "end": {
+    "marker": "Here ends {{adventure}}",
+    "button": "Back to {{campaign}}"
+  },
+  "empty": "Nothing written down yet. The Dungeon Master is opening the book.",
+  "jumpToLatest": "Jump to the latest"
+}
