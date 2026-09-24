@@ -105,7 +105,7 @@ or writes an event.
 | `roll_dice(kind, context)` → `playthrough.service.roll` | done |
 | `resolve_check`, `resolve_save`, `passive_check`, `roll_initiative` | done |
 | `ask_player`, `request_player_roll` (interrupts) | done |
-| `interact`, `take`, `drop`, `give`, `use_item`, `use_exit` | done |
+| `interact`, `take`, `drop`, `give`, `use_exit` — typed `MutationResult` refusals surface as `{"status": "refused", "reason": ...}`, `use_item` retired | done |
 | `attack`, `damage` | done |
 | `recall` | done |
 | `lookup_rule` | done |

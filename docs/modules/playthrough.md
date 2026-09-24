@@ -495,27 +495,28 @@ making a client ask twice for two things that describe the same open turn;
 
 Errors this module raises: an unknown-or-foreign run, a campaign the content
 does not know, an actor or object id `use_exit`, `interact`, `take`, `drop`,
-`give`, `use_item`, `attack` or `damage` cannot find, and a roll id no
+`give`, `attack` or `damage` cannot find, and a roll id no
 consumer below recognises are **not found** — while a hit id no consumer
 recognises is **not usable** rather than not found, since it names an
 entry in the transcript rather than a thing in the world; a run already started, a
 second character on a run, a write against an archived run, an invalid
 status transition, entering an adventure while one is already under way,
-entering when none is left to enter, asking `use_exit` for an exit it will
-not take, spending a roll that is already spent, from a later turn or of
-the wrong kind, resolving against a difficulty outside 5–30, `interact`
-asked for an action its object never authored or for a check needing a
-roll with none given and nothing carried that bypasses it, a second action
-asked of a creature that has already spent this turn's, `take`, `drop`,
-`give` or `attack` asked to reach an item or a target that is not reachable
-from where the actor stands, `use_item` asked to use anything at all, and
-`damage` asked to spend a hit that missed, belongs to another turn, names a
-different target, or has already been paid out are each a **conflict**
-(`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
+entering when none is left to enter, spending a roll that is already
+spent, from a later turn or of the wrong kind, resolving against a
+difficulty outside 5–30, and `damage` asked to spend a hit that missed,
+belongs to another turn, or names a different target are each a
+**conflict** (`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
 `INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`,
-`EXIT_NOT_AVAILABLE`, `ROLL_NOT_USABLE`, `INVALID_DC`,
-`ACTION_NOT_AVAILABLE`, `ROLL_REQUIRED`, `ALREADY_ACTED`,
-`OBJECT_NOT_REACHABLE`, `ITEM_NOT_CONSUMABLE`, `HIT_NOT_USABLE`); a payload
+`ROLL_NOT_USABLE`, `INVALID_DC`, `HIT_NOT_USABLE`). Sprint 011/03, WI1:
+asking `use_exit` for an exit it will not take, `interact` asked for an
+action its object never authored or for a check needing a roll with none
+given and nothing carried that bypasses it, and `take`, `drop` or `give`
+asked to reach an item that is not reachable from where the actor stands
+are now typed `MutationResult` refusals, not raised errors —
+`EXIT_NOT_AVAILABLE`, `ACTION_NOT_AVAILABLE`, `ROLL_REQUIRED`,
+`ALREADY_ACTED` and `ITEM_NOT_CONSUMABLE` are retired along with their
+error classes and `use_item`; `attack` alone still raises
+`OBJECT_NOT_REACHABLE` for an unreachable target or item. A payload
 that does not match its type's shape is a **validation error**
 (`InvalidEventPayloadError`).
 
@@ -557,8 +558,9 @@ different: instead of moving anyone, it completes the adventure run the
 actor is in — `status` becomes `completed`, `completed_at` is set to
 now — and an `adventure_completed` event, visible to the player, records
 which adventure run that was. When the adventure just completed is the
-last one the pinned campaign's own list names, the campaign run itself
-becomes `finished` in the same stroke. **Nobody is moved or cleared away
+last one the pinned campaign's own list names, `use_exit` calls
+`finish_run(outcome="authored")` (§23) rather than touching
+`campaign_runs.status` itself. **Nobody is moved or cleared away
 when an adventure ends.** Every object stays exactly where its own row
 already placed it — deliberately, so that everything the transcript already
 describes can still be read against a world that has not been swept away
@@ -568,6 +570,9 @@ Either outcome — a move or an ending — also appends one further event once
 the state change itself has succeeded: a `tool_call` recording that the
 mechanic ran and succeeded, visible only to the Dungeon Master, alongside
 the `scene_entered` or `adventure_completed` entry the player does see.
+`use_exit` returns a typed `MutationResult(status="ok", facts: {kind:
+"scene"|"adventure_end", sceneId, runFinished})` (sprint 011/03, WI1)
+rather than `None`.
 
 **A refusal the player never sees, but the record keeps.** Asking for an
 exit that is not among the actor's own scene's exits — or asking on behalf
@@ -577,9 +582,11 @@ about the world is touched. The refusal is still written down, as its own
 `tool_call` event, visible only to the Dungeon Master, naming the mechanic,
 the actor it was asked for and the exit that was asked for, marked refused
 rather than succeeded — written and kept even though the call itself then
-fails, because a record of what was attempted is exactly what a refusal is
-for. Only once that record is safely down does `use_exit` raise, so the
-attempt is never lost to whatever happens next. The player's own reading of
+returns a typed refusal, because a record of what was attempted is exactly
+what a refusal is for (sprint 011/03, WI1: an unmatched exit is an expected
+mechanic refusal, `MutationResult(status="refused", reason=...)`, not a
+raised error — the attempt is never lost to whatever happens next either
+way). The player's own reading of
 the transcript (§8) shows nothing for a refusal, since it is
 Dungeon-Master-only like the success record above it, so a player watching
 their own game never sees a gap where a mistake happened — only ever the
@@ -844,23 +851,23 @@ refuses each of them. Fed no roll at all, it passes instead when the actor
 is carrying something the check's own list of bypassing items names — a
 key for the lock, a blade for the rope — consulted only because no roll was
 offered, never as a shortcut around one that was; which item answered it is
-written down alongside the pass. Anything else is refused before anything
-is touched: an action the fixture's author never wrote for it, a check that
-needs a roll when none was given and nothing the actor carries bypasses it
-either, or a roll that was made for something else entirely.
+written down alongside the pass. Anything else is a typed refusal before
+anything is touched (sprint 011/03, WI1: `MutationResult(status="refused",
+reason=...)`, not a raised error): an action the fixture's author never
+wrote for it, or a check that needs a roll when none was given and nothing
+the actor carries bypasses it either.
 
-**Interacting changes nothing in the world.** It reads the fixture's
-authored checks and the actor's own carried things, and writes only what
-was attempted and what came of it to the transcript — never a row anywhere
-else. What a check's own success promises — a screen that no longer bars
-the way, a door that gives — is prose the adventure's author wrote for the
-Dungeon Master to narrate, not a change this mechanic makes on its own; a
-fixture interacted with successfully looks, to every other row this module
-keeps, exactly as it did before. That is a deliberate limit of what this
-stage of the module does, worth saying plainly because it reads like an
-oversight otherwise — the write that lets a passed check actually move
-something in the world is later work, layered on top of what this mechanic
-has already decided.
+**A passing check durably opens the fixture (sprint 011/03, WI1, AC1).**
+What a check's own success promises — a screen that no longer bars the
+way, a door that gives — is prose the adventure's author wrote for the
+Dungeon Master to narrate; a passing check now also persists
+`state["fixture_outcomes"][action] = {"success": <that authored prose>,
+"turnId"}` on the fixture's own `objects` row, reassigned whole (the
+module's JSONB house rule, §6). A present key means the fixture stays open
+across a reload, so the Dungeon Master can tell, from the object alone,
+that this action already succeeded once. A failed check still changes
+nothing and writes neither this key nor the `way_opened` row below, so a
+later, successful attempt at the same action can still open it.
 
 **Every attempt is recorded, a pass and a refusal alike.** A pass appends
 one `tool_call` event naming the actor, the fixture, the action attempted,
@@ -869,7 +876,7 @@ answered it or which carried item bypassed it when none did, and that it
 succeeded. A refusal appends the same shape of entry marked refused
 instead, visible only to the Dungeon Master — exactly as a refused exit is
 (§9) and a roll's own refused spend is (§14) — committed on its own before
-the refusal is raised as an error, so the attempt is never lost to whatever
+the typed refusal is returned, so the attempt is never lost to whatever
 happens next. A player reading their own transcript sees no gap where the
 mistake happened, only ever the passes that actually took hold.
 
@@ -883,44 +890,14 @@ recorded as an ordinary, successful attempt (its own `tool_call` reads
 appends no `way_opened` row: that entry marks something having actually
 opened, not merely having been tried.
 
-## 17. One action per creature per turn
+## 17. One action per creature per turn (retired)
 
-**A creature gets one action in a turn.** Interacting with a fixture (§16),
-taking an item, giving one, using an item (§18, §19) and attacking (§21)
-each spend it — five actions in all, checked by the same rule before any of
-them looks at what it was actually asked to do, so landing the last of them
-cost this rule no rewrite.
-
-**Dropping something does not spend the turn.** Neither does moving through
-an exit (§9), rolling dice (§13), nor resolving a check or a saving throw
-against a difficulty (§14) — none of those was ever a creature doing
-something to someone or something else, which is what the rule above
-actually guards. Dropping stands apart from the four actions above it only
-because the SRD makes a point of it: dropping what you are carrying is
-free, and this module keeps it exactly that free rather than folding it in
-among the things that cost a turn — a creature can let go of everything it
-holds and still act besides.
-
-**A refused attempt does not spend the turn either.** Whatever a mechanic
-refuses an attempt for — an action its target never authored, a roll it
-needed and was not given, a roll it was given but could not use, or the
-one-action rule itself — costs the creature nothing beyond the refusal
-recorded against it (§16); a mistake is not the thing this rule spends a
-turn on. A creature that tries and fails may simply try again, the same
-turn, for as long as what it tries keeps failing rather than succeeding.
-
-**A second action by the same creature within an open turn is refused
-outright**, whichever of the five it is and whichever mechanic it was
-asked of, before whatever was attempted is even looked at. **The count
-behind that refusal is read from the transcript, not from anything
-stored**: the creature's own actions that already succeeded within the
-turn still open, asked again every time exactly the way §15 already
-answers what a game is waiting for by reading the transcript rather than
-consulting a value kept anywhere — there is no counter on the creature, on
-the turn, or on the run, and so nothing about it can ever fall out of step
-with what the transcript already shows. A turn that has not seen this
-creature act yet carries no such history, so a fresh turn always lets it
-act again.
+**Sprint 011/03 retires this rule** (← research): every acting mechanic —
+interacting, taking, giving and attacking alike — may be called freely
+within a turn now. `_already_acted`, `_ACTION_NAMES` and
+`AlreadyActedError`/`ALREADY_ACTED` are deleted, and no scan of the
+transcript replaces them. Dropping was always free (§18); it needs no
+special case any more, since nothing else costs a turn either.
 
 ## 18. Moving an item: picking it up, putting it down, handing it over
 
@@ -951,24 +928,19 @@ giving and the one receiving, standing in the same scene, and the item
 must already be the giver's own to hand over. Putting an item down needs
 only that the actor is carrying it. An actor standing in no scene at
 all — nowhere on the map, in no adventure — can do none of the three.
+Anything unreachable is a typed refusal (sprint 011/03, WI1:
+`MutationResult(status="refused", reason=...)`, not a raised error).
 
-**What a turn costs differs by which of the three it is.** Picking
-something up and handing it over each spend the acting creature's one
-action for the turn, the same action §17 already describes, refused a
-second time in one turn regardless of which action-spending mechanic asks
-for it. **Putting something down costs nothing at all** — the SRD makes a
-point of this, and this module keeps it exactly that free rather than
-folding it in among the things that spend a turn. A creature can therefore
-pick something up and put something else down in the same turn, since only
-one of those two draws on the turn's action, but it can never pick
-something up twice in that same turn.
+**None of the three costs a turn's action any more** (§17, retired): a
+creature may pick something up, hand it over and pick something else up
+again, all in the same turn.
 
 **Every attempt is recorded, a move and a refusal alike.** A move that
 succeeds is written down as its own `tool_call` entry naming the mechanic,
 the actor and the item — handing one over also names who received it —
 visible only to the Dungeon Master, alongside whatever state actually
 changed. A refusal is recorded the same way, marked refused rather than
-succeeded, on its own before the mistake is ever raised as an error — the
+succeeded, on its own before the typed refusal is returned — the
 same pattern every refusal already kept in this document (§9, §14, §16) —
 so a player reading their own transcript never sees a gap where a mistake
 happened, only the moves that actually took hold.
@@ -980,33 +952,14 @@ moves this was — `taken`, `dropped` or `given`; handing one over also
 names who received it, the only case that entry does. A refusal appends
 no such row: nothing in the world changed for a player to be told about.
 
-## 19. Using an item: the seam, not yet the mechanic
+## 19. Using an item (retired)
 
-**A fourth mechanic exists for using an item, and today it refuses every
-attempt.** It names the actor, the item, and optionally who or what the
-item is used on, and it currently answers every single one of those
-attempts the same way: refused, because no item this game's adventures
-author can yet be written as something that gets used up or spent —
-nothing about an item today says whether it can be used at all. The
-mechanic is checked against the one action of §17 and §18 first, so a
-creature that has already acted this turn is turned away for that reason
-rather than for the item; but since only a successful act spends a turn,
-a refusal here costs the creature nothing.
-
-**This is a placeholder, on purpose.** It exists now so the shape of using
-an item — an actor, an item, an optional target, one action spent, one
-outcome recorded — is already settled before there is anything for it to
-actually do. When a consumable item is eventually added to this game, it
-arrives as a new kind of item and a branch placed in front of this
-mechanic's blanket refusal, checked before that refusal fires rather than
-instead of it; nothing else about the mechanic changes — not what it is
-asked for, not the turn it spends, not how its outcome is written down.
-
-**A refused use is recorded exactly like every other refusal in this
-document** (§9, §14, §16, §18): its own entry, naming the attempt, visible
-only to the Dungeon Master, written down before the mechanic raises its
-refusal as an error, so nothing a player reads ever shows a gap where an
-attempt to use something was quietly swallowed.
+**Sprint 011/03, WI1 deletes `use_item`.** The seam existed only as a
+placeholder — every attempt refused unconditionally, since no item this
+game's adventures author could yet be written as something that gets used
+up or spent — and nothing else in this module called it. A later sprint
+that adds a genuinely consumable item designs that mechanic fresh, rather
+than resurrecting this one.
 
 ## 20. A fight is nothing but its acts
 
