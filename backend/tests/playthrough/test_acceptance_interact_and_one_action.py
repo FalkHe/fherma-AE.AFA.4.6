@@ -1,6 +1,7 @@
-"""qa acceptance tests -- sprint 005/08a "a fixture is interacted with, and
-a creature acts once a turn"
+"""qa acceptance tests -- sprint 005/08a "a fixture is interacted with"
 (`docs/intents/005-game-state-services/sprints/08a-interact-and-one-action/brief.md`).
+The one-action-per-turn half (AC3) is retired (sprint 011/03, ← research)
+and its test deleted, not ported.
 
 Black-box throughout, against the sprint's own interface contracts
 (`plan.md -> Interfaces`), never against `app.modules.playthrough.service`'s
@@ -280,32 +281,30 @@ def test_ac1_interact_passes_by_roll_or_bypass_and_refuses_the_rest_untouched(pl
         # refusal).
         refusal_turn = generate_id()
         before = await _objects_snapshot(playthrough_db, run.id)
-        with pytest.raises(Exception) as unknown_action:
-            await playthrough_service.interact(
-                playthrough_db,
-                user_id=owner_id,
-                actor_id=character.id,
-                object_id=thorn_screen_id,
-                action="Kick the screen down with brute strength",
-                turn_id=refusal_turn,
-            )
-        assert unknown_action.value.code == ErrorCode.ACTION_NOT_AVAILABLE
+        unknown_action = await playthrough_service.interact(
+            playthrough_db,
+            user_id=owner_id,
+            actor_id=character.id,
+            object_id=thorn_screen_id,
+            action="Kick the screen down with brute strength",
+            turn_id=refusal_turn,
+        )
+        assert unknown_action.status == "refused"
         after = await _objects_snapshot(playthrough_db, run.id)
         assert after == before
 
         # -- Refusal 2: the check needs a roll (no `bypassed_by` at all)
         # and none was given.
         before = await _objects_snapshot(playthrough_db, run.id)
-        with pytest.raises(Exception) as missing_roll:
-            await playthrough_service.interact(
-                playthrough_db,
-                user_id=owner_id,
-                actor_id=character.id,
-                object_id=thorn_screen_id,
-                action=lift_check.action,
-                turn_id=refusal_turn,
-            )
-        assert missing_roll.value.code == ErrorCode.ROLL_REQUIRED
+        missing_roll = await playthrough_service.interact(
+            playthrough_db,
+            user_id=owner_id,
+            actor_id=character.id,
+            object_id=thorn_screen_id,
+            action=lift_check.action,
+            turn_id=refusal_turn,
+        )
+        assert missing_roll.status == "refused"
         after = await _objects_snapshot(playthrough_db, run.id)
         assert after == before
 
@@ -365,9 +364,18 @@ def test_ac1_interact_passes_by_roll_or_bypass_and_refuses_the_rest_untouched(pl
             action=cut_check.action,
             turn_id=bypass_turn,
         )
-        assert bypass_result is True
+        assert bypass_result.status == "ok"
+        assert bypass_result.facts["success"] is True
+        # A success durably opens the fixture (sprint 011/03, AC1): its own
+        # `state["fixture_outcomes"]` gains the action's key; every other
+        # object, and every other column of this one, stays untouched.
         after = await _objects_snapshot(playthrough_db, run.id)
-        assert after == before
+        changed = [row for row, prior in zip(after, before, strict=True) if row != prior]
+        assert [row[0] for row in changed] == [thorn_screen_id]
+        after_thorn_screen = next(row for row in after if row[0] == thorn_screen_id)
+        assert after_thorn_screen[-1]["fixture_outcomes"][cut_check.action]["turnId"] == str(
+            bypass_turn
+        )
 
         ok_calls = await _dm_tool_calls(playthrough_db, run.id, result="ok")
         assert len(ok_calls) == 1
@@ -413,9 +421,15 @@ def test_ac1_interact_passes_by_roll_or_bypass_and_refuses_the_rest_untouched(pl
             roll_id=r.id,
             turn_id=roll_turn,
         )
-        assert roll_result is True
+        assert roll_result.status == "ok"
+        assert roll_result.facts["success"] is True
         after = await _objects_snapshot(playthrough_db, run.id)
-        assert after == before
+        changed = [row for row, prior in zip(after, before, strict=True) if row != prior]
+        assert [row[0] for row in changed] == [thorn_screen_id]
+        after_thorn_screen = next(row for row in after if row[0] == thorn_screen_id)
+        assert after_thorn_screen[-1]["fixture_outcomes"][lift_check.action]["turnId"] == str(
+            roll_turn
+        )
 
         ok_calls = await _dm_tool_calls(playthrough_db, run.id, result="ok")
         assert len(ok_calls) == 2
@@ -432,120 +446,5 @@ def test_ac1_interact_passes_by_roll_or_bypass_and_refuses_the_rest_untouched(pl
             playthrough_db, user_id=owner_id, run_id=run.id
         )
         assert not [e for e in player_events if e.type == "tool_call"]
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
-def test_ac3_one_action_per_creature_per_turn(playthrough_db):
-    # <- AC3
-    async def _scenario():
-        owner_id = generate_id()
-        await _insert_user(playthrough_db, owner_id, username="ac3-owner")
-        await playthrough_db.commit()
-
-        run = await playthrough_service.start_campaign_run(
-            playthrough_db, user_id=owner_id, campaign_id=CAMPAIGN_ID
-        )
-        character = await playthrough_service.create_character(
-            playthrough_db, user_id=owner_id, run_id=run.id
-        )
-        await playthrough_service.enter_adventure(playthrough_db, user_id=owner_id, run_id=run.id)
-
-        lift_check, cut_check = _thorn_screen_checks()
-        strength_modifier = _strength_modifier()
-
-        # The untagged turn (`turn_id=None`, the only one that exists
-        # before phase 8's allocator): `use_exit` takes no `turn_id`
-        # parameter at all yet and always lands there, and a call that
-        # passes no `turn_id` of its own lands there too -- exactly what
-        # every one of the calls below does, on purpose, until the
-        # scenario explicitly moves to a second turn below.
-
-        # -- Things that are not actions -- using an exit, rolling -- spend
-        # nothing, even inside the very turn an action is about to be
-        # taken in.
-        await _walk_to_lair_maw(playthrough_db, user_id=owner_id, actor_id=character.id)
-        await _rolled(
-            playthrough_db,
-            user_id=owner_id,
-            actor_id=character.id,
-            kind="ability_check",
-            context={"ability": "strength"},
-            face=1,
-        )
-
-        thorn_screen_id = await _object_id_by_template(playthrough_db, run.id, "thorn-screen")
-
-        # -- A refused attempt first: it does not spend the turn either --
-        # the real action right after it, in the very same (untagged)
-        # turn, still succeeds.
-        with pytest.raises(Exception) as first_refusal:
-            await playthrough_service.interact(
-                playthrough_db,
-                user_id=owner_id,
-                actor_id=character.id,
-                object_id=thorn_screen_id,
-                action="Push through with brute strength",
-            )
-        assert first_refusal.value.code == ErrorCode.ACTION_NOT_AVAILABLE
-
-        first_action = await playthrough_service.interact(
-            playthrough_db,
-            user_id=owner_id,
-            actor_id=character.id,
-            object_id=thorn_screen_id,
-            action=cut_check.action,
-        )
-        assert first_action is True
-
-        # -- A second action by the same creature, same (untagged) turn,
-        # is refused -- even a distinct, otherwise-valid action against
-        # the same fixture.
-        with pytest.raises(Exception) as second_action:
-            await playthrough_service.interact(
-                playthrough_db,
-                user_id=owner_id,
-                actor_id=character.id,
-                object_id=thorn_screen_id,
-                action=lift_check.action,
-            )
-        assert second_action.value.code == ErrorCode.ALREADY_ACTED
-
-        # -- Exactly one "ok" `tool_call` for this creature in this turn --
-        # the count the rule is defined over.
-        ok_calls_turn_a = await _dm_tool_calls(playthrough_db, run.id, result="ok")
-        actor_ok_turn_a = [
-            c for c in ok_calls_turn_a if c["args"].get("actorId") == str(character.id)
-        ]
-        assert len(actor_ok_turn_a) == 1
-
-        # -- A new turn allows the same creature to act again.
-        turn_b = generate_id()
-        face = lift_check.dc - strength_modifier
-        assert 1 <= face <= 20, "seed character's strength pushed the needed face outside 1-20"
-        r = await _rolled(
-            playthrough_db,
-            user_id=owner_id,
-            actor_id=character.id,
-            kind="ability_check",
-            context={"ability": "strength"},
-            face=face,
-            turn_id=turn_b,
-        )
-        second_turn_action = await playthrough_service.interact(
-            playthrough_db,
-            user_id=owner_id,
-            actor_id=character.id,
-            object_id=thorn_screen_id,
-            action=lift_check.action,
-            roll_id=r.id,
-            turn_id=turn_b,
-        )
-        assert second_turn_action is True
-
-        ok_calls_all = await _dm_tool_calls(playthrough_db, run.id, result="ok")
-        actor_ok_all = [c for c in ok_calls_all if c["args"].get("actorId") == str(character.id)]
-        assert len(actor_ok_all) == 2
 
     asyncio.run(_scenario())

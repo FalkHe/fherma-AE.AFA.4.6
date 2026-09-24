@@ -59,34 +59,21 @@ class _RollSpy:
 
 
 @dataclass
-class _EventSpy:
+class _RecordPlayerActionSpy:
     calls: list[dict[str, Any]] = field(default_factory=list)
 
     async def __call__(self, db, **kwargs):
-        self.calls.append({"db": db, **kwargs})
-        return _Event(kwargs)
+        self.calls.append({"db": db, "type": "player_action", **kwargs})
+        return _Event({"text": kwargs.get("text", "")}, type="player_action")
 
 
 @dataclass
-class _Run:
-    status: str = "active"
-
-
-@dataclass
-class _GetCampaignRunSpy:
-    status: str = "active"
-
-    async def __call__(self, db, **kwargs):
-        return _Run(status=self.status)
-
-
-@dataclass
-class _ActivateCampaignRunSpy:
+class _RecordNarrationSpy:
     calls: list[dict[str, Any]] = field(default_factory=list)
 
     async def __call__(self, db, **kwargs):
-        self.calls.append({"db": db, **kwargs})
-        return _Run(status="active")
+        self.calls.append({"db": db, "type": "narration", **kwargs})
+        return _Event({"text": kwargs.get("text", "")}, type="narration")
 
 
 class _FakeDb:
@@ -173,23 +160,16 @@ def prompt(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def event_spy(monkeypatch):
-    spy = _EventSpy()
-    monkeypatch.setattr(nodes.playthrough_service, "append_event", spy)
+def record_action_spy(monkeypatch):
+    spy = _RecordPlayerActionSpy()
+    monkeypatch.setattr(nodes.playthrough_service, "record_player_action", spy)
     return spy
 
 
 @pytest.fixture(autouse=True)
-def get_campaign_run_spy(monkeypatch):
-    spy = _GetCampaignRunSpy()
-    monkeypatch.setattr(nodes.playthrough_service, "get_campaign_run", spy)
-    return spy
-
-
-@pytest.fixture(autouse=True)
-def activate_campaign_run_spy(monkeypatch):
-    spy = _ActivateCampaignRunSpy()
-    monkeypatch.setattr(nodes.playthrough_service, "activate_campaign_run", spy)
+def record_narration_spy(monkeypatch):
+    spy = _RecordNarrationSpy()
+    monkeypatch.setattr(nodes.playthrough_service, "record_narration", spy)
     return spy
 
 
@@ -239,7 +219,9 @@ def test_a_retryable_model_failure_still_ends_the_turn_in_a_narration():
 # --- AC4: a permanent failure raises, prior work stays recorded ---------
 
 
-def test_a_permanent_model_failure_raises_with_prior_events_still_recorded(roll_spy, event_spy):
+def test_a_permanent_model_failure_raises_with_prior_events_still_recorded(
+    roll_spy, record_action_spy
+):
     model = _ScriptedCallModel([_ROLL_CALL, LlmAuthError("bad key")])
     agent = service.build_agent(model=model)
 
@@ -249,7 +231,7 @@ def test_a_permanent_model_failure_raises_with_prior_events_still_recorded(roll_
     # The player's action was recorded, and the roll the first model call
     # asked for already ran (and, in production, already committed) --
     # neither is undone by the narrate node raising afterwards.
-    assert [call["type"] for call in event_spy.calls] == ["player_action"]
+    assert len(record_action_spy.calls) == 1
     assert len(roll_spy.calls) == 1
     assert model.calls == 2
 
@@ -285,9 +267,7 @@ def test_a_turn_with_two_model_calls_sums_tokens_and_cost_on_the_narration(roll_
     result = _turn(agent, "I pick the lock.")
 
     assert result.reply == "You rolled 20 - the lock opens."
-    narration_calls = [
-        call for call in nodes.playthrough_service.append_event.calls if call["type"] == "narration"
-    ]
+    narration_calls = nodes.playthrough_service.record_narration.calls
     assert len(narration_calls) == 1
     usage = narration_calls[0]["usage"]
     assert usage.prompt_tokens == 250
@@ -303,22 +283,14 @@ def test_several_turns_usage_sums_to_the_total_across_the_run():
     )
     agent_one = service.build_agent(model=first_model)
     first_result = _turn(agent_one, "Look around.", thread_id="turn-a")
-    first_usage = [
-        call["usage"]
-        for call in nodes.playthrough_service.append_event.calls
-        if call["type"] == "narration"
-    ][-1]
+    first_usage = nodes.playthrough_service.record_narration.calls[-1]["usage"]
 
     second_model = _ScriptedCallModel(
         [_usage_message(prompt_tokens=20, completion_tokens=8, cost_usd=0.002, text="Second.")]
     )
     agent_two = service.build_agent(model=second_model)
     second_result = _turn(agent_two, "Move on.", thread_id="turn-b")
-    second_usage = [
-        call["usage"]
-        for call in nodes.playthrough_service.append_event.calls
-        if call["type"] == "narration"
-    ][-1]
+    second_usage = nodes.playthrough_service.record_narration.calls[-1]["usage"]
 
     assert first_result.reply == "First."
     assert second_result.reply == "Second."
@@ -343,9 +315,7 @@ def test_a_call_with_no_reported_cost_leaves_the_turn_cost_none():
 
     _turn(agent, "Listen.")
 
-    narration_calls = [
-        call for call in nodes.playthrough_service.append_event.calls if call["type"] == "narration"
-    ]
+    narration_calls = nodes.playthrough_service.record_narration.calls
     usage = narration_calls[0]["usage"]
     assert usage.total_tokens == 10
     assert usage.cost_usd is None

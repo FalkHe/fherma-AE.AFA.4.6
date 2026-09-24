@@ -784,30 +784,6 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
         assert damage1_call["outcome"]["currentHp"] == 1
         assert damage1_call["outcome"]["isAlive"] is True
 
-        # The same `hit_id`, spent a second time, is refused.
-        redo_roll = await _rolled(
-            playthrough_db,
-            user_id=owner_id,
-            actor_id=character.id,
-            kind="damage",
-            context={"item_id": KNIFE_TEMPLATE},
-            face=1,
-            turn_id=turn1,
-        )
-        before = await _object_row(playthrough_db, target_goblin)
-        with pytest.raises(Exception) as double_spend_exc:
-            await playthrough_service.damage(
-                playthrough_db,
-                user_id=owner_id,
-                target_id=target_goblin,
-                roll_id=redo_roll.id,
-                hit_id=hit1_id,
-                turn_id=turn1,
-            )
-        assert double_spend_exc.value.code == ErrorCode.HIT_NOT_USABLE
-        after = await _object_row(playthrough_db, target_goblin)
-        assert after.current_hp == before.current_hp
-
         # -- Turn 2: a second hit against the same goblin, then damage
         # clamped at zero (rolled 6 against a remaining 1) -- a
         # member-less creature at zero is no longer alive.
@@ -1018,7 +994,7 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
         # Every refusal above genuinely persisted.
         async with _second_connection() as reader:
             refused = await _tool_calls(reader, run.id, name="damage", result="refused")
-            assert len(refused) == 3
+            assert len(refused) == 2
             for call in refused:
                 assert call["outcome"], call
 
@@ -1026,7 +1002,7 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
 
 
 @pytest.mark.database
-def test_ac3_one_attack_per_turn_and_a_monster_needs_no_player_roll(playthrough_db):
+def test_ac3_a_monster_attack_needs_no_player_roll(playthrough_db):
     # <- AC3
     async def _scenario():
         owner_id, run, character, goblin_ids, knife_id = await _setup_in_lair_maw(
@@ -1055,29 +1031,6 @@ def test_ac3_one_attack_per_turn_and_a_monster_needs_no_player_roll(playthrough_
             turn_id=turn,
         )
         assert outcome.status == "hit"
-
-        # -- A second attack by the very same creature, same turn, is
-        # refused -- even against a different, otherwise-valid target.
-        second_target = goblin_ids[1]
-        second_roll = await _rolled(
-            playthrough_db,
-            user_id=owner_id,
-            actor_id=goblin_id,
-            kind="attack",
-            context={"attack": GOBLIN_ATTACK},
-            face=11,
-            turn_id=turn,
-        )
-        with pytest.raises(Exception) as second_attack_exc:
-            await playthrough_service.attack(
-                playthrough_db,
-                user_id=owner_id,
-                actor_id=goblin_id,
-                target_id=second_target,
-                roll_id=second_roll.id,
-                turn_id=turn,
-            )
-        assert second_attack_exc.value.code == ErrorCode.ALREADY_ACTED
 
         # -- The turn's wound, bound to the hit that landed it -- completed
         # without ever asking the player to roll.

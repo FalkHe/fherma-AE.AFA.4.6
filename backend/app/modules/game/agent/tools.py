@@ -37,7 +37,6 @@ from app.modules.game.agent.state import (
     ROLL_INITIATIVE_TOOL,
     TAKE_TOOL,
     USE_EXIT_TOOL,
-    USE_ITEM_TOOL,
     DmContext,
 )
 from app.modules.playthrough import models as playthrough_models
@@ -653,7 +652,7 @@ async def interact(
             "actor_id is required for interact when no default actor is set in context."
         )
 
-    passed = await playthrough_service.interact(
+    result = await playthrough_service.interact(
         ctx.db,
         user_id=ctx.user_id,
         actor_id=target_actor_id,
@@ -662,12 +661,14 @@ async def interact(
         roll_id=roll_id,
         turn_id=ctx.turn_id,
     )
+    if result.status == "refused":
+        return {"status": "refused", "reason": result.reason}
     return {
         "status": "ok",
         "action": action,
         "object_id": object_id,
         "actor_id": target_actor_id,
-        "passed": passed,
+        "passed": result.facts["success"],
     }
 
 
@@ -686,13 +687,15 @@ async def take(
     if not target_actor_id:
         raise ValueError("actor_id is required for take when no default actor is set in context.")
 
-    await playthrough_service.take(
+    result = await playthrough_service.take(
         ctx.db,
         user_id=ctx.user_id,
         actor_id=target_actor_id,
         item_id=item_id,
         turn_id=ctx.turn_id,
     )
+    if result.status == "refused":
+        return {"status": "refused", "reason": result.reason}
     return {
         "status": "ok",
         "action": "take",
@@ -716,13 +719,15 @@ async def drop(
     if not target_actor_id:
         raise ValueError("actor_id is required for drop when no default actor is set in context.")
 
-    await playthrough_service.drop(
+    result = await playthrough_service.drop(
         ctx.db,
         user_id=ctx.user_id,
         actor_id=target_actor_id,
         item_id=item_id,
         turn_id=ctx.turn_id,
     )
+    if result.status == "refused":
+        return {"status": "refused", "reason": result.reason}
     return {
         "status": "ok",
         "action": "drop",
@@ -748,7 +753,7 @@ async def give(
     if not giver_id:
         raise ValueError("from_id is required for give when no default actor is set in context.")
 
-    await playthrough_service.give(
+    result = await playthrough_service.give(
         ctx.db,
         user_id=ctx.user_id,
         from_id=giver_id,
@@ -756,48 +761,14 @@ async def give(
         item_id=item_id,
         turn_id=ctx.turn_id,
     )
+    if result.status == "refused":
+        return {"status": "refused", "reason": result.reason}
     return {
         "status": "ok",
         "action": "give",
         "item_id": item_id,
         "from_id": giver_id,
         "to_id": to_id,
-    }
-
-
-@tool(USE_ITEM_TOOL)
-@_serialized
-async def use_item(
-    item_id: str,
-    runtime: ToolRuntime[DmContext],
-    actor_id: str | None = None,
-    target_id: str | None = None,
-) -> dict[str, Any]:
-    """Use a consumable item from the actor's inventory.
-    `item_id` is the item object ID.
-    `actor_id` is the character using the item (defaults to current actor).
-    `target_id` is the optional target creature or object ID."""
-    ctx = runtime.context
-    target_actor_id = actor_id or ctx.actor_id
-    if not target_actor_id:
-        raise ValueError(
-            "actor_id is required for use_item when no default actor is set in context."
-        )
-
-    await playthrough_service.use_item(
-        ctx.db,
-        user_id=ctx.user_id,
-        actor_id=target_actor_id,
-        item_id=item_id,
-        target_id=target_id,
-        turn_id=ctx.turn_id,
-    )
-    return {
-        "status": "ok",
-        "action": "use_item",
-        "item_id": item_id,
-        "actor_id": target_actor_id,
-        "target_id": target_id,
     }
 
 
@@ -818,17 +789,21 @@ async def use_exit(
             "actor_id is required for use_exit when no default actor is set in context."
         )
 
-    await playthrough_service.use_exit(
+    result = await playthrough_service.use_exit(
         ctx.db,
         user_id=ctx.user_id,
         actor_id=target_actor_id,
         exit_id=exit_id,
+        turn_id=ctx.turn_id,
     )
+    if result.status == "refused":
+        return {"status": "refused", "reason": result.reason}
     return {
         "status": "ok",
         "action": "use_exit",
         "exit_id": exit_id,
         "actor_id": target_actor_id,
+        **result.facts,
     }
 
 
@@ -1064,7 +1039,6 @@ TOOLS = [
     take,
     drop,
     give,
-    use_item,
     use_exit,
     attack,
     damage,

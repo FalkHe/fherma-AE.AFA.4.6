@@ -4,22 +4,18 @@ to guarantee."""
 
 from app.core.errors import ErrorCode
 from app.modules.playthrough.errors import (
-    ActionNotAvailableError,
     AdventureActiveError,
     AdventureExhaustedError,
-    AlreadyActedError,
     CampaignNotFoundError,
     CampaignRunExistsError,
     CampaignRunNotFoundError,
     CharacterExistsError,
-    ExitNotAvailableError,
     GameObjectNotFoundError,
     InvalidDcError,
     InvalidRunStatusError,
     PlaythroughError,
     RollNotFoundError,
     RollNotUsableError,
-    RollRequiredError,
     RunArchivedError,
 )
 
@@ -78,12 +74,6 @@ def test_game_object_not_found_carries_not_found():
     assert exc.code == ErrorCode.NOT_FOUND
 
 
-def test_exit_not_available_carries_exit_not_available():
-    exc = ExitNotAvailableError("actor-1", "exit-1")
-    assert isinstance(exc, PlaythroughError)
-    assert exc.code == ErrorCode.EXIT_NOT_AVAILABLE
-
-
 def test_roll_not_found_carries_not_found():
     exc = RollNotFoundError("roll-1")
     assert isinstance(exc, PlaythroughError)
@@ -100,21 +90,3 @@ def test_invalid_dc_carries_invalid_dc():
     exc = InvalidDcError(3)
     assert isinstance(exc, PlaythroughError)
     assert exc.code == ErrorCode.INVALID_DC
-
-
-def test_action_not_available_carries_action_not_available():
-    exc = ActionNotAvailableError("object-1", "push it")
-    assert isinstance(exc, PlaythroughError)
-    assert exc.code == ErrorCode.ACTION_NOT_AVAILABLE
-
-
-def test_roll_required_carries_roll_required():
-    exc = RollRequiredError("object-1", "cut it")
-    assert isinstance(exc, PlaythroughError)
-    assert exc.code == ErrorCode.ROLL_REQUIRED
-
-
-def test_already_acted_carries_already_acted():
-    exc = AlreadyActedError("actor-1")
-    assert isinstance(exc, PlaythroughError)
-    assert exc.code == ErrorCode.ALREADY_ACTED

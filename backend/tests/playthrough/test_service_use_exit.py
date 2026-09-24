@@ -18,12 +18,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ErrorCode
 from app.core.ids import generate_id
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import (
     CampaignRunNotFoundError,
-    ExitNotAvailableError,
     GameObjectNotFoundError,
     InvalidRunStatusError,
     RunArchivedError,
@@ -176,7 +174,8 @@ def test_use_exit_moves_the_actor_and_records_scene_entered_and_a_dm_tool_call(p
         result = await service.use_exit(
             playthrough_db, user_id=user_id, actor_id=character.id, exit_id=TO_THORNWAY
         )
-        assert result is None
+        assert result.status == "ok"
+        assert result.facts == {"kind": "scene", "sceneId": "thornway", "runFinished": False}
 
         row = (
             await playthrough_db.execute(
@@ -287,7 +286,8 @@ def test_use_exit_ends_the_adventure_and_finishes_the_game_without_touching_posi
         result = await service.use_exit(
             playthrough_db, user_id=user_id, actor_id=character.id, exit_id="leave-the-hollow"
         )
-        assert result is None
+        assert result.status == "ok"
+        assert result.facts == {"kind": "adventure_end", "sceneId": None, "runFinished": True}
 
         adventure_row = (
             await playthrough_db.execute(
@@ -356,11 +356,11 @@ def test_use_exit_refuses_an_exit_not_on_the_actors_scene_and_records_it_before_
             )
         ).one()
 
-        with pytest.raises(ExitNotAvailableError) as excinfo:
-            await service.use_exit(
-                playthrough_db, user_id=user_id, actor_id=character.id, exit_id="leave-the-hollow"
-            )
-        assert excinfo.value.code == ErrorCode.EXIT_NOT_AVAILABLE
+        result = await service.use_exit(
+            playthrough_db, user_id=user_id, actor_id=character.id, exit_id="leave-the-hollow"
+        )
+        assert result.status == "refused"
+        assert result.reason is not None
 
         # Nothing about the world changed.
         after = (
@@ -413,11 +413,10 @@ def test_use_exit_refuses_an_actor_with_no_current_scene_the_same_way(playthroug
         # been positioned anywhere -- `scene_id` is `None`.
         character = await service.create_character(playthrough_db, user_id=user_id, run_id=run.id)
 
-        with pytest.raises(ExitNotAvailableError) as excinfo:
-            await service.use_exit(
-                playthrough_db, user_id=user_id, actor_id=character.id, exit_id=TO_THORNWAY
-            )
-        assert excinfo.value.code == ErrorCode.EXIT_NOT_AVAILABLE
+        result = await service.use_exit(
+            playthrough_db, user_id=user_id, actor_id=character.id, exit_id=TO_THORNWAY
+        )
+        assert result.status == "refused"
 
         refused = (
             await playthrough_db.execute(
@@ -455,10 +454,10 @@ def test_use_exit_refusal_leaves_the_callers_own_loaded_objects_readable(playthr
         character = await service.create_character(playthrough_db, user_id=user_id, run_id=run.id)
         await service.enter_adventure(playthrough_db, user_id=user_id, run_id=run.id)
 
-        with pytest.raises(ExitNotAvailableError):
-            await service.use_exit(
-                playthrough_db, user_id=user_id, actor_id=character.id, exit_id="leave-the-hollow"
-            )
+        result = await service.use_exit(
+            playthrough_db, user_id=user_id, actor_id=character.id, exit_id="leave-the-hollow"
+        )
+        assert result.status == "refused"
 
         # <- the regression this pins: no `MissingGreenlet` on an ordinary,
         # already-loaded attribute right after the refusal.

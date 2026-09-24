@@ -36,27 +36,22 @@ from app.modules.content.schemas import (
 )
 from app.modules.playthrough import dice
 from app.modules.playthrough.errors import (
-    ActionNotAvailableError,
     AdventureActiveError,
     AdventureExhaustedError,
-    AlreadyActedError,
     CampaignNotFoundError,
     CampaignRunExistsError,
     CampaignRunNotFoundError,
     CharacterExistsError,
     CharacterNotFoundError,
-    ExitNotAvailableError,
     GameObjectNotFoundError,
     HitNotUsableError,
     InvalidDcError,
     InvalidEventPayloadError,
     InvalidRunStatusError,
-    ItemNotConsumableError,
     ObjectNotReachableError,
     RollNotFoundError,
     RollNotUsableError,
     RollRequestNotFoundError,
-    RollRequiredError,
     RunArchivedError,
 )
 from app.modules.playthrough.models import (
@@ -80,6 +75,7 @@ from app.modules.playthrough.schemas import (
     DamageResult,
     InitiativeResult,
     Item,
+    MutationResult,
     NarrationRead,
     RollKind,
     RollPayload,
@@ -1020,6 +1016,267 @@ async def enter_adventure(db: AsyncSession, *, user_id: str, run_id: str) -> Adv
     return adventure_run
 
 
+async def set_hostility(
+    db: AsyncSession, *, user_id: str, actor_id: str, hostile: bool, turn_id: str | None = None
+) -> MutationResult:
+    """Sets whether the creature at `actor_id` is hostile, in `state["hostile"]`
+    (sprint 011/03, WI2). Absent means undecided -- the situation falls back
+    to the creature's authored disposition prose; this call is the only way
+    that ever changes.
+
+    Gate order matches every other mechanic in this module:
+    `_resolve_actor_and_run` first (an unknown or foreign actor, an archived
+    run, a run outside `ready`/`active` each raise before anything else
+    runs). A non-creature actor (`item`/`fixture`) is refused
+    (`ACTOR_NOT_CREATURE` is not a distinct code -- reuses `outcome.reason`
+    text; there is no dedicated exception because this is an expected
+    refusal, not a programming error). `state` is reassigned whole, never
+    mutated in place, matching the house rule for `GameObject.state`.
+    """
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+
+    if actor.kind != "creature":
+        reason = f"actor is not a creature: {actor_id}"
+        event = await append_event(
+            db,
+            run_id=run.id,
+            type="tool_call",
+            visibility="dm",
+            turn_id=turn_id,
+            payload={
+                "name": "set_hostility",
+                "args": {"actorId": actor_id, "hostile": hostile},
+                "roll_ids": [],
+                "result": "refused",
+                "outcome": {"reason": reason},
+            },
+        )
+        await db.commit()
+        return MutationResult(status="refused", reason=reason, event_ids=[event.id])
+
+    state = dict(actor.state)
+    state["hostile"] = hostile
+    actor.state = state
+
+    event = await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "set_hostility",
+            "args": {"actorId": actor_id, "hostile": hostile},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {},
+        },
+    )
+    await db.commit()
+    return MutationResult(status="ok", event_ids=[event.id], facts={"hostile": hostile})
+
+
+async def leave_scene(
+    db: AsyncSession, *, user_id: str, actor_id: str, turn_id: str | None = None
+) -> MutationResult:
+    """Removes the actor at `actor_id` from its scene, remembering where it
+    left in `state["left_scene"] = {"sceneId", "adventureRunId"}` (sprint
+    011/03, WI2). `scene_id` and `adventure_run_id` are cleared together --
+    `GameObject`'s own `position` CHECK allows only both null or both set,
+    never one alone.
+
+    Gate order matches `set_hostility`. An actor with no `scene_id` already
+    -- never positioned, or already departed -- is refused
+    (`ALREADY_LEFT` is not a distinct code, same convention as above).
+    """
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+
+    if actor.scene_id is None:
+        reason = f"actor has already left the scene: {actor_id}"
+        event = await append_event(
+            db,
+            run_id=run.id,
+            type="tool_call",
+            visibility="dm",
+            turn_id=turn_id,
+            payload={
+                "name": "leave_scene",
+                "args": {"actorId": actor_id},
+                "roll_ids": [],
+                "result": "refused",
+                "outcome": {"reason": reason},
+            },
+        )
+        await db.commit()
+        return MutationResult(status="refused", reason=reason, event_ids=[event.id])
+
+    scene_id = actor.scene_id
+    adventure_run_id = actor.adventure_run_id
+    state = dict(actor.state)
+    state["left_scene"] = {"sceneId": scene_id, "adventureRunId": adventure_run_id}
+    actor.state = state
+    actor.scene_id = None
+    actor.adventure_run_id = None
+
+    event = await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "leave_scene",
+            "args": {"actorId": actor_id},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {},
+        },
+    )
+    await db.commit()
+    return MutationResult(
+        status="ok",
+        event_ids=[event.id],
+        facts={"sceneId": scene_id, "adventureRunId": adventure_run_id},
+    )
+
+
+async def enter_next_adventure(
+    db: AsyncSession, *, user_id: str, run_id: str, turn_id: str | None = None
+) -> MutationResult:
+    """Thin graph-facing wrapper over `enter_adventure` (sprint 011/03,
+    WI2): same gates, same writes, but returns `MutationResult` and records
+    its own dm `tool_call` -- `enter_adventure`'s own callers (sprint 06)
+    predate that convention and are left alone.
+
+    `AdventureExhaustedError` -- every adventure already entered -- is the
+    one expected refusal (← AC4); every other error `enter_adventure`
+    raises (`CampaignRunNotFoundError`, `RunArchivedError`,
+    `InvalidRunStatusError`, `AdventureActiveError`) keeps raising.
+    """
+    try:
+        adventure_run = await enter_adventure(db, user_id=user_id, run_id=run_id)
+    except AdventureExhaustedError:
+        reason = f"campaign run has no adventure left to enter: {run_id}"
+        event = await append_event(
+            db,
+            run_id=run_id,
+            type="tool_call",
+            visibility="dm",
+            turn_id=turn_id,
+            payload={
+                "name": "enter_next_adventure",
+                "args": {},
+                "roll_ids": [],
+                "result": "refused",
+                "outcome": {"reason": reason},
+            },
+        )
+        await db.commit()
+        return MutationResult(status="refused", reason=reason, event_ids=[event.id])
+
+    event = await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "enter_next_adventure",
+            "args": {},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {},
+        },
+    )
+    await db.commit()
+    return MutationResult(
+        status="ok", event_ids=[event.id], facts={"adventureRunId": adventure_run.id}
+    )
+
+
+_FINISH_RUN_MESSAGES: dict[str, str] = {
+    "victory": "The party has triumphed. The adventure ends in victory.",
+    "defeat": "The party has fallen. The adventure ends in defeat.",
+    "authored": "The story has run its course.",
+}
+
+
+async def finish_run(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    outcome: Literal["victory", "defeat", "authored"],
+    turn_id: str | None = None,
+) -> MutationResult:
+    """Marks `run_id` finished with `outcome` (sprint 011/03, WI2): sets
+    `status="finished"` on the run and appends one player-visible `system`
+    event carrying the ending prose plus `details.outcome` -- there is no
+    column for how a run ended and the persistence boundary forbids adding
+    one (← research), so the event is the only record.
+
+    Gate order: `_require_member` -> `_get_run` -> `_require_writable` (an
+    archived run keeps raising `RunArchivedError`). A run already
+    `status="finished"` is refused, typed, rather than raising -- calling
+    this twice is an expected shape (`use_exit`'s own last-adventure branch
+    and a retried `authored` ending can both reach here), not a programming
+    error.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    run = await _get_run(db, run_id)
+    _require_writable(run)
+
+    if run.status == "finished":
+        reason = f"campaign run is already finished: {run_id}"
+        event = await append_event(
+            db,
+            run_id=run_id,
+            type="tool_call",
+            visibility="dm",
+            turn_id=turn_id,
+            payload={
+                "name": "finish_run",
+                "args": {"outcome": outcome},
+                "roll_ids": [],
+                "result": "refused",
+                "outcome": {"reason": reason},
+            },
+        )
+        await db.commit()
+        return MutationResult(status="refused", reason=reason, event_ids=[event.id])
+
+    run.status = "finished"
+
+    ending_event = await append_event(
+        db,
+        run_id=run_id,
+        type="system",
+        visibility="player",
+        turn_id=turn_id,
+        payload={"message": _FINISH_RUN_MESSAGES[outcome], "details": {"outcome": outcome}},
+    )
+    tool_call_event = await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "finish_run",
+            "args": {"outcome": outcome},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {},
+        },
+    )
+    await db.commit()
+    return MutationResult(
+        status="ok",
+        event_ids=[ending_event.id, tool_call_event.id],
+        facts={"outcome": outcome},
+    )
+
+
 async def _get_game_object(db: AsyncSession, object_id: str) -> GameObject:
     """The one object `actor_id` names, with no run context yet -- `use_exit`
     loads the actor before it knows which run's membership to check, so
@@ -1670,36 +1927,6 @@ async def _roll_already_spent(
     )
 
 
-_ACTION_NAMES = frozenset({"interact", "take", "give", "use_item", "attack"})
-
-
-async def _already_acted(
-    db: AsyncSession, *, run_id: str, actor_id: str, turn_id: str | None
-) -> bool:
-    """True when `actor_id` already has a *successful* action-spending
-    `tool_call` in this run's turn (`turn_id` `IS NOT DISTINCT FROM` the
-    call's) -- `_roll_already_spent`'s own shape, applied to actions
-    rather than rolls (WI2, AC3).
-
-    `_ACTION_NAMES` is `interact`, `take`, `give`, `use_item` and `attack`
-    -- `drop` is deliberately absent: the product owner ruled dropping an
-    item free (SRD; `decisions/mechanics.md`), superseding the brief's own
-    list. `use_exit`, every roll and every check are outside the set
-    entirely -- none of them was ever a creature acting on something. A
-    merely `refused` attempt is never counted, so a mistaken attempt never
-    spends the turn it was refused in.
-    """
-    stmt = select(Event.payload).where(Event.campaign_run_id == run_id, Event.type == "tool_call")
-    stmt = stmt.where(Event.turn_id.is_(None) if turn_id is None else Event.turn_id == turn_id)
-    result = await db.execute(stmt)
-    return any(
-        payload["result"] == "ok"
-        and payload["name"] in _ACTION_NAMES
-        and payload["args"].get("actorId") == actor_id
-        for payload in result.scalars().all()
-    )
-
-
 async def _consume_roll(
     db: AsyncSession, *, run_id: str, roll_id: str, kind: RollKind, turn_id: str | None
 ) -> Event:
@@ -1876,9 +2103,8 @@ async def _refuse_exit(
     commits it alone -- the exit check runs before any other state change,
     so nothing else is pending, and this commit writes exactly that one
     row. `append_event` only flushes; without this commit, a rollback
-    anywhere between here and the caller would erase the record along with
-    the raised exception. The caller raises `ExitNotAvailableError` right
-    after this returns.
+    anywhere between here and the caller would erase the record before the
+    caller returns a typed refusal.
     """
     await append_event(
         db,
@@ -1896,11 +2122,18 @@ async def _refuse_exit(
     await db.commit()
 
 
-async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: str) -> None:
+async def use_exit(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    actor_id: str,
+    exit_id: str,
+    turn_id: str | None = None,
+) -> MutationResult:
     """Moves `actor_id` through `exit_id`, or -- on an `adventure_end`
     exit -- completes its adventure and, when that adventure is the pinned
-    campaign's last, finishes the whole game (WI1, AC2/AC3). No `turn_id`
-    parameter: phase 8 adds one once a turn exists.
+    campaign's last, finishes the whole game (WI1, AC2/AC3; sprint 011/03,
+    WI1: typed result, `turn_id`).
 
     Loads the object by `actor_id` alone (`GameObjectNotFoundError` if none
     answers), then `_require_member(run_id=obj.campaign_run_id, ...)` so a
@@ -1919,8 +2152,9 @@ async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: st
     one error class for both (← D11).
 
     The check runs before any state change. On failure, `_refuse_exit`
-    records and commits the refusal, then this function raises
-    `ExitNotAvailableError`.
+    records and commits the refusal, and this function returns a typed
+    refusal rather than raising -- an unmatched exit is an expected
+    mechanic refusal (← research), not a programming error.
 
     `kind='scene'` rewrites the actor's `scene_id` to `exit.to`
     (`adventure_run_id` untouched -- an exit only ever changes where within
@@ -1933,11 +2167,15 @@ async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: st
     them -- and appends `adventure_completed` at `player`; when that
     adventure is the last id the pinned campaign declares (read from the
     pinned content, never the `adventure_runs` table), the campaign run
-    itself becomes `finished`. No position is touched either way: nobody is
-    moved or cleared away when an adventure ends. Either outcome then also
-    appends a successful `tool_call` at `dm` (← D11; unlike `enter_adventure`,
-    which is a route rather than a tool) before the one commit that closes
-    the call.
+    itself finishes through `finish_run(outcome="authored")` (sprint
+    011/03, WI2) rather than this function writing `status` itself. No
+    position is touched either way: nobody is moved or cleared away when
+    an adventure ends. Either outcome then also appends a successful
+    `tool_call` at `dm` (← D11; unlike `enter_adventure`, which is a route
+    rather than a tool) before the one commit that closes the call.
+
+    `facts`: `{"kind": "scene"|"adventure_end", "sceneId": str|None,
+    "runFinished": bool}`.
     """
     obj = await _get_game_object(db, actor_id)
     await _require_member(db, run_id=obj.campaign_run_id, user_id=user_id)
@@ -1959,8 +2197,9 @@ async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: st
             else f"exit '{exit_id}' is not on the actor's current scene"
         )
         await _refuse_exit(db, run_id=run.id, actor_id=actor_id, exit_id=exit_id, reason=reason)
-        raise ExitNotAvailableError(actor_id, exit_id)
+        return MutationResult(status="refused", reason=reason)
 
+    run_finished = False
     if exit_.kind == "scene":
         obj.scene_id = exit_.to
         destination = content_service.load_scene(run.campaign_id, run.content_version, obj.scene_id)
@@ -1969,6 +2208,7 @@ async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: st
             run_id=run.id,
             type="scene_entered",
             visibility="player",
+            turn_id=turn_id,
             payload={
                 "adventure_run_id": obj.adventure_run_id,
                 "scene_id": obj.scene_id,
@@ -1987,18 +2227,42 @@ async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: st
             run_id=run.id,
             type="adventure_completed",
             visibility="player",
+            turn_id=turn_id,
             payload={"adventure_run_id": adventure_run.id},
         )
 
         loaded = content_service.load_campaign(run.campaign_id, run.content_version)
         if adventure_run.adventure_id == loaded.campaign.adventures[-1]:
-            run.status = "finished"
+            await append_event(
+                db,
+                run_id=run.id,
+                type="tool_call",
+                visibility="dm",
+                turn_id=turn_id,
+                payload={
+                    "name": "use_exit",
+                    "args": {"actorId": actor_id, "exitId": exit_id},
+                    "roll_ids": [],
+                    "result": "ok",
+                    "outcome": {},
+                },
+            )
+            await db.commit()
+            finish_result = await finish_run(
+                db, user_id=user_id, run_id=run.id, outcome="authored", turn_id=turn_id
+            )
+            return MutationResult(
+                status="ok",
+                event_ids=list(finish_result.event_ids),
+                facts={"kind": "adventure_end", "sceneId": None, "runFinished": True},
+            )
 
     await append_event(
         db,
         run_id=run.id,
         type="tool_call",
         visibility="dm",
+        turn_id=turn_id,
         payload={
             "name": "use_exit",
             "args": {"actorId": actor_id, "exitId": exit_id},
@@ -2008,6 +2272,14 @@ async def use_exit(db: AsyncSession, *, user_id: str, actor_id: str, exit_id: st
         },
     )
     await db.commit()
+    return MutationResult(
+        status="ok",
+        facts={
+            "kind": "scene" if exit_.kind == "scene" else "adventure_end",
+            "sceneId": obj.scene_id if exit_.kind == "scene" else None,
+            "runFinished": run_finished,
+        },
+    )
 
 
 async def _refuse_interact(
@@ -2057,23 +2329,20 @@ async def interact(
     action: str,
     roll_id: str | None = None,
     turn_id: str | None = None,
-) -> bool:
+) -> MutationResult:
     """Applies the fixture at `object_id`'s own authored `FixtureCheck` for
     `action` -- passing on an `ability_check` roll `>= dc`, or, with no
     roll, on an item the actor already carries that the check's own
-    `bypassed_by` names (WI1, AC1). Returns whether the check passed;
-    `success` is prose the DM narrates, and no `objects` row ever changes
-    here, win or lose.
+    `bypassed_by` names (WI1, AC1; sprint 011/03, WI1: typed result, and a
+    successful check now opens the fixture *durably*).
 
     Gate order, shared by every acting mechanic in this module:
     `_resolve_actor_and_run` first, exactly `use_exit`'s own gate (an
     unknown or foreign actor, an archived run, a run outside `ready`/
-    `active` each raise before anything else runs) -- then `_already_acted`
-    (WI2, AC3): a successful `interact`/`take`/`give`/`use_item`/`attack`
-    already recorded for this actor in this turn refuses outright, before
-    the attempted action is even looked up, as `AlreadyActedError` /
-    `ALREADY_ACTED` -- then this mechanic's own checks, then the write,
-    then a `tool_call` `ok`, then one commit.
+    `active` each raise before anything else runs) -- then this
+    mechanic's own checks, then the write, then a `tool_call` `ok`, then
+    one commit. The one-action-per-turn scan is retired (← research):
+    every acting mechanic may be called freely within a turn.
 
     `object_id` is loaded with no run filter first, the same way
     `use_exit` loads its actor -- an object on a foreign run answers
@@ -2081,11 +2350,11 @@ async def interact(
     either way, before any refusal can be recorded. A `kind` other than
     `fixture` -- or a `fixture` with no `template_id`, which cannot
     happen for seeded content but is guarded against here regardless --
-    is refused as `ACTION_NOT_AVAILABLE`, indistinguishable from an
-    unmatched `action`: neither has an authored check to weigh. `action`
-    matches a `FixtureCheck.action` by exact string equality only (phase
-    8's tool layer offers the authored strings verbatim); no match is the
-    same refusal.
+    is a typed refusal, indistinguishable from an unmatched `action`:
+    neither has an authored check to weigh. `action` matches a
+    `FixtureCheck.action` by exact string equality only (phase 8's tool
+    layer offers the authored strings verbatim); no match is the same
+    refusal.
 
     With `roll_id` given, it is consumed through `_consume_roll` at
     `kind="ability_check"` -- 07b's one implementation, never a second one
@@ -2093,42 +2362,41 @@ async def interact(
     recorded (exactly `resolve_check`/`resolve_save`'s own precedent, ←
     D12), while a wrong-kind or already-spent roll is refused and
     committed (`RollNotUsableError`, mapped to `ROLL_NOT_USABLE`) before
-    being re-raised. Its `total` decides `success` against the check's
-    `dc`; a failed check is still `ok`, not a refusal (the world simply
-    does not open) -- only the three named refusals ever raise.
+    being re-raised -- roll errors keep raising (← research). Its `total`
+    decides `success` against the check's `dc`; a failed check is still
+    `ok`, not a refusal (the world simply does not open).
 
     With no `roll_id`, the check's own `bypassed_by` is consulted -- never
     otherwise -- for a `GameObject` this actor owns
     (`owner_object_id = actor.id`) whose `template_id` is named there; a
-    match passes with no roll, its id reported as `outcome.bypassedBy`.
-    No match refuses `ROLL_REQUIRED`.
+    match passes with no roll, its id reported as `facts.bypassedBy`. No
+    match is a typed refusal (missing bypass item, ← research).
 
     Sprint 010/04, I2: `success` alone also appends `way_opened` at
     `player` visibility, before the `dm`-only `tool_call` -- naming the
     actor, the object and `action` verbatim (authored content, never the
     model's own words). A failed check changed nothing in the world and
     leaves no such row, though its `tool_call` still records `ok`.
+
+    Sprint 011/03, WI1, AC1: `success` alone also persists
+    `obj.state["fixture_outcomes"][action] = {"success": <the authored
+    success prose>, "turnId": turn_id}` -- reassigning `obj.state` whole
+    so SQLAlchemy sees the change (the module's own JSONB house rule). A
+    present key means the fixture stays open across reloads; a failed
+    check writes nothing, so a later, successful attempt at the same
+    `action` can still open it.
+
+    `facts`: `{"success": bool, "dc": int, "total": int|None,
+    "bypassedBy": str|None, "outcome": str}`.
     """
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
-
-    if await _already_acted(db, run_id=run.id, actor_id=actor_id, turn_id=turn_id):
-        await _refuse_interact(
-            db,
-            run_id=run.id,
-            actor_id=actor_id,
-            object_id=object_id,
-            action=action,
-            roll_id=roll_id,
-            turn_id=turn_id,
-            reason="actor has already acted this turn",
-        )
-        raise AlreadyActedError(actor_id)
 
     obj = await _get_game_object(db, object_id)
     if obj.campaign_run_id != run.id:
         raise GameObjectNotFoundError(object_id)
 
     if obj.kind != "fixture" or obj.template_id is None:
+        reason = "object is not a fixture"
         await _refuse_interact(
             db,
             run_id=run.id,
@@ -2137,15 +2405,16 @@ async def interact(
             action=action,
             roll_id=roll_id,
             turn_id=turn_id,
-            reason="object is not a fixture",
+            reason=reason,
         )
-        raise ActionNotAvailableError(object_id, action)
+        return MutationResult(status="refused", reason=reason)
 
     template = content_service.load_object_template(
         run.campaign_id, run.content_version, obj.template_id
     )
     check = next((candidate for candidate in template.checks if candidate.action == action), None)
     if check is None:
+        reason = f"no check answers action {action!r}"
         await _refuse_interact(
             db,
             run_id=run.id,
@@ -2154,9 +2423,9 @@ async def interact(
             action=action,
             roll_id=roll_id,
             turn_id=turn_id,
-            reason=f"no check answers action {action!r}",
+            reason=reason,
         )
-        raise ActionNotAvailableError(object_id, action)
+        return MutationResult(status="refused", reason=reason)
 
     total: int | None = None
     bypassed_by: str | None = None
@@ -2190,6 +2459,7 @@ async def interact(
             )
             bypassed_by = bypass_result.scalars().first()
         if bypassed_by is None:
+            reason = "the check needs a roll and nothing carried bypasses it"
             await _refuse_interact(
                 db,
                 run_id=run.id,
@@ -2198,9 +2468,9 @@ async def interact(
                 action=action,
                 roll_id=roll_id,
                 turn_id=turn_id,
-                reason="the check needs a roll and nothing carried bypasses it",
+                reason=reason,
             )
-            raise RollRequiredError(object_id, action)
+            return MutationResult(status="refused", reason=reason)
         success = True
 
     outcome: dict[str, Any] = {"action": action, "dc": check.dc}
@@ -2229,8 +2499,11 @@ async def interact(
                 "action": action,
             },
         )
+        fixture_outcomes = dict(obj.state.get("fixture_outcomes", {}))
+        fixture_outcomes[action] = {"success": check.success, "turnId": turn_id}
+        obj.state = {**obj.state, "fixture_outcomes": fixture_outcomes}
 
-    await append_event(
+    tool_call_event = await append_event(
         db,
         run_id=run.id,
         type="tool_call",
@@ -2245,7 +2518,17 @@ async def interact(
         },
     )
     await db.commit()
-    return success
+    return MutationResult(
+        status="ok",
+        event_ids=[tool_call_event.id],
+        facts={
+            "success": success,
+            "dc": check.dc,
+            "total": total,
+            "bypassedBy": bypassed_by,
+            "outcome": "success" if success else "failure",
+        },
+    )
 
 
 async def _item_reachable(db: AsyncSession, *, actor: GameObject, item: GameObject) -> bool:
@@ -2296,10 +2579,10 @@ async def _refuse_move(
     turn_id: str | None,
     reason: str,
 ) -> None:
-    """Records a `take`/`drop`/`give`/`use_item` refusal where only the DM
-    sees it (← D11) and commits it alone -- `_refuse_interact`'s and
-    `_refuse_exit`'s own pattern, generalised across the four mechanics
-    this file adds: `append_event` only flushes, and the caller's rollback
+    """Records a `take`/`drop`/`give` refusal where only the DM sees it
+    (← D11) and commits it alone -- `_refuse_interact`'s and
+    `_refuse_exit`'s own pattern, generalised across the mechanics this
+    file adds: `append_event` only flushes, and the caller's rollback
     on the way to raising would erase the record. `args` is exactly what
     the matching successful call would have recorded (WI1, I3)."""
     await append_event(
@@ -2326,21 +2609,21 @@ async def take(
     actor_id: str,
     item_id: str,
     turn_id: str | None = None,
-) -> None:
+) -> MutationResult:
     """Picks `item_id` up: sets its `owner_object_id` to `actor_id` and
     clears its position (WI1, AC2), from either the floor of the actor's
     own scene or -- this sprint's widening -- a non-creature container
     standing there too (AC5, `_item_reachable`).
 
-    Gate order shared with `interact`: `_resolve_actor_and_run` -> the
-    one-action check (`take` spends the turn's action, ← I2) ->
-    reachability -> the write -> a `tool_call` `ok` -> one commit. `item_id`
-    is loaded with no run filter first, exactly `object_id` in `interact`
-    (← D12): unknown and foreign both raise `GameObjectNotFoundError`
-    before any refusal is recorded. An unreachable item -- another scene,
-    carried by another creature, or the actor standing nowhere -- is
-    refused as `OBJECT_NOT_REACHABLE`, recorded and committed before
-    raising (← D11).
+    Gate order shared with `interact`: `_resolve_actor_and_run` ->
+    reachability -> the write -> a `tool_call` `ok` -> one commit
+    (sprint 011/03, WI1: the one-action check is retired, ← research).
+    `item_id` is loaded with no run filter first, exactly `object_id` in
+    `interact` (← D12): unknown and foreign both raise
+    `GameObjectNotFoundError` before any refusal is recorded. An
+    unreachable item -- another scene, carried by another creature, or
+    the actor standing nowhere -- is a typed refusal, recorded and
+    committed first (← research).
 
     Sprint 010/04, I2: a successful move also appends `item_moved` at
     `player` visibility, before the `dm`-only `tool_call` -- `movement:
@@ -2350,29 +2633,19 @@ async def take(
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
     args = {"actorId": actor_id, "itemId": item_id}
 
-    if await _already_acted(db, run_id=run.id, actor_id=actor_id, turn_id=turn_id):
-        await _refuse_move(
-            db,
-            run_id=run.id,
-            name="take",
-            args=args,
-            turn_id=turn_id,
-            reason="actor has already acted this turn",
-        )
-        raise AlreadyActedError(actor_id)
-
     item = await _load_run_object(db, item_id, run_id=run.id)
 
     if not await _item_reachable(db, actor=actor, item=item):
+        reason = "item is not reachable from the actor's current scene"
         await _refuse_move(
             db,
             run_id=run.id,
             name="take",
             args=args,
             turn_id=turn_id,
-            reason="item is not reachable from the actor's current scene",
+            reason=reason,
         )
-        raise ObjectNotReachableError(item_id)
+        return MutationResult(status="refused", reason=reason)
 
     item.owner_object_id = actor.id
     item.adventure_run_id = None
@@ -2392,7 +2665,7 @@ async def take(
             "item_name": item.name,
         },
     )
-    await append_event(
+    tool_call_event = await append_event(
         db,
         run_id=run.id,
         type="tool_call",
@@ -2401,6 +2674,7 @@ async def take(
         payload={"name": "take", "args": args, "roll_ids": [], "result": "ok", "outcome": {}},
     )
     await db.commit()
+    return MutationResult(status="ok", event_ids=[tool_call_event.id])
 
 
 async def drop(
@@ -2410,18 +2684,18 @@ async def drop(
     actor_id: str,
     item_id: str,
     turn_id: str | None = None,
-) -> None:
+) -> MutationResult:
     """Puts `item_id` down: clears its `owner_object_id` and positions it
     into the actor's own scene and adventure run (WI1, AC2).
 
     Gate order: `_resolve_actor_and_run`, then straight to the mechanic's
-    own check -- **no one-action check** (← I2, the product owner's
-    ruling that dropping is free, `decisions/mechanics.md`; 08a's action
-    set already excludes `drop`, unchanged here). `item_id` is loaded with
-    no run filter first, exactly `take`'s own `_load_run_object` (← D12).
-    Refused as `OBJECT_NOT_REACHABLE` when the item is not currently
-    carried by this actor, or the actor has no current scene to drop it
-    into -- recorded and committed before raising (← D11).
+    own check -- **no one-action check**, dropping is free either way (←
+    I2, the product owner's ruling, `decisions/mechanics.md`; 08a's
+    action set already excludes `drop`, unchanged here). `item_id` is
+    loaded with no run filter first, exactly `take`'s own
+    `_load_run_object` (← D12). A typed refusal when the item is not
+    currently carried by this actor, or the actor has no current scene to
+    drop it into -- recorded and committed first (← research).
 
     Sprint 010/04, I2: a successful move also appends `item_moved` at
     `player` visibility (`movement: "dropped"`), before the `dm`-only
@@ -2433,15 +2707,16 @@ async def drop(
     item = await _load_run_object(db, item_id, run_id=run.id)
 
     if item.owner_object_id != actor.id or actor.scene_id is None:
+        reason = "item is not carried by the actor, or the actor has no current scene"
         await _refuse_move(
             db,
             run_id=run.id,
             name="drop",
             args=args,
             turn_id=turn_id,
-            reason="item is not carried by the actor, or the actor has no current scene",
+            reason=reason,
         )
-        raise ObjectNotReachableError(item_id)
+        return MutationResult(status="refused", reason=reason)
 
     item.owner_object_id = None
     item.adventure_run_id = actor.adventure_run_id
@@ -2461,7 +2736,7 @@ async def drop(
             "item_name": item.name,
         },
     )
-    await append_event(
+    tool_call_event = await append_event(
         db,
         run_id=run.id,
         type="tool_call",
@@ -2470,6 +2745,7 @@ async def drop(
         payload={"name": "drop", "args": args, "roll_ids": [], "result": "ok", "outcome": {}},
     )
     await db.commit()
+    return MutationResult(status="ok", event_ids=[tool_call_event.id])
 
 
 async def give(
@@ -2480,23 +2756,24 @@ async def give(
     to_id: str,
     item_id: str,
     turn_id: str | None = None,
-) -> None:
+) -> MutationResult:
     """Re-owns `item_id` from `from_id` to `to_id` -- one carrier handing
     something to another (WI1, AC2). Recorded `args` name the giver
     `actorId`, so one key always names the actor (I3).
 
     Gate order shared with `take`: `_resolve_actor_and_run` on the giver ->
-    the one-action check (`give` spends the turn's action, ← I2) -> the
-    mechanic's own checks -> the write -> a `tool_call` `ok` -> one commit.
-    Both `item_id` and `to_id` are loaded with no run filter first, exactly
-    `take`'s own `_load_run_object` (← D12): unknown or foreign either way
-    raises `GameObjectNotFoundError` before any refusal is recorded.
+    the mechanic's own checks -> the write -> a `tool_call` `ok` -> one
+    commit (sprint 011/03, WI1: the one-action check is retired, ←
+    research). Both `item_id` and `to_id` are loaded with no run filter
+    first, exactly `take`'s own `_load_run_object` (← D12): unknown or
+    foreign either way raises `GameObjectNotFoundError` before any
+    refusal is recorded.
 
-    Refused as `OBJECT_NOT_REACHABLE` -- recorded and committed before
-    raising (← D11) -- unless the item is currently carried by the giver
-    *and* the receiver is a creature sharing the giver's own scene: give
-    never reaches across scenes, never hands over something the giver does
-    not itself carry, and never hands to anything but another creature.
+    A typed refusal -- recorded and committed first (← research) --
+    unless the item is currently carried by the giver *and* the receiver
+    is a creature sharing the giver's own scene: give never reaches
+    across scenes, never hands over something the giver does not itself
+    carry, and never hands to anything but another creature.
 
     Sprint 010/04, I2: a successful move also appends `item_moved` at
     `player` visibility (`movement: "given"`, `toId`/`toName` naming the
@@ -2505,17 +2782,6 @@ async def give(
     """
     giver, run = await _resolve_actor_and_run(db, actor_id=from_id, user_id=user_id)
     args = {"actorId": from_id, "toId": to_id, "itemId": item_id}
-
-    if await _already_acted(db, run_id=run.id, actor_id=from_id, turn_id=turn_id):
-        await _refuse_move(
-            db,
-            run_id=run.id,
-            name="give",
-            args=args,
-            turn_id=turn_id,
-            reason="actor has already acted this turn",
-        )
-        raise AlreadyActedError(from_id)
 
     item = await _load_run_object(db, item_id, run_id=run.id)
     receiver = await _load_run_object(db, to_id, run_id=run.id)
@@ -2528,18 +2794,19 @@ async def give(
         and receiver.scene_id == giver.scene_id
     )
     if not reachable:
+        reason = (
+            "item is not carried by the giver, or the receiver is not a creature "
+            "sharing the giver's scene"
+        )
         await _refuse_move(
             db,
             run_id=run.id,
             name="give",
             args=args,
             turn_id=turn_id,
-            reason=(
-                "item is not carried by the giver, or the receiver is not a creature "
-                "sharing the giver's scene"
-            ),
+            reason=reason,
         )
-        raise ObjectNotReachableError(item_id)
+        return MutationResult(status="refused", reason=reason)
 
     item.owner_object_id = receiver.id
 
@@ -2559,7 +2826,7 @@ async def give(
             "to_name": receiver.name,
         },
     )
-    await append_event(
+    tool_call_event = await append_event(
         db,
         run_id=run.id,
         type="tool_call",
@@ -2568,62 +2835,7 @@ async def give(
         payload={"name": "give", "args": args, "roll_ids": [], "result": "ok", "outcome": {}},
     )
     await db.commit()
-
-
-async def use_item(
-    db: AsyncSession,
-    *,
-    user_id: str,
-    actor_id: str,
-    item_id: str,
-    target_id: str | None = None,
-    turn_id: str | None = None,
-) -> None:
-    """The seam a later sprint's consumable items call through -- today it
-    always raises (WI1, AC4): `ItemTemplate` (`content/schemas.py`) carries
-    no field saying an item is consumable, so every use is refused
-    unconditionally. A later field would only need a branch inserted
-    *before* the refusal below, nothing else about the gate order or the
-    write-that-never-happens here would change -- purely additive.
-
-    Gate order shared with `take`/`give`: `_resolve_actor_and_run` -> the
-    one-action check (`use_item` spends the turn's action, ← I2) -> `item_id`
-    loaded with no run filter first, exactly `take`'s own `_load_run_object`
-    (← D12) -> the unconditional refusal, recorded and committed before
-    raising `ItemNotConsumableError` (← D11). `targetId` is named in `args`
-    only when one was given, matching `interact`'s own `rollId` convention.
-    """
-    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
-    args: dict[str, Any] = {"actorId": actor_id, "itemId": item_id}
-    if target_id is not None:
-        args["targetId"] = target_id
-
-    if await _already_acted(db, run_id=run.id, actor_id=actor_id, turn_id=turn_id):
-        await _refuse_move(
-            db,
-            run_id=run.id,
-            name="use_item",
-            args=args,
-            turn_id=turn_id,
-            reason="actor has already acted this turn",
-        )
-        raise AlreadyActedError(actor_id)
-
-    await _load_run_object(db, item_id, run_id=run.id)
-
-    # No `ItemTemplate` field expresses "consumable" yet -- every use
-    # refuses here unconditionally. A later field would add a branch
-    # immediately above this call, before the refusal fires; nothing else
-    # in this function would need to change.
-    await _refuse_move(
-        db,
-        run_id=run.id,
-        name="use_item",
-        args=args,
-        turn_id=turn_id,
-        reason="no item is consumable yet",
-    )
-    raise ItemNotConsumableError(item_id)
+    return MutationResult(status="ok", event_ids=[tool_call_event.id])
 
 
 async def _refuse_attack(
@@ -2687,8 +2899,7 @@ async def attack(
     None` when the roll this call consumes was made.
 
     Gate order, this module's own shared shape: `_resolve_actor_and_run`
-    -> `_already_acted` (`ALREADY_ACTED`, `attack` already one of
-    `_ACTION_NAMES`) -> `target_id` and, when given, `item_id` loaded with
+    -> `target_id` and, when given, `item_id` loaded with
     no run filter first, exactly `take`'s own `_load_run_object` (← D12):
     unknown or foreign either way raises `GameObjectNotFoundError` before
     any refusal is recorded -> neither actor nor target down (sprint
@@ -2719,19 +2930,6 @@ async def attack(
     transcript for the newest event to guess it (← finding, WI2).
     """
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
-
-    if await _already_acted(db, run_id=run.id, actor_id=actor_id, turn_id=turn_id):
-        await _refuse_attack(
-            db,
-            run_id=run.id,
-            actor_id=actor_id,
-            target_id=target_id,
-            item_id=item_id,
-            roll_id=roll_id,
-            turn_id=turn_id,
-            reason="actor has already acted this turn",
-        )
-        raise AlreadyActedError(actor_id)
 
     target = await _load_run_object(db, target_id, run_id=run.id)
     item = None
@@ -2856,23 +3054,6 @@ async def attack(
     )
 
 
-async def _hit_already_damaged(
-    db: AsyncSession, *, run_id: str, hit_id: str, turn_id: str | None
-) -> bool:
-    """True when some *successful* `damage` `tool_call` in this run-and-
-    turn already named `hit_id` in its `args["hitId"]` -- `_roll_already_
-    spent`'s own shape, one key over (WI1, I2)."""
-    stmt = select(Event.payload).where(Event.campaign_run_id == run_id, Event.type == "tool_call")
-    stmt = stmt.where(Event.turn_id.is_(None) if turn_id is None else Event.turn_id == turn_id)
-    result = await db.execute(stmt)
-    return any(
-        payload["result"] == "ok"
-        and payload["name"] == "damage"
-        and payload["args"].get("hitId") == hit_id
-        for payload in result.scalars().all()
-    )
-
-
 async def _consume_hit(
     db: AsyncSession, *, run_id: str, hit_id: str, target_id: str, turn_id: str | None
 ) -> Event:
@@ -2894,9 +3075,10 @@ async def _consume_hit(
     `args["targetId"]` equals `target_id` -- the argument is only ever
     checked against the entry's recorded target, never trusted on its own
     (WI1); and no earlier *successful* `damage` this turn already named it
-    (`_hit_already_damaged`). Returns the `tool_call` event when every
-    condition holds; never touches the transcript itself -- the caller
-    records the refusal and commits it before re-raising.
+    Hit identity alone decides usability -- no scan for an earlier
+    `damage` naming the same `hit_id` (the damaged-hit scan is retired,
+    ← research); returns the `tool_call` event when every condition
+    holds, never touches the transcript itself.
     """
     result = await db.execute(select(Event).where(Event.id == hit_id))
     event = result.scalar_one_or_none()
@@ -2910,8 +3092,6 @@ async def _consume_hit(
         or event.turn_id != turn_id
         or event.payload["args"].get("targetId") != target_id
     ):
-        raise HitNotUsableError(hit_id)
-    if await _hit_already_damaged(db, run_id=run_id, hit_id=hit_id, turn_id=turn_id):
         raise HitNotUsableError(hit_id)
     return event
 
@@ -2974,7 +3154,7 @@ async def damage(
     No `actor_id`: unlike every other mechanic in this module, `damage` is
     anchored on the *target* it wounds, not on whoever struck it (that
     creature already spent its turn's action on `attack`, and `damage`
-    itself spends none -- it is outside `_ACTION_NAMES` entirely). `run`
+    is not an acting mechanic in its own right). `run`
     is therefore resolved the same way `use_exit` resolves its own: load
     `target_id` with no run filter first (`GameObjectNotFoundError` if
     unknown, before any refusal can be recorded, ← D12), then gate the run
@@ -3245,6 +3425,129 @@ async def record_rule_lookup(
         visibility="player",
         turn_id=turn_id,
         payload={"topic": topic},
+    )
+    await db.commit()
+    return event
+
+
+async def record_player_action(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    text: str,
+    turn_id: str,
+    answers_question_id: str | None = None,
+) -> Event:
+    """Records the player's own free-text turn -- a submitted action, or an
+    answer to an in-turn question when `answers_question_id` is given
+    (sprint 011/03, WI3). This is the module's own `player_action` write;
+    the game module used to write this row itself and no longer may.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    event = await append_event(
+        db,
+        run_id=run_id,
+        type="player_action",
+        visibility="player",
+        turn_id=turn_id,
+        payload={"text": text, "answersQuestionId": answers_question_id},
+    )
+    await db.commit()
+    return event
+
+
+async def record_answer(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    text: str,
+    question_id: str,
+    turn_id: str,
+) -> Event:
+    """Records the player's answer to a pending `question` interrupt
+    (sprint 011/03, WI3) -- the same `player_action` shape
+    `record_player_action` writes, `answers_question_id` always given here
+    since answering a question is exactly what this call is for.
+    """
+    return await record_player_action(
+        db,
+        user_id=user_id,
+        run_id=run_id,
+        text=text,
+        turn_id=turn_id,
+        answers_question_id=question_id,
+    )
+
+
+async def record_narration(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    text: str,
+    turn_id: str,
+    usage: Usage | None = None,
+) -> Event:
+    """Records the DM's own narration for the turn (sprint 011/03, WI3),
+    then -- matching the game module's own former behaviour exactly --
+    activates a `ready` run into `active` on its first narration, never on
+    any later one (`activate_campaign_run` is itself a no-op once
+    `active`).
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    event = await append_event(
+        db,
+        run_id=run_id,
+        type="narration",
+        visibility="player",
+        turn_id=turn_id,
+        payload={"text": text},
+        usage=usage,
+    )
+    await db.commit()
+
+    run = await get_campaign_run(db, user_id=user_id, run_id=run_id)
+    if run.status == "ready":
+        await activate_campaign_run(db, user_id=user_id, run_id=run_id)
+
+    return event
+
+
+async def record_outcome(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    name: str,
+    args: dict[str, Any],
+    outcome: dict[str, Any],
+    turn_id: str | None = None,
+    roll_ids: Sequence[str] = (),
+) -> Event:
+    """Records one mechanic invocation as a `dm`-visible `tool_call`
+    (sprint 011/03, WI3) -- the same shape every mechanic in this module
+    already writes for itself. `result` is derived from `outcome`, not a
+    separate argument: an `outcome` carrying a `"reason"` key is the
+    module's own refusal convention (e.g. `set_hostility`'s non-creature
+    actor), everything else is `"ok"`.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    result = "refused" if "reason" in outcome else "ok"
+    event = await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": name,
+            "args": args,
+            "roll_ids": list(roll_ids),
+            "result": result,
+            "outcome": outcome,
+        },
     )
     await db.commit()
     return event

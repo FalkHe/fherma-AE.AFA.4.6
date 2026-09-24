@@ -249,18 +249,14 @@ async def run_turn(
                     await playthrough_service.open_turn_id(db, user_id=user_id, run_id=run_id)
                     or generate_id()
                 )
-                await playthrough_service.append_event(
+                await playthrough_service.record_answer(
                     db,
+                    user_id=user_id,
                     run_id=run_id,
-                    type="player_action",
-                    visibility="player",
-                    payload={
-                        "text": text or "",
-                        "answersQuestionId": snapshot.interrupt.get("question_id"),
-                    },
+                    text=text or "",
+                    question_id=snapshot.interrupt.get("question_id"),
                     turn_id=turn_id,
                 )
-                await db.commit()
 
                 context = DmContext(
                     db=db, user_id=user_id, actor_id=character.id, run_id=run_id, turn_id=turn_id

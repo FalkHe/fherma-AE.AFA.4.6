@@ -356,6 +356,19 @@ Service functions (`service.py`), called as `service.f(...)`:
   untouched — that changes at the first narration, not here. A second entry
   while one is `active` collides with `uq_adventure_runs_active` and is
   re-raised as `AdventureActiveError`.
+- `set_hostility`, `leave_scene`, `enter_next_adventure`, `finish_run`
+  (sprint 011/03, WI2) — the durable world-lifecycle mutations, all
+  returning `MutationResult` (`schemas.py`). `set_hostility` flips
+  `state["hostile"]` on a creature, refusing a non-creature actor.
+  `leave_scene` clears an actor's `scene_id`/`adventure_run_id` together
+  (the `position` CHECK allows only both or neither) and remembers where
+  it left in `state["left_scene"]`, refusing an actor with no scene.
+  `enter_next_adventure` is a thin `MutationResult`-returning wrapper over
+  `enter_adventure`, refusing typed on `AdventureExhaustedError` instead of
+  raising. `finish_run` sets a run's `status="finished"` and appends one
+  player-visible `system` event carrying the ending prose and
+  `details.outcome` (`"victory"|"defeat"|"authored"`) — there is no status
+  column for how a run ended — refusing typed on a run already finished.
 - `use_exit` — the one mechanic that moves an actor anywhere, taking only
   who is acting and which exit they take; no destination is ever an
   argument. Loads the actor by id alone (`GameObjectNotFoundError` if
@@ -368,7 +381,8 @@ Service functions (`service.py`), called as `service.f(...)`:
   actor has no scene at all, refuses before any write: it appends a
   DM-visible `tool_call` event naming the mechanic, the actor and the exit,
   `result: "refused"`, commits that one row on its own — `append_event`
-  only flushes — and then raises `ExitNotAvailableError`. Found and
+  only flushes — and returns a typed `MutationResult(status="refused",
+  ...)` (sprint 011/03, WI1) rather than raising. Found and
   `kind="scene"`: rewrites the actor's `scene_id` to `exit.to`, appends a
   player-visible `scene_entered {adventureRunId, sceneId, sceneTitle}` —
   `sceneTitle` (sprint 010/04, I2) is the destination's own pinned title,
@@ -377,10 +391,12 @@ Service functions (`service.py`), called as `service.f(...)`:
   `kind="adventure_end"`: sets the actor's `adventure_runs` row
   `completed`/`completed_at`, appends a player-visible
   `adventure_completed {adventureRunId}`, and — when the pinned campaign's
-  own adventure list names no further adventure after this one — moves the
-  campaign run to `finished`; no object's position changes either way. Both
-  successful outcomes also append a DM-visible `tool_call`,
-  `result: "ok"`, and commit once. Full behaviour is
+  own adventure list names no further adventure after this one — calls
+  `finish_run(outcome="authored")` (sprint 011/03, WI2) rather than setting
+  `status` itself; no object's position changes either way. Both successful
+  outcomes also append a DM-visible `tool_call`, `result: "ok"`, and commit
+  once, and return `MutationResult(status="ok", facts: {kind: "scene"|
+  "adventure_end", sceneId, runFinished})`. Full behaviour is
   `docs/modules/playthrough.md` §9.
 - `request_player_roll` — derives the formula from `kind` and the actor via
   `dice.derive_formula`, then appends a player-visible `roll_requested`
@@ -480,69 +496,70 @@ Service functions (`service.py`), called as `service.f(...)`:
   and turn may carry `result: "ok"` with this id in `rollIds`. Any of those
   failing raises `RollNotUsableError`; nothing about the roll is written
   either way — only the caller above records a refusal.
+- Sprint 011/03, WI1: `interact`, `take`, `drop`, `give` and `use_exit` now
+  return a typed `MutationResult` (`schemas.py`) rather than a bare
+  `bool`/`None`, and the one-action-per-turn scan is retired — every
+  acting mechanic may be called freely within a turn. Four mechanic
+  refusals (an unreachable item, an unmatched exit, an unmatched fixture
+  action, a missing bypass item) are reported as `MutationResult(status=
+  "refused", reason=...)` rather than raised; not-found/archived/invalid-
+  status/roll errors still raise. `use_item` is deleted, along with
+  `AlreadyActedError`/`ItemNotConsumableError`.
 - `interact` — the one mechanic that acts on a fixture's own authored
   checks (`FixtureTemplate.checks`, `docs/modules/content.md`): takes the
   actor, the object, which of the object's checks is being attempted (by
   the check's own `action` text, matched exactly) and an optional roll id.
   Loads the actor and the object by id (`NOT_FOUND` otherwise), requires
-  the run `ready` or `active`, then runs the one-action check every
-  action-spending mechanic shares (§17 below) before ever matching the
-  attempt against the object's checks — a creature that has already acted
-  this turn is refused (`AlreadyActedError`, `ALREADY_ACTED`) before
-  its attempted action is even looked up. No check on the object matching
-  the named action at all is `ActionNotAvailableError` /
-  `ACTION_NOT_AVAILABLE`. Given a roll id, it spends it through the same
-  `_consume_roll` `resolve_check` and `resolve_save` already share for
-  `ability_check` — a roll of the wrong kind, already spent, from another
-  turn or of the `custom` kind answers `RollNotUsableError` /
-  `ROLL_NOT_USABLE` exactly as it does there — and passes when the roll's
+  the run `ready` or `active`. No check on the object matching the named
+  action at all is a typed refusal. Given a roll id, it spends it through
+  the same `_consume_roll` `resolve_check` and `resolve_save` already
+  share for `ability_check` — a roll of the wrong kind, already spent,
+  from another turn or of the `custom` kind still answers
+  `RollNotUsableError` / `ROLL_NOT_USABLE` — and passes when the roll's
   stored `total` meets the check's own `dc`. Given no roll id, it passes
   instead when a row with `owner_object_id` equal to the actor's id carries
   a `template_id` the check's own `bypassed_by` names; carrying nothing
-  that bypasses it, with no roll either, is `RollRequiredError` /
-  `ROLL_REQUIRED`. A passing check also appends a player-visible
+  that bypasses it, with no roll either, is a typed refusal. A passing
+  check also appends a player-visible
   `way_opened {actorId, actorName, objectId, objectName, action}` (sprint
   010/04, I2) before the `tool_call` below — `action` is the authored
-  string verbatim, never the model's own words; a failed check changed
-  nothing in the world and appends no such row, though its `tool_call`
-  still records `ok`. Either pass appends one DM-visible
+  string verbatim, never the model's own words — and persists
+  `state["fixture_outcomes"][action] = {success: <authored success
+  prose>, turnId}` on the fixture's own `objects` row, reassigned whole
+  (sprint 011/03, WI1, AC1): a present key means the fixture stays open
+  across reloads. A failed check changed nothing in the world and writes
+  neither row, though its `tool_call` still records `ok`. Either pass
+  appends one DM-visible
   `tool_call {args: {actorId, objectId, action, rollId?},
   rollIds: rollId ? [rollId] : [], result: "ok",
   outcome: {action, dc, total?, bypassedBy?, success: true}}` and commits
-  once — `objects` is never written by this function; the check's authored
-  `success` text is the Dungeon Master's own prose to narrate, never a
-  state flip this function makes. A refusal is recorded first — its own
-  `tool_call`, `result: "refused"`, naming the actor, the object and the
-  action — and committed on its own before the error is raised, the same
-  pattern `_refuse_exit` and `resolve_check`'s own refusal already keep.
-  Full behaviour is `docs/modules/playthrough.md` §16.
+  once. A refusal is recorded first — its own `tool_call`,
+  `result: "refused"`, naming the actor, the object and the action — and
+  committed on its own before the typed result is returned. Full
+  behaviour is `docs/modules/playthrough.md` §16.
 - `take` — the one mechanic that puts an item in an actor's hands: sets
   `owner_object_id` to the actor and clears its position
   (`adventure_run_id`, `scene_id` both `NULL`, §6). Loads the actor and the
   item by id (`GameObjectNotFoundError` otherwise), requires the run
-  `ready` or `active`, then runs the same one-action check `interact`
-  shares (§17) before reach is even considered. Reachable means the item
-  lies, unowned, in the actor's own scene, **or** its owner is a
-  non-creature object standing there too — a container, which is how
-  `stolen-fleece` comes out of `wool-sack` in Greenhollow (AC5); an item
-  another *creature* carries is not reachable this way, nor is one in
-  another scene, nor is any of this true of an actor with no scene at all.
-  Anything else is `ObjectNotReachableError` / `OBJECT_NOT_REACHABLE`. A
-  pass also appends a player-visible `item_moved {movement: "taken",
+  `ready` or `active`. Reachable means the item lies, unowned, in the
+  actor's own scene, **or** its owner is a non-creature object standing
+  there too — a container, which is how `stolen-fleece` comes out of
+  `wool-sack` in Greenhollow (AC5); an item another *creature* carries is
+  not reachable this way, nor is one in another scene, nor is any of this
+  true of an actor with no scene at all. Anything else is a typed refusal.
+  A pass also appends a player-visible `item_moved {movement: "taken",
   actorId, actorName, itemId, itemName}` (sprint 010/04, I2) before the
   `tool_call` below, naming actor and item by their stored `name`s, never a
   tool argument, then appends one DM-visible `tool_call {args: {actorId,
-  itemId}, result: "ok"}` and commits once; a refusal is recorded the same way,
-  `result: "refused"`, on its own commit, before the error is raised —
-  the pattern `_refuse_exit` and `interact`'s own refusal already keep.
-  Full behaviour is `docs/modules/playthrough.md` §18.
+  itemId}, result: "ok"}` and commits once; a refusal is recorded the same
+  way, `result: "refused"`, on its own commit, before the typed result is
+  returned. Full behaviour is `docs/modules/playthrough.md` §18.
 - `drop` — the reverse of `take`: clears `owner_object_id` and gives the
-  item the actor's own position instead. Free — it does not run the
-  one-action check at all, following the SRD's ruling that letting go of
-  what you carry costs nothing. Otherwise the same shape: actor and
-  item loaded by id, the run required `ready` or `active`, an item the
-  actor is not carrying refused as `ObjectNotReachableError` /
-  `OBJECT_NOT_REACHABLE`. A pass also appends a player-visible
+  item the actor's own position instead. Free either way, following the
+  SRD's ruling that letting go of what you carry costs nothing. Otherwise
+  the same shape: actor and item loaded by id, the run required `ready` or
+  `active`, an item the actor is not carrying refused as a typed refusal.
+  A pass also appends a player-visible
   `item_moved {movement: "dropped", actorId, actorName, itemId, itemName}`
   (sprint 010/04, I2) before the `tool_call` below; a pass or a refusal
   each its own committed `tool_call {args: {actorId, itemId}}`. Full
@@ -550,11 +567,10 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `give` — moves an item from one creature's hands straight to another's:
   re-owns it from `from_id` to `to_id`, touching no position column at all.
   Loads both creatures and the item by id, requires the run `ready` or
-  `active`, runs the one-action check (§17), then reach: the item must
-  already be carried by the giver, and the receiver must be a creature
-  standing in the giver's own scene — anything else, including the two
-  creatures in different scenes, is `ObjectNotReachableError` /
-  `OBJECT_NOT_REACHABLE`. A pass also appends a player-visible
+  `active`, then reach: the item must already be carried by the giver, and
+  the receiver must be a creature standing in the giver's own scene —
+  anything else, including the two creatures in different scenes, is a
+  typed refusal. A pass also appends a player-visible
   `item_moved {movement: "given", actorId, actorName, itemId, itemName,
   toId, toName}` (sprint 010/04, I2) before the `tool_call` below —
   `toId`/`toName` name the receiver and are set only for this movement —
@@ -562,28 +578,14 @@ Service functions (`service.py`), called as `service.f(...)`:
   `tool_call {args: {actorId, toId, itemId}, result: "ok"}` and commits
   once — `actorId` names the giver, so one key always names who acted; a
   refusal keeps the same shape, `result: "refused"`, committed on its own
-  before the error is raised. Full behaviour is
+  before the typed result is returned. Full behaviour is
   `docs/modules/playthrough.md` §18.
-- `use_item` — the seam where using an item will one day work, and today
-  refuses every template unconditionally: `ItemTemplate`
-  (`content/schemas.py`) carries no field yet that could say an item is
-  consumable, so there is nothing for this mechanic to do but refuse.
-  Loads the actor and the item by id, requires the run `ready` or
-  `active`, runs the one-action check (§17) before the refusal itself, so
-  a creature that has already acted is turned away by `AlreadyActedError`
-  rather than by the seam underneath it, then always raises
-  `ItemNotConsumableError` / `ITEM_NOT_CONSUMABLE` — recorded first as its
-  own DM-visible `tool_call {args: {actorId, itemId, targetId?},
-  result: "refused"}`, committed on its own, exactly like every other
-  refusal in this module. Full behaviour is
-  `docs/modules/playthrough.md` §19.
-- `attack` — the sixth action-spending mechanic: names the actor, the
-  target, an optional item (absent when a monster's own stat block
-  supplies the attack instead, §13) and the roll made for it. Loads the
-  actor and runs the same one-action check every action-spending mechanic
-  shares (§17), then loads the target and, when named, the item, refusing
-  `ObjectNotReachableError` / `OBJECT_NOT_REACHABLE` — the same code `take`,
-  `drop` and `give` already raise (§18) — when the target is in another
+- `attack` — names the actor, the target, an optional item (absent when a
+  monster's own stat block supplies the attack instead, §13) and the roll
+  made for it. Loads the actor, then the target and, when named, the item,
+  refusing `ObjectNotReachableError` / `OBJECT_NOT_REACHABLE` — the same
+  code `take`, `drop` and `give`'s own typed refusal shares the reason for
+  (§18) — when the target is in another
   scene or the item is not the actor's own to swing. Spends the named roll
   through `_consume_roll(kind="attack")` exactly as `resolve_check` and
   `resolve_save` do (§14), refusing `RollNotUsableError` / `ROLL_NOT_USABLE`
@@ -609,17 +611,17 @@ Service functions (`service.py`), called as `service.f(...)`:
   `HitNotUsableError` / `HIT_NOT_USABLE` — a code of its own, apart from
   `ROLL_NOT_USABLE` (§14), because a hit failing is a different mistake
   from a roll failing — unless that entry is on this run, is an `attack`
-  that succeeded `hit` or `crit`, belongs to this turn, names this same
-  target, and has not already been paid out by an earlier `damage` call.
-  Then spends the `damage` roll through the shared `_consume_roll` like
+  that succeeded `hit` or `crit`, belongs to this turn, and names this
+  same target — hit identity alone decides usability now (sprint 011/03:
+  the damaged-hit scan is retired, ← research). Then spends the `damage`
+  roll through the shared `_consume_roll` like
   every other roll (§14) and applies `min(total, current_hp)`, clamped at
   `0`, never below. At `0`, a row with no `member_id` becomes
   `is_alive = False`; a character's row keeps `is_alive = True` and instead
   gets its whole `state` reassigned with `down: True` added — a new
   `CharacterState` field, alongside `abilities`, `race`, `character_class`,
   `background` and `appearance` — since this JSONB column is never edited
-  in place. Makes no one-action check of its own: the `attack` it is bound
-  to already spent that. A pass also appends a player-visible
+  in place. A pass also appends a player-visible
   `hp_changed {targetId, targetName, before, after, maxHp, alive, down}`
   (sprint 010/04, I2) before the `tool_call` below — `before`/`after`
   bracket the hit points actually applied, `alive`/`down` the same flags
@@ -688,6 +690,15 @@ Service functions (`service.py`), called as `service.f(...)`:
   `lookup_rule` tool only when its search matched. No refusal path — a
   lookup that matched nothing never calls this at all, so there is nothing
   here to refuse.
+- `record_player_action`, `record_answer`, `record_narration` and
+  `record_outcome` (sprint 011/03, WI3) — the module's own recording of a
+  turn: a `player_action`, an answer to a pending question (the same
+  `player_action` shape, `answers_question_id` set), the DM's `narration`
+  (activating a `ready` run to `active` on its first one) and a mechanic's
+  `tool_call` (`result` derived from whether `outcome` carries a
+  `"reason"` key). Each is `_require_member`, append, commit, matching
+  `record_rule_lookup`'s own shape — the game module no longer writes any
+  of these itself.
 - `list_events` — the caller's `player`-visible events for a run, ordered by
   `id`, `after` exclusive, `limit` capped at 500 (default 200). Checks
   membership; `dm`-visible rows are excluded, not merely hidden downstream.
@@ -767,30 +778,18 @@ like every other command here: `f"{exc.code}: {exc}"` to stderr and exit
 `1` (`NOT_FOUND`) — the lookup lives in `recall`/`recap` themselves, not
 in the command.
 
-**Interacting, taking, dropping, giving, using an item, attacking and
-dealing damage all have no HTTP route either, for the same reason**:
-`interact`, `take`, `drop`, `give`, `use_item`, `attack` and `damage` are
-meant to be reached by the Dungeon Master's own tool layer, not called
-directly, and none has a CLI command of its own either — nothing outside
-the test suite calls any of them today. Neither does
-`roll_side_initiative`/`settle_initiative`, for the same reason as every
-other roll above.
+**Interacting, taking, dropping, giving, attacking and dealing damage all
+have no HTTP route either, for the same reason**: `interact`, `take`,
+`drop`, `give`, `attack` and `damage` are meant to be reached by the
+Dungeon Master's own tool layer, not called directly, and none has a CLI
+command of its own either — nothing outside the test suite calls any of
+them today. Neither does `roll_side_initiative`/`settle_initiative`, for
+the same reason as every other roll above.
 
-**One action per creature per turn** is a rule `interact` keeps and
-`take`, `give`, `use_item` and `attack` all share — five actions in all,
-the full set §17 names. `damage` makes no one-action check of its own: the
-`attack` it is bound to has already spent the turn. Dropping, using an
-exit, rolling, resolving a roll and rolling for initiative are outside
-that set on purpose: dropping is free per the SRD, and the other four were
-never a creature acting on something to begin with. The check itself reads
-`events` for this run and this creature's turn — its `tool_call` rows
-already marked `result: "ok"` for one of the action-spending names above,
-naming this actor in `args.actorId` — and refuses with
-`AlreadyActedError` / `ALREADY_ACTED` the moment one is found; nothing
-about it is stored on the creature, the turn or anywhere else, so a fresh
-`turn_id` always starts the count at zero again and a refused attempt,
-recorded but never `"ok"`, is never counted against it. Full behaviour is
-`docs/modules/playthrough.md` §17.
+**One action per creature per turn is retired** (sprint 011/03, ←
+research): every acting mechanic may be called freely within a turn now,
+and `_already_acted`/`_ACTION_NAMES`/`AlreadyActedError` are deleted along
+with `use_item`.
 
 The stream (`GET …/stream`, above) polls `service.latest_event_id` on an
 interval, sends the `updated` message when it has changed since the last
@@ -813,28 +812,28 @@ already checked on the caller's behalf. A run belonging to someone else and
 a run that does not exist answer identically — not found — so no one can
 probe for the existence of another player's game. Errors: an unknown or
 foreign run, an unknown campaign, an actor or object id `use_exit`,
-`interact`, `take`, `drop`, `give`, `use_item`, `attack` or `damage`
+`interact`, `take`, `drop`, `give`, `attack` or `damage`
 cannot find, and a roll id no consumer recognises are not found; a hit id
 no consumer recognises is *not usable*, not *not found*; a
 run already started, a second character, an archived run refusing a
 write, an invalid status transition, a second adventure entered while one
-is active, entering with none left to enter, `use_exit` asked for an exit
-it will not take, spending a roll already spent, from a later turn, or of
-the wrong kind, resolving against a `dc` outside `5..30`, `interact` asked
-for an action its object never authored, asked for a check needing a roll
-with none given and nothing carried that bypasses it, a second action
-asked of a creature that has already spent this turn's, `take`, `drop`,
-`give` or `attack` asked to reach an item or a target that is not
-reachable from where the actor stands, `use_item` asked to use anything
-at all, and `damage` asked to spend a hit that missed, belongs to another
-turn, names a different target, or has already been paid out are each a
-domain conflict (`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
+is active, entering with none left to enter, spending a roll already
+spent, from a later turn, or of the wrong kind, resolving against a `dc`
+outside `5..30`, and `damage` asked to spend a hit that missed, belongs to
+another turn, or names a different target are each a domain conflict
+(`ALREADY_STARTED`, `CHARACTER_EXISTS`, `RUN_ARCHIVED`,
 `INVALID_RUN_STATUS`, `ADVENTURE_ACTIVE`, `ADVENTURE_EXHAUSTED`,
-`EXIT_NOT_AVAILABLE`, `ROLL_NOT_USABLE`, `INVALID_DC`,
-`ACTION_NOT_AVAILABLE`, `ROLL_REQUIRED`, `ALREADY_ACTED`,
-`OBJECT_NOT_REACHABLE`, `ITEM_NOT_CONSUMABLE`, `HIT_NOT_USABLE`); a
-payload not matching its type's shape is a validation error
-(`InvalidEventPayloadError`).
+`ROLL_NOT_USABLE`, `INVALID_DC`, `HIT_NOT_USABLE`). Sprint 011/03, WI1:
+`use_exit` asked for an exit it will not take, `interact` asked for an
+action its object never authored or for a check needing a roll with none
+given and nothing carried that bypasses it, and `take`, `drop` or `give`
+asked to reach an item that is not reachable from where the actor stands
+are now typed `MutationResult` refusals, not raised errors — `EXIT_NOT_
+AVAILABLE`, `ACTION_NOT_AVAILABLE`, `ROLL_REQUIRED`, `ALREADY_ACTED` and
+`ITEM_NOT_CONSUMABLE` are retired along with their error classes and
+`use_item`; `attack` alone still raises `OBJECT_NOT_REACHABLE` for an
+unreachable target or item. A payload not matching its type's shape is a
+validation error (`InvalidEventPayloadError`).
 
 **The transcript read sorts by `id` alone, and that is only safe because one
 process mints every id.** `id` is a ULID, chronological by construction, but
