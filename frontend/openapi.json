@@ -951,7 +951,7 @@
           "playthrough"
         ],
         "summary": "Stream Campaign Run",
-        "description": "Says only \"there is something new\" (\u2190 D10) -- no content, no\naddress of its own beyond that, so the client always refetches the\ntranscript through `list_events`. Membership is checked here, before\nthe `StreamingResponse` is ever returned, so a foreign or unknown run\nanswers the ordinary error envelope instead of a stream that opens and\nimmediately dies (I3).\n\nSettings are read through `get_settings()` inside the handler, not at\nimport time, so a test can pin them small (I3).",
+        "description": "Says only \"there is something new\" (\u2190 D10) -- no content, no\naddress of its own beyond that, so the client always refetches the\ntranscript through `list_events`. Membership is checked here, before\nthe `StreamingResponse` is ever returned, so a foreign or unknown run\nanswers the ordinary error envelope instead of a stream that opens and\nimmediately dies (I3).\n\nSettings are read through `get_settings()` inside the handler, not at\nimport time, so a test can pin them small (I3).\n\nThe generator below never touches `db`: FastAPI tears the\nrequest-scoped session down the moment this handler returns, before\nthe streaming body ever runs, so a poll against it raises\n`sqlalchemy.exc.MissingGreenlet`. Each poll instead opens its own\nshort-lived session from the process-wide sessionmaker seam\n(`app.core.db.get_sessionmaker()`, the same one the CLI commands use\nfor their own request-less sessions), used and closed within that one\npoll.\n\n`user_id` is read off `auth.user` once, before that first call: `db`\nrolls back at the end of every `latest_event_id` (service.py), which\nexpires every attribute `auth.user` -- an ORM object loaded through\nthis same session -- ever loaded, and a later `auth.user.id` would\nitself trigger a lazy-load `MissingGreenlet` the same way a poll\nagainst `db` did.",
         "operationId": "stream_campaign_run_api_v1_playthrough_campaign__run_id__stream_get",
         "parameters": [
           {
@@ -1942,6 +1942,10 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "down": {
+            "type": "boolean",
+            "title": "Down"
           }
         },
         "type": "object",
@@ -1957,10 +1961,11 @@
           "abilities",
           "appearance",
           "backstory",
-          "items"
+          "items",
+          "down"
         ],
         "title": "CharacterRead",
-        "description": "The character, on the wire -- `id, name, currentHp, maxHp,\narmourClass, race, characterClass, level, appearance, abilities,\nbackstory, items` and nothing else (I2; sprint 009-07 adds the four\ncard facts -- \u2190 research Decision 5; WI1 sprint 010/05 widens this to\nthe one hero shape shared by every read that already returns one --\nthe run overview, the `POST \u2026/character` route and intent 009's\ncharacter card): no full state, no keys, no ownership, and no\n`isAlive`/`down` (\u2190 D7 keeps conditions off the card). `race`/\n`characterClass`/`level`/`appearance`/`abilities`/`backstory` are read\noff the object's `state` column (`CharacterState`), never stored as\ncolumns of their own -- `backstory` is `CharacterState.background`\nunder its wire name. `items` is one entry per unit of carried\nquantity, supplied by the caller rather than queried inside\n`character_read`."
+        "description": "The character, on the wire -- `id, name, currentHp, maxHp,\narmourClass, race, characterClass, level, appearance, abilities,\nbackstory, items` and nothing else (I2; sprint 009-07 adds the four\ncard facts -- \u2190 research Decision 5; WI1 sprint 010/05 widens this to\nthe one hero shape shared by every read that already returns one --\nthe run overview, the `POST \u2026/character` route and intent 009's\ncharacter card): no full state, no keys, no ownership, and no `isAlive`\n(\u2190 D7 keeps conditions off the card). `down` is the one exception\n(sprint 011/02, WI3, I3, intent \u00a71.5): a downed hero must read as\ndowned everywhere a read names it, the card included -- hp still reads\n0, `down` is additive. `race`/\n`characterClass`/`level`/`appearance`/`abilities`/`backstory` are read\noff the object's `state` column (`CharacterState`), never stored as\ncolumns of their own -- `backstory` is `CharacterState.background`\nunder its wire name. `items` is one entry per unit of carried\nquantity, supplied by the caller rather than queried inside\n`character_read`."
       },
       "CreationReply": {
         "properties": {
@@ -2433,7 +2438,7 @@
         },
         "type": "object",
         "title": "SheetSoFar",
-        "description": "The draft as it stands, on the wire (sprint 009-05, WI1): every\nfield nullable, filled in only as the conversation settles it.\n`maxHp`, `armourClass`, `speed`, `skills` and `equipment` only ever\ncome from a successful `service.build_sheet` -- everything else is\nread straight off the draft (\u2190 research Decision 3)."
+        "description": "The draft as it stands, on the wire (sprint 009-05, WI1): every\nfield nullable, filled in only as the conversation settles it.\nDerived fields come from `service.build_sheet` when it can build a\nprovisional sheet; chosen skills and gear still show when scores need\ncorrection. Unchosen gear stays off the preview until defaults are\nexplicitly taken."
       },
       "SignInRequest": {
         "properties": {
