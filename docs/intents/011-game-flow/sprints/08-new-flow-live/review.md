@@ -22,3 +22,4 @@ Brief: docs/intents/011-game-flow/sprints/08-new-flow-live/brief.md
 
 ## Verdict
 Round 1: changes requested — typing a plain conversational turn into an existing campaign ended in a server error and left that campaign stuck on "The Dungeon Master is thinking…" with the message box closed; a campaign that was waiting on a dice roll from before the change refuses the roll button with an error, so it cannot be continued either.
+Round 2: changes requested — the two problems from the last round are fixed, the frozen campaign plays on, and talking and moving work cleanly; but when the Dungeon Master asks for a dice roll, pressing the roll button does nothing and the campaign stays stuck on that request.

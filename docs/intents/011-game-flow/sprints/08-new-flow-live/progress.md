@@ -32,3 +32,4 @@ Status: `open | running | done | failed`
 
 ## Verify
 Round 1: changes-requested — AC1/Outcome: a model-proposed operation missing a required payload key raised inside execute (500, run stuck); runs whose pending roll request predates the new flow refuse the roll (409).
+Round 2: changes-requested — AC1/AC2: the roll button resumed the pause with an empty value, which the graph library treats as resuming nothing; the two round-1 defects are fixed.
