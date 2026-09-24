@@ -356,6 +356,19 @@ Service functions (`service.py`), called as `service.f(...)`:
   untouched — that changes at the first narration, not here. A second entry
   while one is `active` collides with `uq_adventure_runs_active` and is
   re-raised as `AdventureActiveError`.
+- `set_hostility`, `leave_scene`, `enter_next_adventure`, `finish_run`
+  (sprint 011/03, WI2) — the durable world-lifecycle mutations, all
+  returning `MutationResult` (`schemas.py`). `set_hostility` flips
+  `state["hostile"]` on a creature, refusing a non-creature actor.
+  `leave_scene` clears an actor's `scene_id`/`adventure_run_id` together
+  (the `position` CHECK allows only both or neither) and remembers where
+  it left in `state["left_scene"]`, refusing an actor with no scene.
+  `enter_next_adventure` is a thin `MutationResult`-returning wrapper over
+  `enter_adventure`, refusing typed on `AdventureExhaustedError` instead of
+  raising. `finish_run` sets a run's `status="finished"` and appends one
+  player-visible `system` event carrying the ending prose and
+  `details.outcome` (`"victory"|"defeat"|"authored"`) — there is no status
+  column for how a run ended — refusing typed on a run already finished.
 - `use_exit` — the one mechanic that moves an actor anywhere, taking only
   who is acting and which exit they take; no destination is ever an
   argument. Loads the actor by id alone (`GameObjectNotFoundError` if

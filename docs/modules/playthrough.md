@@ -1216,3 +1216,30 @@ same way it already treats a dead one — an id match still finds it
 outright, but a name never does. §21's own attack refusal is this same rule
 applied to a swing: neither the one swinging nor the one being swung at may
 already be down.
+
+## 23. Hostility, leaving a scene, and how a run ends
+
+**A creature's hostility is a flag on its own `state`, not a column**
+(sprint 011/03): `set_hostility` writes `state["hostile"]` true or false;
+absent means undecided, and the situation falls back to the creature's
+authored disposition prose instead. `leave_scene` is the departure a
+creature or character takes under its own power, distinct from `use_exit`
+moving the whole party: it clears `scene_id` and `adventure_run_id`
+together — the `objects` table's own `position` check allows only both set
+or both null, never one alone — and remembers where the actor left in
+`state["left_scene"] = {"sceneId", "adventureRunId"}`, so the departure is
+never simply forgotten. Both refuse typed rather than raising when asked
+for something already true: a non-creature actor for hostility, an actor
+already gone for departure.
+
+**There is no column recording how a run ended** — `enter_next_adventure`
+and `finish_run` are the two calls a game's lifecycle graph uses instead of
+touching `campaign_runs.status` itself. `enter_next_adventure` is a thin
+wrapper over `enter_adventure` (§9's own mechanic), refusing typed when the
+pinned campaign has nothing left to enter rather than raising.
+`finish_run` sets `status="finished"` and appends exactly one
+player-visible `system` event carrying the ending prose and
+`details.outcome` (`"victory"`, `"defeat"` or `"authored"`) — that event is
+the only record of *why* a run ended, ever. Calling it on an already-
+finished run is refused typed, not an error: `use_exit`'s own last-
+adventure branch and a later retry can both legitimately reach it twice.
