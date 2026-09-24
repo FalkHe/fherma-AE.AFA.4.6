@@ -28,11 +28,9 @@ on their own.
 import asyncio
 from types import SimpleNamespace
 
-import pytest
-
 from app.modules.game.agent import tools
 from app.modules.game.agent.state import DmContext
-from app.modules.playthrough.errors import ObjectNotReachableError
+from app.modules.playthrough.schemas import MutationResult
 from app.modules.srd.errors import SrdCorpusEmptyError
 from app.modules.srd.schemas import RuleMatch
 
@@ -209,6 +207,7 @@ def test_a_turn_with_a_rule_lookup_and_a_take_leaves_exactly_two_visible_entries
 
     async def fake_take(db, *, user_id, actor_id, item_id, turn_id=None):
         visible.append({"kind": "item_moved", "item_id": item_id})
+        return MutationResult(status="ok")
 
     monkeypatch.setattr(tools.playthrough_service, "take", fake_take)
 
@@ -229,7 +228,7 @@ def test_a_refused_take_and_a_private_check_leave_no_visible_entry(monkeypatch):
     visible: list[dict] = []
 
     async def fake_take(db, *, user_id, actor_id, item_id, turn_id=None):
-        raise ObjectNotReachableError(item_id)
+        return MutationResult(status="refused", reason="item is not reachable")
 
     monkeypatch.setattr(tools.playthrough_service, "take", fake_take)
 
@@ -241,8 +240,8 @@ def test_a_refused_take_and_a_private_check_leave_no_visible_entry(monkeypatch):
 
     ctx = _ctx()
 
-    with pytest.raises(ObjectNotReachableError):
-        asyncio.run(tools.take.coroutine(item_id="item-1", runtime=_runtime(ctx)))
+    take_result = asyncio.run(tools.take.coroutine(item_id="item-1", runtime=_runtime(ctx)))
+    assert take_result["status"] == "refused"
 
     check_result = asyncio.run(
         tools.passive_check.coroutine(ability="wisdom", dc=12, runtime=_runtime(ctx))

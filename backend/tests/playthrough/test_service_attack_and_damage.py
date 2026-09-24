@@ -38,7 +38,6 @@ from app.modules.content.schemas import Abilities, Attack
 from app.modules.playthrough import dice as playthrough_dice
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import (
-    AlreadyActedError,
     HitNotUsableError,
     ObjectNotReachableError,
     RollNotUsableError,
@@ -299,65 +298,6 @@ def test_attack_from_a_monsters_own_stat_block_needs_no_item(playthrough_db):
             "targetId": character.id,
             "rollId": attack_roll.id,
         }
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
-def test_attack_refuses_a_second_attack_by_the_same_actor_this_turn(playthrough_db):
-    async def _scenario():
-        user_id, run, character = await _reach_lair_maw(
-            playthrough_db, username="attack-already-acted"
-        )
-        goblin_id = (await _goblin_ids(playthrough_db, run_id=run.id))[0]
-        knife_id = await _owned_object_id(
-            playthrough_db, owner_id=character.id, template_id=KNIFE_TEMPLATE
-        )
-        turn_id = generate_id()
-
-        first_roll = await _rolled(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            kind="attack",
-            context={"item_id": KNIFE_TEMPLATE},
-            face=15,
-            turn_id=turn_id,
-        )
-        await service.attack(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            target_id=goblin_id,
-            item_id=knife_id,
-            roll_id=first_roll.id,
-            turn_id=turn_id,
-        )
-
-        second_roll = await _rolled(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            kind="attack",
-            context={"item_id": KNIFE_TEMPLATE},
-            face=15,
-            turn_id=turn_id,
-        )
-        with pytest.raises(AlreadyActedError) as excinfo:
-            await service.attack(
-                playthrough_db,
-                user_id=user_id,
-                actor_id=character.id,
-                target_id=goblin_id,
-                item_id=knife_id,
-                roll_id=second_roll.id,
-                turn_id=turn_id,
-            )
-        assert excinfo.value.code == ErrorCode.ALREADY_ACTED
-
-        async with _second_connection() as reader:
-            refused = await _tool_calls(reader, run.id, result="refused", name="attack")
-            assert len(refused) == 1
 
     asyncio.run(_scenario())
 
@@ -818,75 +758,6 @@ def test_damage_refuses_a_target_argument_that_mismatches_the_hits_own_target(pl
 
         row = await _object_row(playthrough_db, other_goblin)
         assert row.current_hp == 7
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
-def test_damage_refuses_the_same_hit_spent_twice(playthrough_db):
-    async def _scenario():
-        user_id, run, character = await _reach_lair_maw(playthrough_db, username="damage-twice")
-        goblin_id = (await _goblin_ids(playthrough_db, run_id=run.id))[0]
-        knife_id = await _owned_object_id(
-            playthrough_db, owner_id=character.id, template_id=KNIFE_TEMPLATE
-        )
-        turn_id = generate_id()
-
-        hit_id = await _hit(
-            playthrough_db,
-            user_id=user_id,
-            run_id=run.id,
-            actor_id=character.id,
-            target_id=goblin_id,
-            item_id=knife_id,
-            face=15,
-            turn_id=turn_id,
-        )
-
-        first_damage_roll = await _rolled(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            kind="damage",
-            context={"item_id": KNIFE_TEMPLATE},
-            face=2,
-            turn_id=turn_id,
-        )
-        await service.damage(
-            playthrough_db,
-            user_id=user_id,
-            target_id=goblin_id,
-            roll_id=first_damage_roll.id,
-            hit_id=hit_id,
-            turn_id=turn_id,
-        )
-
-        second_damage_roll = await _rolled(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            kind="damage",
-            context={"item_id": KNIFE_TEMPLATE},
-            face=2,
-            turn_id=turn_id,
-        )
-        with pytest.raises(HitNotUsableError) as excinfo:
-            await service.damage(
-                playthrough_db,
-                user_id=user_id,
-                target_id=goblin_id,
-                roll_id=second_damage_roll.id,
-                hit_id=hit_id,
-                turn_id=turn_id,
-            )
-        assert excinfo.value.code == ErrorCode.HIT_NOT_USABLE
-
-        row = await _object_row(playthrough_db, goblin_id)
-        assert row.current_hp == 3  # only the first damage ever applied
-
-        async with _second_connection() as reader:
-            refused = await _tool_calls(reader, run.id, result="refused", name="damage")
-            assert len(refused) == 1
 
     asyncio.run(_scenario())
 

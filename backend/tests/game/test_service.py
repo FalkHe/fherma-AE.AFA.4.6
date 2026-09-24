@@ -677,9 +677,6 @@ def test_the_model_cannot_supply_session_or_user_id():
     give_schema = tools.give.tool_call_schema.model_json_schema()
     assert set(give_schema["properties"]) == {"item_id", "to_id", "from_id"}
 
-    use_item_schema = tools.use_item.tool_call_schema.model_json_schema()
-    assert set(use_item_schema["properties"]) == {"item_id", "actor_id", "target_id"}
-
     use_exit_schema = tools.use_exit.tool_call_schema.model_json_schema()
     assert set(use_exit_schema["properties"]) == {"exit_id", "actor_id"}
 
@@ -1329,6 +1326,8 @@ def test_load_context_injects_scene_party_and_recap_into_system_prompt(monkeypat
 
 
 def test_action_tools_delegate_to_playthrough_service(prompt, monkeypatch):
+    from app.modules.playthrough.schemas import MutationResult
+
     calls = []
 
     async def fake_interact(
@@ -1345,7 +1344,7 @@ def test_action_tools_delegate_to_playthrough_service(prompt, monkeypatch):
                 "turn_id": turn_id,
             }
         )
-        return True
+        return MutationResult(status="ok", facts={"success": True})
 
     async def fake_take(db, *, user_id, actor_id, item_id, turn_id=None):
         calls.append(
@@ -1357,6 +1356,7 @@ def test_action_tools_delegate_to_playthrough_service(prompt, monkeypatch):
                 "turn_id": turn_id,
             }
         )
+        return MutationResult(status="ok")
 
     async def fake_drop(db, *, user_id, actor_id, item_id, turn_id=None):
         calls.append(
@@ -1368,6 +1368,7 @@ def test_action_tools_delegate_to_playthrough_service(prompt, monkeypatch):
                 "turn_id": turn_id,
             }
         )
+        return MutationResult(status="ok")
 
     async def fake_give(db, *, user_id, from_id, to_id, item_id, turn_id=None):
         calls.append(
@@ -1380,34 +1381,26 @@ def test_action_tools_delegate_to_playthrough_service(prompt, monkeypatch):
                 "turn_id": turn_id,
             }
         )
+        return MutationResult(status="ok")
 
-    async def fake_use_item(db, *, user_id, actor_id, item_id, target_id=None, turn_id=None):
-        calls.append(
-            {
-                "tool": "use_item",
-                "user_id": user_id,
-                "actor_id": actor_id,
-                "item_id": item_id,
-                "target_id": target_id,
-                "turn_id": turn_id,
-            }
-        )
-
-    async def fake_use_exit(db, *, user_id, actor_id, exit_id):
+    async def fake_use_exit(db, *, user_id, actor_id, exit_id, turn_id=None):
         calls.append(
             {
                 "tool": "use_exit",
                 "user_id": user_id,
                 "actor_id": actor_id,
                 "exit_id": exit_id,
+                "turn_id": turn_id,
             }
+        )
+        return MutationResult(
+            status="ok", facts={"kind": "scene", "sceneId": "cellar", "runFinished": False}
         )
 
     monkeypatch.setattr(tools.playthrough_service, "interact", fake_interact)
     monkeypatch.setattr(tools.playthrough_service, "take", fake_take)
     monkeypatch.setattr(tools.playthrough_service, "drop", fake_drop)
     monkeypatch.setattr(tools.playthrough_service, "give", fake_give)
-    monkeypatch.setattr(tools.playthrough_service, "use_item", fake_use_item)
     monkeypatch.setattr(tools.playthrough_service, "use_exit", fake_use_exit)
 
     # 1. Test interact
@@ -1504,32 +1497,7 @@ def test_action_tools_delegate_to_playthrough_service(prompt, monkeypatch):
         "turn_id": "turn-1",
     }
 
-    # 5. Test use_item
-    call_use = AIMessage(
-        content="",
-        tool_calls=[
-            {
-                "id": "c-use",
-                "name": "use_item",
-                "args": {"item_id": "potion-1", "target_id": "actor-1"},
-            }
-        ],
-    )
-    agent = service.build_agent(
-        model=_scripted_model([call_use, AIMessage(content="You drink the healing potion.")])
-    )
-    res = _turn(agent, "Drink potion.")
-    assert res.reply == "You drink the healing potion."
-    assert calls[-1] == {
-        "tool": "use_item",
-        "user_id": "user-1",
-        "actor_id": "actor-1",
-        "item_id": "potion-1",
-        "target_id": "actor-1",
-        "turn_id": "turn-1",
-    }
-
-    # 6. Test use_exit
+    # 5. Test use_exit
     call_exit = AIMessage(
         content="",
         tool_calls=[{"id": "c-exit", "name": "use_exit", "args": {"exit_id": "cellar-door"}}],
@@ -1544,14 +1512,15 @@ def test_action_tools_delegate_to_playthrough_service(prompt, monkeypatch):
         "user_id": "user-1",
         "actor_id": "actor-1",
         "exit_id": "cellar-door",
+        "turn_id": "turn-1",
     }
 
 
 def test_action_tool_refusal_is_caught_and_narrated(prompt, monkeypatch):
-    from app.modules.playthrough.service import ObjectNotReachableError
+    from app.modules.playthrough.schemas import MutationResult
 
     async def refusing_take(*args, **kwargs):
-        raise ObjectNotReachableError("sword-1")
+        return MutationResult(status="refused", reason="item is not reachable")
 
     monkeypatch.setattr(tools.playthrough_service, "take", refusing_take)
 
