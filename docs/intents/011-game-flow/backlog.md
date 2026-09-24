@@ -15,7 +15,7 @@ Steps 01–03 harden the rules layer under the running game; 04–07 build the n
 | 02 | Fights start with one roll per side, a critical hit really hurts more, and a fallen hero counts as fallen everywhere | 01 | #69 | done |
 | 03 | Opening a way, moving, changing attitudes, leaving, finishing a run and recording what happened are lasting changes owned by the rules layer alone | 02 | #70 | done |
 | 04 | The game can load one complete, trustworthy picture of the current moment, plus older narrative memory when the player refers back to it | 03 | #71 | done |
-| 05 | Every concrete thing the game can do exists once as a validated operation, and a paused roll or a running fight survives a server restart | 04 | #72 | running |
+| 05 | Every concrete thing the game can do exists once as a validated operation, and a paused roll or a running fight survives a server restart | 04 | #72 | done |
 | 06 | The storyteller decides one narrow thing at a time from facts it may see, and prose is written only from what actually happened | 05 | #73 | open |
 | 07 | One rule decides what happens next, so a landed hit always reaches damage, every eligible enemy acts once, and a turn never ends with something owed | 06 | #74 | open |
 | 08 | Every turn the player takes runs through the new game flow, with rolls, answers, fights and restarts behaving as before or better | 07 | #75 | open |
