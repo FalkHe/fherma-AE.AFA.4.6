@@ -21,3 +21,4 @@ The old flow's files remain on disk until sprint 09 removes them. The narrator h
 Brief: docs/intents/011-game-flow/sprints/08-new-flow-live/brief.md
 
 ## Verdict
+Round 1: changes requested — typing a plain conversational turn into an existing campaign ended in a server error and left that campaign stuck on "The Dungeon Master is thinking…" with the message box closed; a campaign that was waiting on a dice roll from before the change refuses the roll button with an error, so it cannot be continued either.

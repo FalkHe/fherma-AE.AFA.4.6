@@ -31,3 +31,4 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: changes-requested — AC1/Outcome: a model-proposed operation missing a required payload key raised inside execute (500, run stuck); runs whose pending roll request predates the new flow refuse the roll (409).
