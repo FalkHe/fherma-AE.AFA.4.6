@@ -153,8 +153,11 @@ class OperationResult:
         object.__setattr__(self, "event_ids", tuple(self.event_ids))
 
 
-# Sprint 07 owns the shape of the graph's next-step effect; this is a
-# forward-reference placeholder only, never resolved here.
+# `effects.NextEffect` (sprint 011/07) owns the real shape -- a union that
+# reaches back up through `decisions.DecisionRequest`, this module's own
+# `Operation` and `narration.BeatRequest`, which would circularly import
+# this module. `GameFlowState.effect` keeps the untyped placeholder; only
+# `TYPE_CHECKING` callers (none yet) should import the real alias.
 NextEffect = Any
 
 
