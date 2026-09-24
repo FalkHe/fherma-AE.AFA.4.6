@@ -11,7 +11,7 @@ Steps 01–03 harden the rules layer under the running game; 04–07 build the n
 
 | # | Task | Depends on | Issue | Status |
 |---|---|---|---|---|
-| 01 | Every authored secret and fixture action names its ability and skill as data, so a check never depends on reading prose | – | #68 | running |
+| 01 | Every authored secret and fixture action names its ability and skill as data, so a check never depends on reading prose | – | #68 | done |
 | 02 | Fights start with one roll per side, a critical hit really hurts more, and a fallen hero counts as fallen everywhere | 01 | #69 | open |
 | 03 | Opening a way, moving, changing attitudes, leaving, finishing a run and recording what happened are lasting changes owned by the rules layer alone | 02 | #70 | open |
 | 04 | The game can load one complete, trustworthy picture of the current moment, plus older narrative memory when the player refers back to it | 03 | #71 | open |
