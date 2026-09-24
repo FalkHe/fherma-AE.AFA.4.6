@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -8,6 +8,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.schemas import CamelModel
 from app.modules.character.schemas import SheetItem
 from app.modules.content.schemas import Abilities
+
+
+@dataclass(frozen=True)
+class MutationResult:
+    """Internal-only outcome of a world mutation, not a wire shape.
+
+    A present key in `facts` is mirrored into the dm tool_call; `event_ids`
+    lists any events persisted as part of the mutation.
+    """
+
+    status: Literal["ok", "refused"]
+    reason: str | None = None
+    event_ids: list[str] = field(default_factory=list)
+    facts: dict[str, Any] = field(default_factory=dict)
 
 
 class StartCampaignRunRequest(CamelModel):
