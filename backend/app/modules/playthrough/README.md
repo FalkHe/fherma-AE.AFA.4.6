@@ -183,9 +183,23 @@ commands and the notes below the service list.
 A run reads as `id, campaignId, contentVersion, title, status, createdAt` and
 nothing else. A character reads as `id, name, currentHp, maxHp,
 armourClass, race, characterClass, level, abilities, appearance, backstory,
-items` and nothing else — `CharacterRead`, the one hero shape shared by
+items, down` and nothing else — `CharacterRead`, the one hero shape shared by
 every read that already returns one (sprint 009-07 adds the four card
-facts; WI1 sprint 010/05 widens it further, no `isAlive`/`down` — ← D7).
+facts; WI1 sprint 010/05 widens it further, no `isAlive` — ← D7; sprint
+011/02 WI3 adds `down`, the one exception, so a downed hero reads as downed
+everywhere a read names it).
+
+`service.is_down(obj)` is the one down-state rule every mutation and read
+agrees on (sprint 011/02, WI3, I3, intent §1.5): true for any object with
+`is_alive == False`, or for a member's own character whose `state` was
+written `down=True` at 0 hp. `describe_scene_creatures` and `character_read`
+report it beside `is_alive`/the card's own facts; `resolve_actor_ref` and the
+`game` module's live-creature hint exclude a downed actor from name
+resolution; `attack` refuses a downed actor or target exactly like an
+unreachable one (`OBJECT_NOT_REACHABLE`). `damage`'s own `down` flag (on
+`DamageResult`, `hp_changed`, `tool_call`) stays the narrower "alive but at
+zero" fact it always was, not `is_down` — `False` for a dead, memberless
+creature.
 `abilities` is `{strength|dexterity|constitution|intelligence|wisdom|
 charisma: {score, modifier}}` — `Ability`'s `modifier` is
 `dice.ability_modifier(score)`, computed once server-side. `backstory` is

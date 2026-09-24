@@ -118,7 +118,7 @@ async def _living_scene_creatures(
     creatures = await playthrough_service.describe_scene_creatures(
         ctx.db, run_id=ctx.run_id, near_actor_id=near_actor_id
     )
-    return [c for c in creatures if c["is_alive"] and not c["down"]]
+    return [c for c in creatures if c["is_alive"] and not c.get("down", False)]
 
 
 async def _actor_not_found_hint(ctx: DmContext, ref: str) -> dict[str, Any]:

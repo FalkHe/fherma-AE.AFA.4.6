@@ -3042,7 +3042,13 @@ async def damage(
             )
             target.state = new_state.model_dump()
 
-    down = is_down(target)
+    # Not `is_down(target)`: this `down` means "a character stayed alive but
+    # hit zero", the narrower fact `DamageResult`/`hp_changed`/`tool_call`
+    # have always reported -- `False` for a dead, memberless creature, which
+    # `is_down` (the broader read-side eligibility rule, sprint 011/02, WI3)
+    # would instead call down. Both already agree on the one case that
+    # matters for a mutation: a downed member's own `state.down`.
+    down = target.member_id is not None and bool(target.state.get("down", False))
 
     await append_event(
         db,

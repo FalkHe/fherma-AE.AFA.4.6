@@ -104,6 +104,7 @@ def _make_character(**overrides):
         current_hp=12,
         max_hp=12,
         armour_class=15,
+        is_alive=True,
         member_id=generate_id(),
         template_id=None,
         instance_key="pc:member-placeholder:1",
@@ -171,6 +172,7 @@ def test_ac1_creating_a_character_reads_it_back_moves_the_run_to_ready_and_refus
         "appearance",
         "backstory",
         "items",
+        "down",
     }, body
     assert body["id"] == str(character.id)
     assert body["name"] == character.name
