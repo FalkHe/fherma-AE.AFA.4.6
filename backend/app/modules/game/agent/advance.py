@@ -25,19 +25,30 @@ mutates state:
 
 import uuid
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from app.modules.playthrough.situation import Situation
 
 from . import nodes
-from .decisions import DecisionKind, DecisionRequest
+from .decisions import (
+    DecisionKind,
+    DecisionRequest,
+    DecisionResult,
+    MonsterAction,
+    ReadMoveDecision,
+    ReferenceJudgement,
+)
 from .effects import BeatRequest, NextEffect, Operation, PlayerWait, ResumeResult, TurnComplete
 from .flow_state import (
+    ActionCursor,
     AwaitingRef,
     CombatCursor,
     GameFlowState,
+    Move,
     NarrativeCursor,
     OperationKind,
+    OperationResult,
     OperationSpec,
 )
 
@@ -93,36 +104,41 @@ def player_roll_plan(
 
 
 def attack_plan(
-    *, actor_id: str, target_id: str, attack: str, is_player: bool
+    *, actor_id: str, target_id: str, attack: str, is_player: bool, item_id: str | None = None
 ) -> tuple[OperationSpec, ...]:
     """Roll (player or monster) → resolve attack → complete action. A hit
     sets `pending_hit_id` (the `RESOLVE_ATTACK` handler's own job); the
     scheduler's `advance_hit` then preempts the plan's own `COMPLETE_ACTION`
     step with the damage fragment before it is ever reached. A miss simply
-    falls through to `COMPLETE_ACTION`."""
-    roll_step = (
-        OperationSpec(
-            kind=OperationKind.REQUEST_ROLL,
-            payload={
-                "actor_id": actor_id,
-                "ability": "attack",
-                "kind": "attack",
-                "consumer": OperationKind.RESOLVE_ATTACK.value,
-                "consumer_payload": {"target_id": target_id, "attack": attack},
-            },
-        )
-        if is_player
-        else OperationSpec(
-            kind=OperationKind.ROLL_ACTOR,
-            payload={"actor_id": actor_id, "kind": "attack"},
-        )
+    falls through to `COMPLETE_ACTION`.
+
+    Both sides roll through `ROLL_ACTOR` (`playthrough_service.roll`),
+    never `REQUEST_ROLL` (`request_player_roll`) -- ← bug (sprint 08,
+    WI3): `request_player_roll` refuses `kind in ("attack", "damage")`
+    outright, by that function's own contract ("an attack or damage
+    roll, for any actor including the hero, goes through roll_dice"), so
+    the player side's own `REQUEST_ROLL` step here always raised. The
+    hero's own roll is simply visible (`visibility="player"`) rather than
+    an interrupt the player must press through."""
+    roll_step = OperationSpec(
+        kind=OperationKind.ROLL_ACTOR,
+        payload={
+            "actor_id": actor_id,
+            "kind": "attack",
+            "context": {"attack": attack, "item_id": item_id},
+            "visibility": "player" if is_player else "dm",
+        },
     )
+    resolve_payload: dict[str, Any] = {
+        "actor_id": actor_id,
+        "target_id": target_id,
+        "attack": attack,
+    }
+    if item_id is not None:
+        resolve_payload["item_id"] = item_id
     return (
         roll_step,
-        OperationSpec(
-            kind=OperationKind.RESOLVE_ATTACK,
-            payload={"actor_id": actor_id, "target_id": target_id, "attack": attack},
-        ),
+        OperationSpec(kind=OperationKind.RESOLVE_ATTACK, payload=resolve_payload),
         OperationSpec(kind=OperationKind.COMPLETE_ACTION, payload={}),
     )
 
@@ -134,9 +150,17 @@ def complete_action_plan(action_id: str) -> tuple[OperationSpec, ...]:
 def resume_operation(awaiting: AwaitingRef, resume: ResumeResult) -> Operation | None:
     """A roll acknowledgement resumes as `ROLL_PLAYER`; a choice answer as
     `ACCEPT_CHOICE` carrying the answer text and, when the request named
-    which move ref it fills, that ref's key under `"choice"`. A response
+    which move ref it fills, that ref's key under `"ref_key"`. A response
     naming a request other than the one checkpointed is rejected (`None`)
-    rather than ever applied to the wrong request."""
+    rather than ever applied to the wrong request.
+
+    ← bug (sprint 08, WI3): this used to store the ref key under
+    `payload["choice"]` -- the same payload key `operations.validate_refs`
+    checks against *object* ids for an entirely different `Operation`
+    shape (`decisions.py`'s own synthetic `INTERACT` validation for
+    `JUDGE_REFERENCE`). A ref key such as `"target_id"` is never a known
+    object id, so `execute_operation` refused every `ACCEPT_CHOICE`
+    outright with `"stale_reference"` before `_accept_choice` ever ran."""
     if resume.request_id != awaiting.request_id:
         return None
     if awaiting.kind == "roll":
@@ -144,8 +168,220 @@ def resume_operation(awaiting: AwaitingRef, resume: ResumeResult) -> Operation |
     return Operation(
         operation_id=_new_id(),
         kind=OperationKind.ACCEPT_CHOICE,
-        payload={"text": resume.value, "choice": awaiting.consumer_payload.get("choice")},
+        payload={"text": resume.value, "ref_key": awaiting.consumer_payload.get("ref_key")},
     )
+
+
+def reconcile_step(state: GameFlowState) -> dict[str, Any]:
+    """Sprint 08, WI3 -- ← bug: nothing advanced `ActionCursor.step_index`
+    after a plan step's own operation executed, so `advance_action` kept
+    re-issuing the same step forever. Called by `flow_nodes.advance()` on
+    every visit: when the last effect was the `Operation` for the
+    action's current plan step and it reported `"ok"`, advances past it.
+    An off-plan operation (`ROLL_PLAYER`, `ACCEPT_CHOICE`, a hit's own
+    damage detour) never matches the step's own kind, so it never moves
+    the cursor."""
+    action = state["action"]
+    effect = state["effect"]
+    result = state["result"]
+    if action is None or not isinstance(effect, Operation):
+        return {}
+    if not isinstance(result, OperationResult):
+        return {}
+    if action.step_index >= len(action.plan):
+        return {}
+    if action.plan[action.step_index].kind != effect.kind or result.status != "ok":
+        return {}
+    return {"action": replace(action, step_index=action.step_index + 1)}
+
+
+def apply_choice_answer(state: GameFlowState) -> dict[str, Any]:
+    """Sprint 08, WI3 -- fills the move ref an `ACCEPT_CHOICE` answered
+    directly from the resumed answer text (`effect.payload["text"]`),
+    rather than `operations._accept_choice`'s own `consumer_payload`
+    lookup, which only helps a pre-resolved single-target confirmation,
+    not an ambiguous-reference choice among several live options (←
+    scenario 8): the option *is* the chosen id, decided only once the
+    player answers."""
+    effect = state["effect"]
+    move = state["move"]
+    if not isinstance(effect, Operation) or effect.kind != OperationKind.ACCEPT_CHOICE:
+        return {}
+    if move is None:
+        return {}
+    choice_key = effect.payload.get("ref_key")
+    text = effect.payload.get("text")
+    if not choice_key or not text or move.refs.get(choice_key):
+        return {}
+    return {"move": replace(move, refs={**move.refs, choice_key: text})}
+
+
+def _expand_read_move_plan(
+    hero_id: str, proposed: tuple[OperationSpec, ...]
+) -> tuple[OperationSpec, ...]:
+    """A `READ_MOVE` decision may only propose operations from its own
+    `allowed_operations` (never a consumer or `COMPLETE_ACTION`, ←
+    `decisions.py`'s own validation) -- this expands that one authored
+    step into a full plan. A single `REQUEST_ROLL` step names its own
+    consumer in `payload["consumer"]`, expanded through `player_roll_plan`
+    exactly as an authored check would be; anything else is a plain
+    mutation, closed off with `COMPLETE_ACTION`."""
+    if len(proposed) == 1 and proposed[0].kind is OperationKind.REQUEST_ROLL:
+        payload = proposed[0].payload
+        return player_roll_plan(
+            actor_id=payload.get("actor_id", hero_id),
+            consumer=OperationKind(payload["consumer"]),
+            payload=payload,
+        )
+    return (*proposed, OperationSpec(kind=OperationKind.COMPLETE_ACTION, payload={}))
+
+
+def apply_decision(
+    state: GameFlowState, situation: Situation, result: DecisionResult
+) -> dict[str, Any]:
+    """Sprint 08, WI3 -- reconciles one `decide()` result into `move`/
+    `action` (or, for an ambiguous reference, straight into the next
+    `effect`), called by `flow_nodes.advance()` right after a `decide()`
+    visit. Nothing in the sprint 011/05-07 modules previously consumed a
+    `DecisionResult` at all -- `advance_action` would have looped
+    forever re-requesting `READ_MOVE` once `state["move"]` never left
+    `None` (← bug, blocks every scenario)."""
+    hero_id = situation.hero.id
+
+    if result.kind is DecisionKind.READ_MOVE:
+        decision: ReadMoveDecision = result.value
+        move = Move(intent=decision.intent, refs=dict(decision.refs))
+        delta: dict[str, Any] = {"move": move}
+        if decision.proposed:
+            delta["action"] = ActionCursor(
+                action_id=_new_id(),
+                actor_id=hero_id,
+                kind=decision.intent,
+                plan=_expand_read_move_plan(hero_id, decision.proposed),
+                step_index=0,
+                status="planned",
+                roll_id=None,
+                roll_consumed=False,
+            )
+        elif decision.intent != "attack":
+            # No mechanical plan -- a pure narrative move (talk, look, a
+            # rules question already answered by `READ_MOVE`'s own tool
+            # loop). Marking the action already "complete" with an empty
+            # plan lets `advance_narration` draft the answer beat next,
+            # without a second decision call this scheduler does not need
+            # (the mechanic diagrams' extra `decide` step is not required
+            # -- ← brief, "never node sequences").
+            delta["action"] = ActionCursor(
+                action_id=_new_id(),
+                actor_id=hero_id,
+                kind=decision.intent,
+                plan=(),
+                step_index=0,
+                status="complete",
+                roll_id=None,
+                roll_consumed=False,
+            )
+        # `intent == "attack"` with no plan: `action` stays `None` so
+        # `advance_action` defers to `advance_combat`'s own scheduling
+        # (initiative first, the hero's own plan only once it is the
+        # hero's turn -- `flow_nodes.materialize_hero_action`).
+        return delta
+
+    if result.kind is DecisionKind.JUDGE_REFERENCE:
+        judgement: ReferenceJudgement = result.value
+        move = state["move"]
+        if judgement.chosen_id is not None and move is not None:
+            return {"move": replace(move, refs={**move.refs, "target_id": judgement.chosen_id})}
+        if judgement.ask_choice:
+            return {
+                "effect": Operation(
+                    operation_id=_new_id(),
+                    kind=OperationKind.REQUEST_CHOICE,
+                    payload={
+                        "actor_id": hero_id,
+                        "text": "Which one do you mean?",
+                        "options": list(judgement.ask_choice),
+                        "consumer": OperationKind.ACCEPT_CHOICE.value,
+                        "consumer_payload": {"ref_key": "target_id"},
+                    },
+                )
+            }
+        return {}
+
+    if result.kind is DecisionKind.MONSTER_ACTION:
+        monster_action: MonsterAction = result.value
+        return {
+            "action": ActionCursor(
+                action_id=_new_id(),
+                actor_id=monster_action.actor_id,
+                kind="attack",
+                plan=attack_plan(
+                    actor_id=monster_action.actor_id,
+                    target_id=monster_action.target_id,
+                    attack=monster_action.attack,
+                    is_player=False,
+                ),
+                step_index=0,
+                status="planned",
+                roll_id=None,
+                roll_consumed=False,
+            )
+        }
+
+    return {}
+
+
+def progress_combat(state: GameFlowState, situation: Situation) -> dict[str, Any]:
+    """Sprint 08, WI3 -- advances `CombatCursor.index` past the actor
+    whose `ActionCursor` just reached `"complete"`, so `eligible_hostiles`
+    stops re-offering an actor who already acted this round and
+    `flow_nodes.materialize_hero_action` stops re-building the hero's own
+    plan. Nothing previously moved this cursor at all (← bug)."""
+    combat = state["combat"]
+    action = state["action"]
+    if combat is None or action is None or action.status != "complete":
+        return {}
+    if combat.index >= len(combat.order) or combat.order[combat.index] != action.actor_id:
+        return {}
+    return {"combat": replace(combat, index=combat.index + 1)}
+
+
+def materialize_hero_action(state: GameFlowState, situation: Situation) -> dict[str, Any]:
+    """Sprint 08, WI3 -- once initiative has settled and the combat cursor
+    reaches the hero's own slot, builds the hero's attack plan directly
+    (no further decision -- the hero already declared "attack `target_id`"
+    through `move`). Nothing previously scheduled the hero's own turn in
+    combat at all; `advance_combat` only ever drives the hostile side."""
+    combat = state["combat"]
+    move = state["move"]
+    action = state["action"]
+    if combat is None or move is None or action is not None:
+        return {}
+    if move.intent != "attack":
+        return {}
+    if combat.index >= len(combat.order) or combat.order[combat.index] != situation.hero.id:
+        return {}
+    target_id = move.refs.get("target_id")
+    if not target_id:
+        return {}
+    return {
+        "action": ActionCursor(
+            action_id=_new_id(),
+            actor_id=situation.hero.id,
+            kind="attack",
+            plan=attack_plan(
+                actor_id=situation.hero.id,
+                target_id=target_id,
+                attack=move.refs.get("attack", "attack"),
+                is_player=True,
+                item_id=move.refs.get("item_id"),
+            ),
+            step_index=0,
+            status="planned",
+            roll_id=None,
+            roll_consumed=False,
+        )
+    }
 
 
 def eligible_hostiles(situation: Situation, combat: CombatCursor | None) -> tuple[str, ...]:
@@ -191,29 +427,38 @@ def advance_hit(state: GameFlowState, situation: Situation) -> NextEffect | None
     hit_id = state["pending_hit_id"]
     if hit_id is None:
         return None
-    move = state["move"]
-    actor_id = (move.refs.get("actor_id") if move is not None else None) or situation.hero.id
-    target_id = move.refs.get("target_id") if move is not None else None
-    is_player = actor_id == situation.hero.id
     action = state["action"]
+    # ← bug (sprint 08, WI3): this used to read `actor_id`/`target_id`
+    # off `state["move"]` -- always the *hero's own* declared move, never
+    # updated per monster turn, so a hostile's own hit was misattributed
+    # to the hero (`is_player` always true) and its damage rolled against
+    # the hero's own weapon instead of the attacker's. `action.actor_id`
+    # and the plan's own `RESOLVE_ATTACK` step (index 1, both player and
+    # monster) are the one place the *actual* attacker and target survive
+    # past the roll -- `attack_plan`'s own contract.
+    resolve_step = action.plan[1].payload if action is not None and len(action.plan) > 1 else {}
+    actor_id = action.actor_id if action is not None else situation.hero.id
+    target_id = resolve_step.get("target_id")
+    is_player = actor_id == situation.hero.id
     has_damage_roll = action is not None and action.roll_id is not None and not action.roll_consumed
+    # `derive_formula`'s `context["attack"]`/`context["item_id"]` (needed
+    # once more than one attack is available, or for a character actor
+    # at all) come from the same `RESOLVE_ATTACK` step, not `state["move"]`.
+    attack_name = resolve_step.get("attack")
+    item_id = resolve_step.get("item_id")
     if not has_damage_roll:
-        if is_player:
-            return Operation(
-                operation_id=_new_id(),
-                kind=OperationKind.REQUEST_ROLL,
-                payload={
-                    "actor_id": actor_id,
-                    "ability": "damage",
-                    "kind": "damage",
-                    "consumer": OperationKind.APPLY_DAMAGE.value,
-                    "consumer_payload": {"hit_id": hit_id, "target_id": target_id},
-                },
-            )
+        # ← bug (sprint 08, WI3): `REQUEST_ROLL`/`request_player_roll`
+        # refuses `kind="damage"` outright, same as the attack roll above
+        # -- both sides roll damage through `ROLL_ACTOR`.
         return Operation(
             operation_id=_new_id(),
             kind=OperationKind.ROLL_ACTOR,
-            payload={"actor_id": actor_id, "kind": "damage"},
+            payload={
+                "actor_id": actor_id,
+                "kind": "damage",
+                "context": {"attack": attack_name, "item_id": item_id},
+                "visibility": "player" if is_player else "dm",
+            },
         )
     return Operation(
         operation_id=_new_id(),
@@ -235,6 +480,15 @@ def advance_action(state: GameFlowState, situation: Situation) -> NextEffect | N
     move = state["move"]
     action = state["action"]
     if action is None and move is None:
+        if state["turn"].status in ("closed", "terminal"):
+            # ← bug (sprint 08, WI3): `close_turn_state` (`flow_state.py`)
+            # always clears `move`/`action`, even though the turn itself is
+            # now closed -- without this guard `advance_action` mistook
+            # every closed turn's next visit for the start of a fresh one
+            # and re-requested `READ_MOVE`, looping forever instead of
+            # letting `validate_turn_close`'s own final fallback report
+            # `TurnComplete`.
+            return None
         refusal = guard_refusal(state["turn"].text)
         if refusal is not None:
             return Operation(operation_id=_new_id(), kind=OperationKind.RECORD_BEAT, payload={})
@@ -245,10 +499,23 @@ def advance_action(state: GameFlowState, situation: Situation) -> NextEffect | N
             payload={"text": state["turn"].text},
         )
     if action is None:
+        if move.intent == "attack" and not move.refs.get("target_id"):
+            # An attack move with no bound target -- one or more live
+            # candidates were ambiguous (scenario 8); `decide()`'s
+            # `JUDGE_REFERENCE` either picks one on its own or asks.
+            return DecisionRequest(
+                decision_id=_new_id(),
+                kind=DecisionKind.JUDGE_REFERENCE,
+                evidence_ids=(),
+                payload={"actor_id": situation.hero.id},
+            )
         # A move is read but no plan has been reserved into an ActionCursor
         # yet -- building that cursor from the decision's proposed plan is
         # the `decide`/`execute` pipeline's own job (flow_nodes, WI2), not
-        # an obligation this scheduler itself must resolve.
+        # an obligation this scheduler itself must resolve. An `"attack"`
+        # move with a bound target and no cursor defers to
+        # `advance_combat`'s own initiative scheduling, then to
+        # `flow_nodes.materialize_hero_action` once it is the hero's turn.
         return None
     if action.status in ("complete", "skipped"):
         return None
@@ -259,7 +526,14 @@ def advance_action(state: GameFlowState, situation: Situation) -> NextEffect | N
             payload={"action_id": action.action_id},
         )
     step = action.plan[action.step_index]
-    return Operation(operation_id=_new_id(), kind=step.kind, payload=step.payload)
+    payload = step.payload
+    if step.kind is OperationKind.RESOLVE_ATTACK and "roll_id" not in payload and action.roll_id:
+        # `attack_plan`'s own `RESOLVE_ATTACK` step never carries a
+        # `roll_id` -- unlike `RESOLVE_CHECK`/`RESOLVE_SAVE`
+        # (`operations._resolve_roll`'s own fallback), `_resolve_attack`
+        # requires one outright.
+        payload = {**payload, "roll_id": action.roll_id}
+    return Operation(operation_id=_new_id(), kind=step.kind, payload=payload)
 
 
 def advance_combat(state: GameFlowState, situation: Situation) -> NextEffect | None:
@@ -268,7 +542,21 @@ def advance_combat(state: GameFlowState, situation: Situation) -> NextEffect | N
     hostiles = eligible_hostiles(situation, combat)
 
     if combat is None:
-        if hostiles and move is not None and move.intent == "attack":
+        if not (hostiles and move is not None and move.intent == "attack"):
+            return None
+        effect = state["effect"]
+        result = state["result"]
+        if (
+            isinstance(effect, Operation)
+            and effect.kind is OperationKind.ROLL_PLAYER
+            and isinstance(result, OperationResult)
+            and result.status == "ok"
+            and "roll_id" in result.value
+        ):
+            # The hero-side initiative roll just resolved (← `advance()`'s
+            # `AwaitingRef(consumer=SETTLE_INITIATIVE)`, set by
+            # `operations._settle_initiative`'s own "awaiting hero roll"
+            # branch) -- settle with it now, instead of asking again.
             return Operation(
                 operation_id=_new_id(),
                 kind=OperationKind.SETTLE_INITIATIVE,
@@ -276,9 +564,18 @@ def advance_combat(state: GameFlowState, situation: Situation) -> NextEffect | N
                     "scene_id": situation.scene_id,
                     "hero_ids": [situation.hero.id],
                     "hostile_ids": list(hostiles),
+                    "hero_roll_id": result.value["roll_id"],
                 },
             )
-        return None
+        return Operation(
+            operation_id=_new_id(),
+            kind=OperationKind.SETTLE_INITIATIVE,
+            payload={
+                "scene_id": situation.scene_id,
+                "hero_ids": [situation.hero.id],
+                "hostile_ids": list(hostiles),
+            },
+        )
 
     if not hostiles:
         # Every eligible hostile in this round has already acted (or none

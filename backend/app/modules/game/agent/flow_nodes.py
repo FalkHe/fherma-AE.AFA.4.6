@@ -27,6 +27,7 @@ Failure handling, kept distinct on purpose:
   losing the failure.
 """
 
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,9 +40,9 @@ from app.modules.playthrough import service as playthrough_service
 
 from . import advance as advance_module
 from . import decisions, narration, operations
-from .decisions import DecisionContext, DecisionInvalid, DecisionRequest
+from .decisions import DecisionContext, DecisionInvalid, DecisionRequest, DecisionResult
 from .effects import BeatRequest, Operation, PlayerWait, ResumeResult, TurnComplete, add_usage
-from .flow_state import ExecutionError, GameFlowState, StateDelta
+from .flow_state import ActionCursor, ExecutionError, GameFlowState, Move, StateDelta
 
 
 @dataclass(frozen=True)
@@ -79,13 +80,23 @@ async def advance(state: GameFlowState) -> StateDelta:
     """The control-plane node: reloads a fresh `Situation`, reconciles a
     checkpointed `resume` response (if any) into the operation that
     consumes it or rejects it, applies a guard refusal's canned text, and
-    stores exactly one `select_next_effect()` result."""
+    stores exactly one `select_next_effect()` result.
+
+    Sprint 08, WI3 adds the reconciliation steps that turn a `decide()`/
+    `execute()` result into the next visit's `move`/`action`/`combat` --
+    nothing previously consumed a `DecisionResult` at all (← bug, `agent/
+    advance.py`'s own new docstrings). Each step both updates `delta`
+    (what the graph checkpoints) and a local `working` copy of `state`
+    (what `select_next_effect` reads this same visit), mirroring the
+    resume path's own established shape."""
     situation = await _situation(state)
     delta: StateDelta = {}
+    working: GameFlowState = dict(state)  # type: ignore[assignment]
 
     resume: ResumeResult | None = state.get("resume")
     if resume is not None:
         delta["resume"] = None
+        working["resume"] = None
         awaiting = state["awaiting"]
         consuming_op = (
             advance_module.resume_operation(awaiting, resume) if awaiting is not None else None
@@ -97,12 +108,64 @@ async def advance(state: GameFlowState) -> StateDelta:
         # -- rejected, not applied; `awaiting` stays set so the scheduler
         # re-emits the same `PlayerWait` below.
 
-    if state["action"] is None and state["move"] is None:
-        refusal = advance_module.guard_refusal(state["turn"].text)
-        if refusal is not None:
-            delta.update(advance_module.guard_state(state["turn"].text))
+    opening_turn = working["turn"].input_kind == "opening" and working["turn"].status == "open"
+    if opening_turn and working["move"] is None and working["action"] is None:
+        # No player input to read a move from -- materialize a trivial,
+        # already-`"complete"` action so `advance_narration` drafts the
+        # opening beat straight away (← docs/general/game-flow.v2.
+        # examples.md #1). `enter_adventure`/the passive check already ran
+        # before the turn was ever taken (client-triggered, ← research).
+        opening = {
+            "move": Move(intent="opening", refs={}),
+            "action": ActionCursor(
+                action_id=uuid.uuid4().hex,
+                actor_id=situation.hero.id,
+                kind="opening",
+                plan=(),
+                step_index=0,
+                status="complete",
+                roll_id=None,
+                roll_consumed=False,
+            ),
+        }
+        working.update(opening)
+        delta.update(opening)
 
-    delta["effect"] = advance_module.select_next_effect(state, situation)
+    for step_delta in (
+        advance_module.reconcile_step(working),
+        advance_module.apply_choice_answer(working),
+        advance_module.progress_combat(working, situation),
+    ):
+        if step_delta:
+            working.update(step_delta)
+            delta.update(step_delta)
+
+    result = working.get("result")
+    if isinstance(result, DecisionResult):
+        decision_delta = advance_module.apply_decision(working, situation, result)
+        working.update(decision_delta)
+        delta.update(decision_delta)
+        delta["result"] = None
+        working["result"] = None
+        if "effect" in decision_delta:
+            # `apply_decision` already decided the next effect itself (an
+            # ambiguous reference's `REQUEST_CHOICE`) -- `select_next_
+            # effect` would only re-derive a stale one from `working`.
+            return delta
+
+    hero_action = advance_module.materialize_hero_action(working, situation)
+    if hero_action:
+        working.update(hero_action)
+        delta.update(hero_action)
+
+    if working["action"] is None and working["move"] is None:
+        refusal = advance_module.guard_refusal(working["turn"].text)
+        if refusal is not None:
+            guard_delta = advance_module.guard_state(working["turn"].text)
+            working.update(guard_delta)
+            delta.update(guard_delta)
+
+    delta["effect"] = advance_module.select_next_effect(working, situation)
     return delta
 
 
