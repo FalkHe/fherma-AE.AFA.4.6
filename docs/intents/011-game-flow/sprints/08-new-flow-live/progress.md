@@ -23,7 +23,8 @@ Status: `open | running | done | failed`
 - Gates green: lint, 1243 unit, 188 database tests. No wire-schema drift.
 - Live on the hosted app: conversation and search turns run on the new flow with the composer, transcript and awaiting behaving as before. A move north narrated a walk but used no exit; the hero stayed on the village green. Fixed: the read-move decision was never told which operation kinds it may propose, so it invented names that failed validation and fell back to narration; now movement records the exit use and the hero changes scene live.
 - Live: a search in Thornway narrated without a roll because authored checks were never assessed by the scheduler; now the assess-move step requests the authored roll and the dice chip renders wisdom (Perception) DC 5 with the result. The checkpoint serializer also missed the flow's enum types, which a real Postgres resume silently dropped; fixed.
-- Live: an attack in the lair narrated only the attempt and closed the turn with no target choice, initiative or attack roll. Diagnosis and fix delegated.
+- Live: an attack in the lair narrated only the attempt and closed the turn with no target choice, initiative or attack roll. Fixed: the attack intent was matched against one literal word, so real phrasing fell through to a plain answer; live now the target binds, initiative is requested and settled, hits reach damage, and a downed hero ends the run in defeat.
+- Live: a run from the old flow with the hero already at zero hit points was correctly finished in defeat on the next action, but the closing narration still described the fallen hero attacking. Fix delegated: the terminal turn owes one closing beat about the ending.
 - Live logs showed checkpoint deserialization warnings for the new state types; the serializer now registers them and tests run in strict mode.
 
 ## Backlog proposals
