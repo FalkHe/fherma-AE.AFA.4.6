@@ -1017,17 +1017,24 @@ them happened beyond the ordinary transcript entries each one already
 writes on its own: no table names an encounter, no column says two
 creatures are fighting, no row holds a turn order, and no flag anywhere is
 set when a fight starts and unset when it ends. **Rolling to see who acts
-first does exactly what its name says and nothing more**: given the two
-sides, whichever creature on a side is a member's own character is asked to
-roll rather than rolled for outright, through the very request §13 already
-describes, so a player's own click still decides their side's roll; a side
-with nobody's own character on it is rolled by the server there and then,
-at the visibility a player may see, the same way any other creature's roll
-already is (§13). Either way the two resulting `roll` events, one
-`initiative` roll per side, are the whole of what asking who goes first
-leaves behind — no row anywhere is touched, and no `tool_call` is appended
-either: nobody's turn is spent by finding out who goes first, so there is
-nothing here for a refusal or a pass to be recorded against.
+first is one hero-side roll the player is asked to make and one
+hostile-side roll the game makes for itself, then a settlement over both**
+(sprint 011/02): the hero side is asked to roll — whichever creature on it
+is a member's own character, through the very request §13 already
+describes, so a player's own click still decides their side's roll — and
+settling waits for that answer before it does anything else, refusing
+outright if it is asked to settle before the player has rolled; only once
+the hero side's roll exists does the hostile side roll automatically, by
+the server there and then, at the visibility a player may see, the same
+way any other creature's roll already is (§13). The two resulting `roll`
+events, one `initiative` roll per side, are the whole of what asking who
+goes first leaves behind — no row anywhere is touched, and no `tool_call`
+is appended either: nobody's turn is spent by finding out who goes first,
+so there is nothing here for a refusal or a pass to be recorded against.
+Settling itself writes nothing of its own: it only compares the two
+totals, the hero side winning a tie, and hands back which side goes first
+and the full acting order, winning side first, each side keeping its own
+given order — a plain answer, not a row.
 
 **Striking at someone and wounding them work in any scene, not only one the
 Dungeon Master has decided is a battle.** An ambush sprung on someone still

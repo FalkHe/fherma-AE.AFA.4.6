@@ -1471,40 +1471,44 @@ async def roll(
     return event
 
 
-async def roll_side_initiative(
+async def request_hero_initiative(
     db: AsyncSession,
     *,
     user_id: str,
-    run_id: str,
     hero_ids: list[str],
-    hostile_ids: list[str],
     turn_id: str | None = None,
-) -> tuple[Event, Event]:
-    """One roll per side (WI1, AC1/AC4): gates `run_id` once, then rolls
-    each side outright, through `roll` at `player` visibility -- `roll`'s
-    own path for a creature's roll, never `dm`'s default, since an
-    initiative roll is not DM-only bookkeeping -- on the side's own first
-    id. Settlement needs both totals in the same call (`settle_initiative`),
-    so unlike an ability check or a save this is never asked of the player
-    through `request_player_roll`: a side with a member's own character on
-    it rolls exactly like one without. Exactly two roll events result, one
-    per side (AC1)."""
-    await _require_ready_or_active_run(db, run_id=run_id, user_id=user_id)
-
-    async def _roll_one_side(side_ids: list[str]) -> Event:
-        return await roll(
-            db,
-            user_id=user_id,
-            actor_id=side_ids[0],
-            kind="initiative",
-            context={},
-            visibility="player",
-            turn_id=turn_id,
-        )
-
-    hero_event = await _roll_one_side(hero_ids)
-    hostile_event = await _roll_one_side(hostile_ids)
-    return hero_event, hostile_event
+) -> Event:
+    """Asks the hero side to roll initiative (WI1, AC1/AC4, intent §1.3:
+    "one hero-side roll"): scans `hero_ids` for the first id that carries
+    a `member_id` -- a player's own character -- and asks it to roll
+    through `request_player_roll`, a player's own click still deciding
+    the hero side's roll, exactly as the old `_roll_for_side` did for a
+    member-holding side. A side with no member on it (never expected in
+    practice, but not assumed) falls back to rolling its own first id
+    outright, through `roll` at `player` visibility, so this never raises
+    for an empty scan. Returns the `roll_requested` event -- unanswered
+    until the player resolves it -- for `settle_initiative` to settle
+    against once it exists."""
+    for candidate_id in hero_ids:
+        candidate = await _get_game_object(db, candidate_id)
+        if candidate.member_id is not None:
+            return await request_player_roll(
+                db,
+                user_id=user_id,
+                actor_id=candidate_id,
+                kind="initiative",
+                context={},
+                turn_id=turn_id,
+            )
+    return await roll(
+        db,
+        user_id=user_id,
+        actor_id=hero_ids[0],
+        kind="initiative",
+        context={},
+        visibility="player",
+        turn_id=turn_id,
+    )
 
 
 async def settle_initiative(
@@ -1512,25 +1516,33 @@ async def settle_initiative(
     *,
     user_id: str,
     run_id: str,
+    hero_roll_id: str,
     hero_ids: list[str],
     hostile_ids: list[str],
     turn_id: str | None = None,
 ) -> InitiativeResult:
-    """Rolls to see who acts first, then settles a stable side and actor
-    order once per fight (WI1, AC1/AC2) -- one hero-side roll and one
-    hostile-side roll from `roll_side_initiative`, compared by total, the
-    hero side winning a tie (intent §1.3). `order` lists every actor id,
-    the winning side first then the other, each side keeping its own
-    given id order -- the only settlement this call performs; nothing
-    about a fight is stored anywhere else (← D7, 003-D8): no encounter,
-    no turn order, no `in_combat` flag, on this call or any other in this
-    module."""
-    hero_event, hostile_event = await roll_side_initiative(
+    """Settles a stable side and actor order once per fight (WI1, AC1/AC2,
+    intent §1.3): `hero_roll_id` must already be a resolved `roll` event
+    -- `request_hero_initiative`'s own return, once the player has
+    answered it (`RollNotFoundError` otherwise, exactly `_get_roll_event`'s
+    own refusal for any other roll-spending call, since there is nothing
+    to settle against yet). The hostile side then rolls automatically,
+    through `roll` at `player` visibility -- an initiative roll is not
+    DM-only bookkeeping. The two totals decide `winning_side`, the hero
+    side winning a tie; `order` lists every actor id, the winning side
+    first then the other, each side keeping its own given id order.
+    Nothing about the fight is stored anywhere else (← D7, 003-D8): no
+    encounter, no turn order, no `in_combat` flag, on this call or any
+    other in this module."""
+    await _require_ready_or_active_run(db, run_id=run_id, user_id=user_id)
+    hero_event = await _get_roll_event(db, hero_roll_id)
+    hostile_event = await roll(
         db,
         user_id=user_id,
-        run_id=run_id,
-        hero_ids=hero_ids,
-        hostile_ids=hostile_ids,
+        actor_id=hostile_ids[0],
+        kind="initiative",
+        context={},
+        visibility="player",
         turn_id=turn_id,
     )
     hero_total = RollPayload.model_validate(hero_event.payload).total

@@ -548,16 +548,39 @@ def test_passive_check_tool_evaluates_score_without_rolling(prompt, monkeypatch)
     ]
 
 
-def test_roll_initiative_tool_rolls_both_sides(prompt, monkeypatch):
+def test_roll_initiative_tool_asks_the_hero_side_and_rolls_the_hostile_side_automatically(
+    prompt, monkeypatch
+):
     from app.modules.playthrough import schemas as playthrough_schemas
 
-    initiative_calls = []
+    request_calls = []
+    resolve_calls = []
+    settle_calls = []
 
-    async def fake_settle_initiative(db, *, user_id, run_id, hero_ids, hostile_ids, turn_id=None):
-        initiative_calls.append(
+    async def fake_request_hero_initiative(db, *, user_id, hero_ids, turn_id=None):
+        request_calls.append({"user_id": user_id, "hero_ids": hero_ids, "turn_id": turn_id})
+        return _Event(
+            {"formula": "1d20+1", "kind": "initiative", "actor_id": "hero-1"},
+            id="req-init-1",
+            type="roll_requested",
+        )
+
+    async def fake_resolve_roll_request(db, *, user_id, request_id, turn_id=None):
+        resolve_calls.append({"user_id": user_id, "request_id": request_id, "turn_id": turn_id})
+        return _Event(
+            {"kind": "initiative", "actor_id": "hero-1", "total": 18},
+            id="init-event-a",
+            type="roll",
+        )
+
+    async def fake_settle_initiative(
+        db, *, user_id, run_id, hero_roll_id, hero_ids, hostile_ids, turn_id=None
+    ):
+        settle_calls.append(
             {
                 "user_id": user_id,
                 "run_id": run_id,
+                "hero_roll_id": hero_roll_id,
                 "hero_ids": hero_ids,
                 "hostile_ids": hostile_ids,
                 "turn_id": turn_id,
@@ -572,6 +595,12 @@ def test_roll_initiative_tool_rolls_both_sides(prompt, monkeypatch):
             order=["hero-1", "goblin-1"],
         )
 
+    monkeypatch.setattr(
+        tools.playthrough_service, "request_hero_initiative", fake_request_hero_initiative
+    )
+    monkeypatch.setattr(
+        tools.playthrough_service, "resolve_roll_request", fake_resolve_roll_request
+    )
     monkeypatch.setattr(tools.playthrough_service, "settle_initiative", fake_settle_initiative)
 
     init_call = AIMessage(
@@ -587,12 +616,26 @@ def test_roll_initiative_tool_rolls_both_sides(prompt, monkeypatch):
     agent = service.build_agent(
         model=_scripted_model([init_call, AIMessage(content="You act first!")])
     )
-    result = _turn(agent, "Roll initiative.")
-    assert result.reply == "You act first!"
-    assert initiative_calls == [
+
+    turn_res = _turn(agent, "Roll initiative.", thread_id="t-init")
+    assert turn_res.interrupt == {
+        "type": "roll_request",
+        "request_id": "req-init-1",
+        "kind": "initiative",
+        "formula": "1d20+1",
+        "actor_id": "hero-1",
+        "context": {},
+    }
+    assert request_calls == [{"user_id": "user-1", "hero_ids": ["hero-1"], "turn_id": "turn-1"}]
+
+    resume_res = _resume(agent, {"action": "roll"}, thread_id="t-init")
+    assert resume_res.reply == "You act first!"
+    assert resolve_calls == [{"user_id": "user-1", "request_id": "req-init-1", "turn_id": "turn-1"}]
+    assert settle_calls == [
         {
             "user_id": "user-1",
             "run_id": "run-1",
+            "hero_roll_id": "init-event-a",
             "hero_ids": ["hero-1"],
             "hostile_ids": ["goblin-1"],
             "turn_id": "turn-1",

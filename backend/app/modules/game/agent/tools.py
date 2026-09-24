@@ -367,14 +367,54 @@ async def roll_initiative(
     runtime: ToolRuntime[DmContext],
 ) -> dict[str, Any]:
     """Roll initiative for two opposing sides to determine turn order.
-    `side_a_ids` and `side_b_ids` are lists of actor IDs for each side."""
+    `side_a_ids` is the hero side, asked to roll through the player; the
+    player rolls, not you. `side_b_ids` is the hostile side, rolled
+    automatically. Interrupts execution and waits for the player to
+    resolve the hero side's roll -- do not also call `roll_dice` or
+    `request_player_roll` for the same initiative roll."""
     ctx = runtime.context
     if not ctx.run_id:
         raise ValueError("run_id is required for roll_initiative.")
+
+    hero_request = await playthrough_service.request_hero_initiative(
+        ctx.db,
+        user_id=ctx.user_id,
+        hero_ids=side_a_ids,
+        turn_id=ctx.turn_id,
+    )
+
+    if hero_request.type == "roll_requested":
+        # `request_hero_initiative` (through `request_player_roll`) is
+        # idempotent within one turn, exactly `request_player_roll`'s own
+        # tool above: a resume replaying this coroutine from the top hands
+        # back the same `roll_requested` event rather than writing a
+        # second one.
+        interrupt(
+            {
+                "type": "roll_request",
+                "request_id": hero_request.id,
+                "kind": "initiative",
+                "formula": hero_request.payload.get("formula"),
+                "actor_id": hero_request.payload.get("actor_id"),
+                "context": {},
+            }
+        )
+        hero_roll = await playthrough_service.resolve_roll_request(
+            ctx.db,
+            user_id=ctx.user_id,
+            request_id=hero_request.id,
+            turn_id=ctx.turn_id,
+        )
+    else:
+        # No member sits on the hero side (unexpected, not assumed):
+        # `request_hero_initiative` already rolled it outright.
+        hero_roll = hero_request
+
     result = await playthrough_service.settle_initiative(
         ctx.db,
         user_id=ctx.user_id,
         run_id=ctx.run_id,
+        hero_roll_id=hero_roll.id,
         hero_ids=side_a_ids,
         hostile_ids=side_b_ids,
         turn_id=ctx.turn_id,

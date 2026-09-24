@@ -1,5 +1,7 @@
-"""WI1 (sprint 011/02): settling initiative -- one roll per side, then a
-stable winner and actor order (intent §1.3, AC1/AC2).
+"""WI1 (sprint 011/02): settling initiative -- the hero side is asked to
+roll, the hostile side rolls automatically, then a stable winner and actor
+order are settled (intent §1.3: "one hero-side roll" (the player's own)
+"and one automatic hostile-side roll").
 
 `@pytest.mark.database`, against the shared scratch-database fixture
 (`playthrough_db`) and the real shipped `greenhollow/v1` content: the seed
@@ -21,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ids import generate_id
 from app.modules.playthrough import dice as playthrough_dice
 from app.modules.playthrough import service
+from app.modules.playthrough.errors import RollNotFoundError
 
 CAMPAIGN_ID = "greenhollow"
 GOBLIN_TEMPLATE = "goblin"
@@ -85,6 +88,28 @@ async def _initiative_roll_count(db: AsyncSession, run_id: str) -> int:
     ).scalar_one()
 
 
+async def _settle(db, *, user_id, run_id, hero_ids, hostile_ids, faces):
+    """Drives the two-step flow a real turn does: `request_hero_initiative`
+    asks the hero side, `resolve_roll_request` is the player's own click
+    answering it, then `settle_initiative` rolls the hostile side and
+    settles. `faces` scripts the hero roll first, the hostile roll second."""
+    shared_rng = _ScriptedRandom(faces)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(playthrough_dice, "_rng", lambda: shared_rng)
+        hero_request = await service.request_hero_initiative(db, user_id=user_id, hero_ids=hero_ids)
+        hero_roll = await service.resolve_roll_request(
+            db, user_id=user_id, request_id=hero_request.id
+        )
+        return await service.settle_initiative(
+            db,
+            user_id=user_id,
+            run_id=run_id,
+            hero_roll_id=hero_roll.id,
+            hero_ids=hero_ids,
+            hostile_ids=hostile_ids,
+        )
+
+
 @pytest.mark.database
 def test_exactly_two_rolls_are_written_per_fight(playthrough_db):
     # <- AC1
@@ -92,16 +117,14 @@ def test_exactly_two_rolls_are_written_per_fight(playthrough_db):
         user_id, run, character = await _reach_lair_maw(playthrough_db, username="init-count")
         goblin_ids = await _goblin_ids(playthrough_db, run_id=run.id)
 
-        with pytest.MonkeyPatch.context() as mp:
-            shared_rng = _ScriptedRandom([15, 8])
-            mp.setattr(playthrough_dice, "_rng", lambda: shared_rng)
-            result = await service.settle_initiative(
-                playthrough_db,
-                user_id=user_id,
-                run_id=run.id,
-                hero_ids=[character.id],
-                hostile_ids=goblin_ids,
-            )
+        result = await _settle(
+            playthrough_db,
+            user_id=user_id,
+            run_id=run.id,
+            hero_ids=[character.id],
+            hostile_ids=goblin_ids,
+            faces=[15, 8],
+        )
 
         assert await _initiative_roll_count(playthrough_db, run.id) == 2
         assert result.hero_roll_id != result.hostile_roll_id
@@ -118,16 +141,14 @@ def test_equal_totals_the_hero_side_wins_and_goes_first(playthrough_db):
 
         # Character Dexterity modifier +1, goblin +2: face 10 vs 9 ties
         # both totals at 11.
-        with pytest.MonkeyPatch.context() as mp:
-            shared_rng = _ScriptedRandom([10, 9])
-            mp.setattr(playthrough_dice, "_rng", lambda: shared_rng)
-            result = await service.settle_initiative(
-                playthrough_db,
-                user_id=user_id,
-                run_id=run.id,
-                hero_ids=[character.id],
-                hostile_ids=goblin_ids,
-            )
+        result = await _settle(
+            playthrough_db,
+            user_id=user_id,
+            run_id=run.id,
+            hero_ids=[character.id],
+            hostile_ids=goblin_ids,
+            faces=[10, 9],
+        )
 
         assert result.hero_total == result.hostile_total
         assert result.winning_side == "hero"
@@ -143,21 +164,45 @@ def test_order_is_stable_and_winner_first(playthrough_db):
         user_id, run, character = await _reach_lair_maw(playthrough_db, username="init-order")
         goblin_ids = await _goblin_ids(playthrough_db, run_id=run.id)
 
-        with pytest.MonkeyPatch.context() as mp:
-            shared_rng = _ScriptedRandom([1, 1])
-            mp.setattr(playthrough_dice, "_rng", lambda: shared_rng)
-            result = await service.settle_initiative(
+        result = await _settle(
+            playthrough_db,
+            user_id=user_id,
+            run_id=run.id,
+            hero_ids=[character.id],
+            hostile_ids=goblin_ids,
+            faces=[1, 1],
+        )
+
+        # The goblins' automatic roll (face 1, modifier +2 = 3) always
+        # beats a character rolled low (face 1, modifier +1 = 2): hostile
+        # side wins, its own given id order preserved, hero side
+        # following.
+        assert result.winning_side == "hostile"
+        assert result.order == [*goblin_ids, character.id]
+
+    asyncio.run(_scenario())
+
+
+@pytest.mark.database
+def test_settling_before_the_hero_answers_is_refused(playthrough_db):
+    # The hero side's roll is still `roll_requested`, unanswered -- there
+    # is nothing to settle against yet.
+    async def _scenario():
+        user_id, run, character = await _reach_lair_maw(playthrough_db, username="init-unanswered")
+        goblin_ids = await _goblin_ids(playthrough_db, run_id=run.id)
+
+        hero_request = await service.request_hero_initiative(
+            playthrough_db, user_id=user_id, hero_ids=[character.id]
+        )
+
+        with pytest.raises(RollNotFoundError):
+            await service.settle_initiative(
                 playthrough_db,
                 user_id=user_id,
                 run_id=run.id,
+                hero_roll_id=hero_request.id,
                 hero_ids=[character.id],
                 hostile_ids=goblin_ids,
             )
-
-        # The goblins' outright roll (face 1, modifier +2 = 3) always beats
-        # a character rolled low (face 1, modifier +1 = 2): hostile side
-        # wins, its own given id order preserved, hero side following.
-        assert result.winning_side == "hostile"
-        assert result.order == [*goblin_ids, character.id]
 
     asyncio.run(_scenario())

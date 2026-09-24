@@ -1142,23 +1142,32 @@ def test_ac4_initiative_rolls_and_no_fight_is_ever_stored(playthrough_db):
         objects_before = await _objects_snapshot(playthrough_db, run.id)
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(playthrough_dice, "_rng", lambda: _ScriptedRandom([15, 10]))
-            event_a, event_b = await playthrough_service.roll_side_initiative(
+            hero_request = await playthrough_service.request_hero_initiative(
+                playthrough_db,
+                user_id=owner_id,
+                hero_ids=[character.id],
+            )
+            event_a = await playthrough_service.resolve_roll_request(
+                playthrough_db, user_id=owner_id, request_id=hero_request.id
+            )
+            initiative_result = await playthrough_service.settle_initiative(
                 playthrough_db,
                 user_id=owner_id,
                 run_id=run.id,
+                hero_roll_id=event_a.id,
                 hero_ids=[character.id],
                 hostile_ids=goblin_ids,
             )
         assert event_a.type == "roll"
-        assert event_b.type == "roll"
 
-        for event in (event_a, event_b):
+        for event_id in (event_a.id, initiative_result.hostile_roll_id):
             row = (
                 await playthrough_db.execute(
-                    text("SELECT visibility, payload FROM events WHERE id = :id"),
-                    {"id": event.id},
+                    text("SELECT type, visibility, payload FROM events WHERE id = :id"),
+                    {"id": event_id},
                 )
             ).one()
+            assert row.type == "roll"
             assert row.visibility == "player"
             assert _payload(row)["kind"] == "initiative"
 
