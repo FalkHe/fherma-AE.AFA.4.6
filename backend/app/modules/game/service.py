@@ -12,9 +12,14 @@ runs every turn through the new five-node flow (`agent/graph.py`): the
 turn's *kind* is read from the DM thread's own checkpoint -- an
 `AwaitingRef` set on `state["awaiting"]` (kind `"roll"` or `"choice"`,
 mapped to `TurnKind` `"roll"`/`"answer"`), `snapshot.next` alone meaning a
-broken-off turn to retry, otherwise a fresh `"action"`/`"opening"` -- never
-inferred from a stale interrupt or scanned transcript order the way the
-old six-node graph required.
+broken-off turn to retry, otherwise a fresh `"action"`/`"opening"`. The one
+exception (sprint 011/08 round 1, defect B): a checkpoint's own `values`
+come back empty when it predates this flow entirely (the old six-node
+graph never wrote `turn`/`awaiting`, and `aget_state` only ever returns
+channels the *current* graph declares) -- indistinguishable here from a
+thread genuinely never touched, so that one case alone also asks the
+transcript's own `playthrough_service.get_awaiting` before treating the
+turn as a fresh action/opening.
 
 Tests monkeypatch `service.chat_model` and the compiled graph's
 `ainvoke`/`aget_state`.
@@ -124,10 +129,20 @@ async def run_turn(
     3. No `awaiting` but `snapshot.next` is non-empty -> kind `retry`:
        `ainvoke(None)` resumes from the last saved step, repeating nothing
        already recorded.
-    4. `text` present -> kind `action`: a newly minted turn id,
+    4. Neither of the above, and the transcript itself (`get_awaiting`)
+       names an open request the checkpoint no longer knows about (sprint
+       011/08 round 1, defect B -- a run left waiting by the retired
+       six-node flow): a dangling roll is answered directly through
+       `playthrough_service.resolve_roll_request` and returned as kind
+       `roll` with no `ainvoke` at all (no consumer of it survives); a
+       dangling question with non-empty `text` is recorded through
+       `record_answer` and then run as an ordinary fresh action turn.
+       Anything else non-`"none"` here is `ActionNotAvailableError`, same
+       as case 6.
+    5. `text` present -> kind `action`: a newly minted turn id,
        `playthrough_service.record_player_action` first, then
        `ainvoke(initial_state(...))`.
-    5. No `text` -> kind `opening`, DM-led: no player row is written.
+    6. No `text` -> kind `opening`, DM-led: no player row is written.
 
     Neither the `roll` nor `answer` branch writes an answer/roll row here
     -- the flow's own `accept_choice`/`roll_player` operations write those
@@ -175,46 +190,108 @@ async def run_turn(
             kind = "retry"
             turn_id = await _resolved_turn_id()
             await agent.ainvoke(None, config=config)
-        elif text and text.strip():
-            kind = "action"
-            turn_id = generate_id()
-            await playthrough_service.record_player_action(
-                db, user_id=user_id, run_id=run_id, text=text, turn_id=turn_id
-            )
-            frame = TurnFrame(
-                run_id=run_id,
-                hero_id=character.id,
-                turn_id=turn_id,
-                input_kind="action",
-                text=text,
-                status="open",
-                round_admitted=False,
-            )
-            await agent.ainvoke(initial_state(frame), config=config)
         else:
-            # No `awaiting` is pending and nothing is queued to retry -- the
-            # graph itself is not waiting on anything. A non-`"none"`
-            # `awaiting` here therefore names a *stale* request rather than
-            # the player's own (e.g. an old row never resolved). Refuse
-            # rather than silently writing a DM-led filler turn for it.
+            # Neither a checkpointed `awaiting` nor a queued retry -- the
+            # graph itself is not waiting on anything *through this
+            # checkpoint*. That is not proof nothing is pending, though
+            # (sprint 011/08 round 1, defect B, ← finding): `aget_state`
+            # only ever returns the channels the *current* graph declares,
+            # so a checkpoint from the old six-node flow -- which never
+            # wrote `turn`/`awaiting` at all -- reads back as `values == {}`,
+            # byte-for-byte indistinguishable here from a thread that was
+            # never touched. The transcript is asked once, directly, rather
+            # than trusted to be silent just because the checkpoint is.
             pending_awaiting = await playthrough_service.get_awaiting(
                 db, user_id=user_id, run_id=run_id
             )
+
+            if pending_awaiting.startswith("roll:"):
+                # The old flow's own consumer for this roll no longer
+                # exists to resume into; answering the dangling
+                # `roll_requested` is enough to close the transcript's own
+                # waiting state and free the run (← sprint spec).
+                request_id = pending_awaiting.removeprefix("roll:")
+                turn_id = await _resolved_turn_id()
+                await playthrough_service.resolve_roll_request(
+                    db, user_id=user_id, request_id=request_id, turn_id=turn_id
+                )
+                awaiting_str = await playthrough_service.get_awaiting(
+                    db, user_id=user_id, run_id=run_id
+                )
+                return TurnOutcome(turn_id=turn_id, kind="roll", awaiting=awaiting_str)
+
+            if pending_awaiting.startswith("answer:") and text and text.strip():
+                question_id = pending_awaiting.removeprefix("answer:")
+                events = await playthrough_service.list_events(db, user_id=user_id, run_id=run_id)
+                question_event = next((event for event in events if event.id == question_id), None)
+                options = (
+                    list(question_event.payload.get("options") or [])
+                    if question_event is not None
+                    else []
+                )
+                if options and text not in options:
+                    raise ActionNotAvailableError(awaiting=pending_awaiting, options=options)
+                turn_id = generate_id()
+                await playthrough_service.record_answer(
+                    db,
+                    user_id=user_id,
+                    run_id=run_id,
+                    text=text,
+                    question_id=question_id,
+                    turn_id=turn_id,
+                )
+                frame = TurnFrame(
+                    run_id=run_id,
+                    hero_id=character.id,
+                    turn_id=turn_id,
+                    input_kind="action",
+                    text=text,
+                    status="open",
+                    round_admitted=False,
+                )
+                await agent.ainvoke(initial_state(frame), config=config)
+                kind = "action"
+                awaiting_str = await playthrough_service.get_awaiting(
+                    db, user_id=user_id, run_id=run_id
+                )
+                return TurnOutcome(turn_id=turn_id, kind=kind, awaiting=awaiting_str)
+
             if pending_awaiting != "none":
+                # A stale request neither of the two shapes above answers
+                # (e.g. a legacy question with no text to answer it) --
+                # refuse rather than silently writing a DM-led filler turn
+                # over it.
                 raise ActionNotAvailableError(awaiting=pending_awaiting, options=[])
 
-            kind = "opening"
-            turn_id = generate_id()
-            frame = TurnFrame(
-                run_id=run_id,
-                hero_id=character.id,
-                turn_id=turn_id,
-                input_kind="opening",
-                text=None,
-                status="open",
-                round_admitted=False,
-            )
-            await agent.ainvoke(initial_state(frame), config=config)
+            if text and text.strip():
+                kind = "action"
+                turn_id = generate_id()
+                await playthrough_service.record_player_action(
+                    db, user_id=user_id, run_id=run_id, text=text, turn_id=turn_id
+                )
+                frame = TurnFrame(
+                    run_id=run_id,
+                    hero_id=character.id,
+                    turn_id=turn_id,
+                    input_kind="action",
+                    text=text,
+                    status="open",
+                    round_admitted=False,
+                )
+                await agent.ainvoke(initial_state(frame), config=config)
+            else:
+                kind = "opening"
+                turn_id = generate_id()
+                frame = TurnFrame(
+                    run_id=run_id,
+                    hero_id=character.id,
+                    turn_id=turn_id,
+                    input_kind="opening",
+                    text=None,
+                    status="open",
+                    round_admitted=False,
+                )
+                await agent.ainvoke(initial_state(frame), config=config)
 
     awaiting_str = await playthrough_service.get_awaiting(db, user_id=user_id, run_id=run_id)
     return TurnOutcome(turn_id=turn_id, kind=kind, awaiting=awaiting_str)
