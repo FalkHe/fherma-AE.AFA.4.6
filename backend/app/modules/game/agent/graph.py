@@ -70,6 +70,7 @@ def initial_state(frame: TurnFrame) -> GameFlowState:
         awaiting=None,
         resume=None,
         pending_hit_id=None,
+        check_outcome=None,
         reactions=[],
         narrative=NarrativeCursor(beat_id=None, draft=None, event_id=None),
         effect=None,

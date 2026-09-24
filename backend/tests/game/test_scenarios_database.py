@@ -25,6 +25,7 @@ from app.core.ids import generate_id
 from app.modules.game.agent import flow_nodes
 from app.modules.game.agent.decisions import (
     MonsterActionOut,
+    MoveAssessmentOut,
     ReadMoveOut,
     ReferenceJudgementOut,
 )
@@ -235,22 +236,18 @@ def test_active_investigation_pauses_for_a_roll_then_restarts(playthrough_db):
         model = ScriptedChatModel(
             [
                 AIMessage(content="Rosalind crouches over the low thorn."),
-                ReadMoveOut(
-                    intent="search",
-                    refs={},
-                    proposed=[
-                        {
-                            "kind": "request_roll",
-                            "payload": {
-                                "actor_id": hero_id,
-                                "ability": "wisdom",
-                                "skill": "Perception",
-                                "dc": 5,
-                                "kind": "ability_check",
-                                "consumer": "resolve_check",
-                            },
-                        }
-                    ],
+                ReadMoveOut(intent="search", refs={}, proposed=None),
+                # `ASSESS_MOVE` (← sprint 011/08 fix): the scene's own
+                # hidden fact is authored, not invented -- the model only
+                # points at `evidence.secrets[0]`.
+                MoveAssessmentOut(
+                    applies=True,
+                    dc=5,
+                    dc_source="authored",
+                    consequence_ids=[],
+                    secret_index=0,
+                    fixture_id=None,
+                    check_action=None,
                 ),
                 "The widened cut confirms something heavy has passed this way more than once.",
             ]
@@ -261,6 +258,8 @@ def test_active_investigation_pauses_for_a_roll_then_restarts(playthrough_db):
         result = await graph.ainvoke(initial_state(frame), config=config)
         interrupts = result["__interrupt__"]
         assert interrupts[0].value["ability"] == "wisdom"
+        assert interrupts[0].value["skill"] == "Perception"
+        assert interrupts[0].value["dc"] == 5
 
         awaiting_mid = await playthrough_service.get_awaiting(db, user_id=owner_id, run_id=run_id)
         assert awaiting_mid.startswith("roll:")

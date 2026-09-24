@@ -69,7 +69,7 @@ class ActionCursor:
     kind: str
     plan: tuple[OperationSpec, ...]
     step_index: int
-    status: Literal["planned", "reserved", "complete", "skipped"]
+    status: Literal["planned", "reserved", "assessing", "complete", "skipped"]
     roll_id: str | None
     roll_consumed: bool
 
@@ -169,6 +169,7 @@ class GameFlowState(TypedDict):
     awaiting: AwaitingRef | None
     resume: Any | None  # effects.ResumeResult | None (sprint 011/07, WI2)
     pending_hit_id: str | None
+    check_outcome: bool | None
     reactions: list[ReactionSpec]
     narrative: NarrativeCursor
     effect: NextEffect | None
@@ -189,6 +190,7 @@ def close_turn_state(state: GameFlowState) -> StateDelta:
         "move": None,
         "action": None,
         "pending_hit_id": None,
+        "check_outcome": None,
         "result": None,
         "usage": None,
         "effect": None,

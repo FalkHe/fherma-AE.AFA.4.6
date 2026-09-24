@@ -98,6 +98,9 @@ class MoveAssessment:
     dc: int | None
     dc_source: Literal["authored", "rules"] | None
     consequence_ids: tuple[str, ...]
+    secret_index: int | None
+    fixture_id: str | None
+    check_action: str | None
 
 
 @dataclass(frozen=True)
@@ -152,6 +155,9 @@ class MoveAssessmentOut(BaseModel):
     dc: int | None = None
     dc_source: Literal["authored", "rules"] | None = None
     consequence_ids: list[str] = []
+    secret_index: int | None = None
+    fixture_id: str | None = None
+    check_action: str | None = None
 
 
 class MonsterActionOut(BaseModel):
@@ -229,6 +235,9 @@ def _build_move_assessment(parsed: MoveAssessmentOut, situation: Situation) -> M
         dc=parsed.dc,
         dc_source=parsed.dc_source,
         consequence_ids=tuple(parsed.consequence_ids),
+        secret_index=parsed.secret_index,
+        fixture_id=parsed.fixture_id,
+        check_action=parsed.check_action,
     )
 
 
@@ -437,6 +446,29 @@ def _validate(
                 operation_id="proposed", kind=OperationKind.INTERACT, payload={"choice": chosen_id}
             )
             return validate_refs(situation, synthetic)
+        return None
+
+    if kind is DecisionKind.ASSESS_MOVE:
+        # The model may only point at an authored entry already present in
+        # `evidence`, never invent one -- `dc_source="rules"` is left
+        # structurally valid (the caller treats it as "does not apply"
+        # rather than retrying the model for an index it was never asked
+        # to pick, ← brief "may be refused for now").
+        if parsed.applies and parsed.dc_source == "authored":  # type: ignore[attr-defined]
+            secret_index = parsed.secret_index  # type: ignore[attr-defined]
+            fixture_id = parsed.fixture_id  # type: ignore[attr-defined]
+            check_action = parsed.check_action  # type: ignore[attr-defined]
+            if secret_index is not None:
+                if not (0 <= secret_index < len(situation.secrets)):
+                    return "unknown_secret"
+            elif fixture_id is not None:
+                fixture = next((f for f in situation.fixtures if f.id == fixture_id), None)
+                if fixture is None:
+                    return "stale_reference"
+                if not any(check.action == check_action for check in fixture.checks):
+                    return "unknown_fixture_check"
+            else:
+                return "no_authored_entry_chosen"
         return None
 
     if kind is DecisionKind.WORLD_REACTION:

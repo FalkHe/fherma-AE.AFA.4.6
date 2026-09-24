@@ -35,6 +35,7 @@ service as checkpointer_service`), never a name import - consistent with
 `app/core/llm/service.py`."""
 
 import dataclasses
+import enum
 from contextlib import AbstractAsyncContextManager
 from types import ModuleType
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -59,22 +60,30 @@ _FLOW_STATE_MODULES: tuple[ModuleType, ...] = (
 
 
 def _module_dataclasses(module: ModuleType) -> list[type]:
-    """Every frozen dataclass `module` defines itself (skips re-exports,
-    e.g. `effects.py` importing `decisions.DecisionRequest`, so each type
-    is only registered once, off the module that actually owns it)."""
+    """Every frozen dataclass or `StrEnum` `module` defines itself (skips
+    re-exports, e.g. `effects.py` importing `decisions.DecisionRequest`,
+    so each type is only registered once, off the module that actually
+    owns it) -- ← live bug: `OperationKind`/`DecisionKind` are `StrEnum`,
+    never a dataclass, so they were never collected here even though a
+    dataclass field (`Operation.kind`, `OperationSpec.kind`,
+    `AwaitingRef.consumer`, ...) embeds one in nearly every checkpointed
+    state; `AsyncPostgresSaver`'s own msgpack round-trip silently dropped
+    every one of those fields, unlike `InMemorySaver`'s own in-process
+    checkpoints, which never serialize at all and so never surfaced it."""
     return [
         member
         for member in vars(module).values()
         if isinstance(member, type)
-        and dataclasses.is_dataclass(member)
+        and (dataclasses.is_dataclass(member) or issubclass(member, enum.Enum))
         and member.__module__ == module.__name__
     ]
 
 
 def checkpoint_serde() -> JsonPlusSerializer:
-    """`JsonPlusSerializer` with every flow-state dataclass registered in
-    `allowed_msgpack_modules`, so `LANGGRAPH_STRICT_MSGPACK=true` blocks
-    genuinely unrecognised types without blocking this flow's own."""
+    """`JsonPlusSerializer` with every flow-state dataclass and enum
+    registered in `allowed_msgpack_modules`, so `LANGGRAPH_STRICT_MSGPACK=
+    true` blocks genuinely unrecognised types without blocking this
+    flow's own."""
     allowed: list[type] = []
     for module in _FLOW_STATE_MODULES:
         allowed.extend(_module_dataclasses(module))

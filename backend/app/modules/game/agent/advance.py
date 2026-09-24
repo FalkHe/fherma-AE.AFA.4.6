@@ -28,6 +28,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
+from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.situation import Situation
 
 from . import nodes
@@ -36,6 +37,7 @@ from .decisions import (
     DecisionRequest,
     DecisionResult,
     MonsterAction,
+    MoveAssessment,
     ReadMoveDecision,
     ReferenceJudgement,
 )
@@ -99,6 +101,94 @@ def player_roll_plan(
             },
         ),
         OperationSpec(kind=consumer, payload={"dc": payload.get("dc")}),
+        OperationSpec(kind=OperationKind.COMPLETE_ACTION, payload={}),
+    )
+
+
+# `READ_MOVE`'s own `intent` is free text ("a short description of what
+# the player is trying to do", never a fixed enum -- ← its own prompt), so
+# a search-like move is recognised by keyword, not exact match (← live
+# bug, round 2: the model's real replies read "search for tracks" or
+# "investigate the ground", never the bare word "search" alone, so an
+# exact-membership check never fired outside this file's own tests).
+_SEARCH_KEYWORDS = ("search", "investigate", "examine", "inspect", "look for", "track")
+
+
+def needs_move_assessment(intent: str, refs: Mapping[str, str], situation: Situation) -> bool:
+    """A `READ_MOVE` result needs `ASSESS_MOVE` (an authored-check pipeline
+    visit) rather than an immediate answer beat when it names a
+    search-like intent over a scene with hidden facts, or names a fixture
+    that still carries an unachieved authored check (← live bug, sprint
+    011/08: neither `ASSESS_MOVE` nor `INTERPRET_EVIDENCE` was ever
+    scheduled, so a search over a scene's own secret narrated straight
+    through with no roll)."""
+    lowered = intent.casefold()
+    if situation.secrets and any(keyword in lowered for keyword in _SEARCH_KEYWORDS):
+        return True
+    fixture_id = refs.get("object_id") or refs.get("fixture_id")
+    if fixture_id:
+        fixture = next((f for f in situation.fixtures if f.id == fixture_id), None)
+        if fixture is not None and fixture.checks:
+            return True
+    return False
+
+
+def _authored_check_entry(
+    situation: Situation, assessment: MoveAssessment
+) -> tuple[Any, str, str | None] | None:
+    """The one authored entry (`SecretView`/`FixtureCheckView`) the model's
+    `assessment` names, validated against `situation` again here (never
+    trust an index/id surviving from an earlier `Situation` snapshot) --
+    or `None` when it names nothing usable (including `dc_source ==
+    "rules"`, refused for now, ← brief). Returns the entry itself, its
+    prose to reveal on success, and, for a fixture check only, the
+    fixture's own id (`None` for a secret)."""
+    if not assessment.applies or assessment.dc_source != "authored":
+        return None
+    if assessment.secret_index is not None:
+        if 0 <= assessment.secret_index < len(situation.secrets):
+            secret = situation.secrets[assessment.secret_index]
+            return secret, secret.fact, None
+        return None
+    if assessment.fixture_id is not None:
+        fixture = next((f for f in situation.fixtures if f.id == assessment.fixture_id), None)
+        if fixture is None:
+            return None
+        check = next((c for c in fixture.checks if c.action == assessment.check_action), None)
+        if check is None:
+            return None
+        return check, check.success, fixture.id
+    return None
+
+
+def fixture_roll_plan(
+    *, actor_id: str, fixture_id: str, action: str, ability: str, skill: str | None, dc: int
+) -> tuple[OperationSpec, ...]:
+    """Rolled fixture (← `docs/general/game-flow.v2.md`, "Action plans"):
+    request roll → (wait/player-roll, off-plan) → `INTERACT` with the
+    roll → complete action. `_interact`'s own consequence assessment is
+    `playthrough_service.interact`'s job, not this scheduler's."""
+    return (
+        OperationSpec(
+            kind=OperationKind.REQUEST_ROLL,
+            payload={
+                "actor_id": actor_id,
+                "ability": ability,
+                "skill": skill,
+                "dc": dc,
+                "kind": "ability_check",
+                "consumer": OperationKind.INTERACT.value,
+                "consumer_payload": {
+                    "actor_id": actor_id,
+                    "object_id": fixture_id,
+                    "action": action,
+                },
+            },
+        ),
+        OperationSpec(
+            kind=OperationKind.INTERACT,
+            payload={"actor_id": actor_id, "object_id": fixture_id, "action": action},
+        ),
         OperationSpec(kind=OperationKind.COMPLETE_ACTION, payload={}),
     )
 
@@ -195,6 +285,25 @@ def reconcile_step(state: GameFlowState) -> dict[str, Any]:
     return {"action": replace(action, step_index=action.step_index + 1)}
 
 
+def capture_check_outcome(state: GameFlowState) -> dict[str, Any]:
+    """`RESOLVE_CHECK`/`RESOLVE_SAVE`'s own `success` value is about to be
+    overwritten in `state["result"]` by the plan's next step
+    (`COMPLETE_ACTION`) before `advance_narration` ever gets to read it --
+    called by `flow_nodes.advance()` on every visit, same as
+    `reconcile_step`, to save it onto `state["check_outcome"]` while it is
+    still the last thing that happened."""
+    effect = state["effect"]
+    result = state["result"]
+    if not isinstance(effect, Operation) or effect.kind not in (
+        OperationKind.RESOLVE_CHECK,
+        OperationKind.RESOLVE_SAVE,
+    ):
+        return {}
+    if not isinstance(result, OperationResult) or result.status != "ok":
+        return {}
+    return {"check_outcome": bool(result.value.get("success"))}
+
+
 def apply_choice_answer(state: GameFlowState) -> dict[str, Any]:
     """Sprint 08, WI3 -- fills the move ref an `ACCEPT_CHOICE` answered
     directly from the resumed answer text (`effect.payload["text"]`),
@@ -277,20 +386,29 @@ def apply_decision(
                 roll_consumed=False,
             )
         elif decision.intent != "attack":
-            # No mechanical plan -- a pure narrative move (talk, look, a
-            # rules question already answered by `READ_MOVE`'s own tool
-            # loop). Marking the action already "complete" with an empty
-            # plan lets `advance_narration` draft the answer beat next,
-            # without a second decision call this scheduler does not need
-            # (the mechanic diagrams' extra `decide` step is not required
-            # -- ← brief, "never node sequences").
+            # No mechanical plan proposed. A search-like move over a scene
+            # with hidden facts, or a move naming a fixture that still
+            # carries an unachieved authored check, first needs
+            # `ASSESS_MOVE` (`status="assessing"`, `advance_action`'s own
+            # next visit requests it) -- everything else is a pure
+            # narrative move (talk, look, a rules question already
+            # answered by `READ_MOVE`'s own tool loop), marked "complete"
+            # right away so `advance_narration` drafts the answer beat
+            # next, without a second decision call this scheduler does
+            # not need (the mechanic diagrams' extra `decide` step is not
+            # required -- ← brief, "never node sequences").
+            status = (
+                "assessing"
+                if needs_move_assessment(decision.intent, decision.refs, situation)
+                else "complete"
+            )
             delta["action"] = ActionCursor(
                 action_id=_new_id(),
                 actor_id=hero_id,
                 kind=decision.intent,
                 plan=(),
                 step_index=0,
-                status="complete",
+                status=status,
                 roll_id=None,
                 roll_consumed=False,
             )
@@ -299,6 +417,36 @@ def apply_decision(
         # (initiative first, the hero's own plan only once it is the
         # hero's turn -- `flow_nodes.materialize_hero_action`).
         return delta
+
+    if result.kind is DecisionKind.ASSESS_MOVE:
+        assessment: MoveAssessment = result.value
+        action = state["action"]
+        if action is None:
+            return {}
+        entry = _authored_check_entry(situation, assessment)
+        if entry is None:
+            # Does not apply, or the model named no authored entry (or
+            # tried `dc_source="rules"`, refused for now) -- straight to
+            # the answer beat, no roll.
+            return {"action": replace(action, status="complete")}
+        mechanics, fact_text, fixture_id = entry
+        ability, skill, dc = playthrough_service.authored_check(mechanics)
+        if fixture_id is not None:
+            plan = fixture_roll_plan(
+                actor_id=hero_id,
+                fixture_id=fixture_id,
+                action=assessment.check_action or "",
+                ability=ability,
+                skill=skill,
+                dc=dc,
+            )
+        else:
+            plan = player_roll_plan(
+                actor_id=hero_id,
+                consumer=OperationKind.RESOLVE_CHECK,
+                payload={"ability": ability, "skill": skill, "dc": dc, "fact": fact_text},
+            )
+        return {"action": replace(action, plan=plan, step_index=0, status="planned")}
 
     if result.kind is DecisionKind.JUDGE_REFERENCE:
         judgement: ReferenceJudgement = result.value
@@ -530,6 +678,17 @@ def advance_action(state: GameFlowState, situation: Situation) -> NextEffect | N
         # `advance_combat`'s own initiative scheduling, then to
         # `flow_nodes.materialize_hero_action` once it is the hero's turn.
         return None
+    if action.status == "assessing":
+        return DecisionRequest(
+            decision_id=_new_id(),
+            kind=DecisionKind.ASSESS_MOVE,
+            evidence_ids=(),
+            payload={
+                "text": state["turn"].text,
+                "intent": action.kind,
+                "refs": dict(move.refs) if move is not None else {},
+            },
+        )
     if action.status in ("complete", "skipped"):
         return None
     if action.step_index >= len(action.plan):
@@ -540,11 +699,18 @@ def advance_action(state: GameFlowState, situation: Situation) -> NextEffect | N
         )
     step = action.plan[action.step_index]
     payload = step.payload
-    if step.kind is OperationKind.RESOLVE_ATTACK and "roll_id" not in payload and action.roll_id:
+    if (
+        step.kind in (OperationKind.RESOLVE_ATTACK, OperationKind.INTERACT)
+        and "roll_id" not in payload
+        and action.roll_id
+    ):
         # `attack_plan`'s own `RESOLVE_ATTACK` step never carries a
         # `roll_id` -- unlike `RESOLVE_CHECK`/`RESOLVE_SAVE`
         # (`operations._resolve_roll`'s own fallback), `_resolve_attack`
-        # requires one outright.
+        # requires one outright. `fixture_roll_plan`'s own `INTERACT` step
+        # is the same shape: `playthrough_service.interact` takes an
+        # optional `roll_id`, but a rolled fixture check must still pass
+        # it on, never fall back to a no-roll bypass.
         payload = {**payload, "roll_id": action.roll_id}
     return Operation(operation_id=_new_id(), kind=step.kind, payload=payload)
 
@@ -618,13 +784,33 @@ def advance_reactions(state: GameFlowState, situation: Situation) -> NextEffect 
     )
 
 
+def _resolved_check_fact(action: ActionCursor) -> str | None:
+    """The fact text an `ASSESS_MOVE`-built check plan (`apply_decision`)
+    stashed on its own `REQUEST_ROLL` step's `consumer_payload` -- the
+    plan survives past `step_index` advancing, exactly as `advance_hit`
+    already reads `action.plan[1]` for an attack's own attacker/target."""
+    if not action.plan:
+        return None
+    first = action.plan[0]
+    if first.kind is not OperationKind.REQUEST_ROLL:
+        return None
+    fact = first.payload.get("consumer_payload", {}).get("fact")
+    return fact if isinstance(fact, str) else None
+
+
 def advance_narration(state: GameFlowState, situation: Situation) -> NextEffect | None:
     narrative = state["narrative"]
     if narrative.draft is not None:
         return Operation(operation_id=_new_id(), kind=OperationKind.RECORD_BEAT, payload={})
     action = state["action"]
     if action is not None and action.status == "complete" and narrative.event_id is None:
-        return BeatRequest(beat_id=_new_id(), kind="outcome", allowed_evidence_ids=(), payload={})
+        payload: dict[str, Any] = {}
+        fact = _resolved_check_fact(action)
+        if fact is not None and state.get("check_outcome"):
+            payload["discovered"] = fact
+        return BeatRequest(
+            beat_id=_new_id(), kind="outcome", allowed_evidence_ids=(), payload=payload
+        )
     return None
 
 

@@ -132,6 +132,7 @@ async def advance(state: GameFlowState) -> StateDelta:
         delta.update(opening)
 
     for step_delta in (
+        advance_module.capture_check_outcome(working),
         advance_module.reconcile_step(working),
         advance_module.apply_choice_answer(working),
         advance_module.progress_combat(working, situation),

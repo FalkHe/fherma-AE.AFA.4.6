@@ -63,6 +63,7 @@ def test_initial_state_has_every_key_at_its_empty_value():
         "awaiting": None,
         "resume": None,
         "pending_hit_id": None,
+        "check_outcome": None,
         "reactions": [],
         "narrative": NarrativeCursor(beat_id=None, draft=None, event_id=None),
         "effect": None,

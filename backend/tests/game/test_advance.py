@@ -14,9 +14,10 @@ from app.modules.game.agent.decisions import (
     DecisionKind,
     DecisionRequest,
     DecisionResult,
+    MoveAssessment,
     ReadMoveDecision,
 )
-from app.modules.game.agent.effects import PlayerWait, ResumeResult, TurnComplete
+from app.modules.game.agent.effects import BeatRequest, PlayerWait, ResumeResult, TurnComplete
 from app.modules.game.agent.flow_state import (
     ActionCursor,
     AwaitingRef,
@@ -25,12 +26,13 @@ from app.modules.game.agent.flow_state import (
     NarrativeCursor,
     Operation,
     OperationKind,
+    OperationResult,
     OperationSpec,
     ReactionSpec,
     TurnFrame,
     Usage,
 )
-from app.modules.playthrough.situation import ActorView, Situation
+from app.modules.playthrough.situation import ActorView, SecretView, Situation
 
 
 def _turn(**overrides) -> TurnFrame:
@@ -54,6 +56,7 @@ def _state(**overrides) -> dict:
         combat=None,
         awaiting=None,
         pending_hit_id=None,
+        check_outcome=None,
         reactions=[],
         narrative=NarrativeCursor(beat_id=None, draft=None, event_id=None),
         effect=None,
@@ -86,7 +89,7 @@ def _hero(*, down=False, is_alive=True) -> ActorView:
     return _actor("hero-1", role="hero", down=down, is_alive=is_alive)
 
 
-def _situation(*, hero=None, actors=()) -> Situation:
+def _situation(*, hero=None, actors=(), secrets=(), fixtures=()) -> Situation:
     hero = hero or _hero()
     return Situation(
         run_id="run-1",
@@ -100,10 +103,10 @@ def _situation(*, hero=None, actors=()) -> Situation:
         consequences=(),
         pressure=None,
         npc_intent=None,
-        secrets=(),
+        secrets=secrets,
         hero=hero,
         actors=(hero, *actors),
-        fixtures=(),
+        fixtures=fixtures,
         loose_items=(),
         exits=(),
         recent=(),
@@ -476,3 +479,207 @@ def test_apply_decision_keeps_an_actor_id_the_model_already_named():
     delta = apply_decision(state, situation, result)
 
     assert delta["action"].plan[0].payload["actor_id"] == "other-1"
+
+
+def _secret(fact="wool-marked passage", dc=5) -> SecretView:
+    return SecretView(fact=fact, ability="wisdom", skill="Perception", dc=dc, discovered_by="")
+
+
+def test_apply_decision_search_over_a_hidden_fact_reserves_assess_move():
+    """A search-like move with no proposed plan, over a scene that carries
+    a hidden fact, must not narrate straight through (← live bug)."""
+    situation = _situation(secrets=(_secret(),))
+    state = _state(move=None)
+    result = DecisionResult(
+        decision_id="d1",
+        kind=DecisionKind.READ_MOVE,
+        value=ReadMoveDecision(intent="search", refs={}, proposed=None),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    assert delta["action"].status == "assessing"
+
+    working = _state(move=delta["move"], action=delta["action"])
+    effect = select_next_effect(working, situation)
+    assert isinstance(effect, DecisionRequest)
+    assert effect.kind is DecisionKind.ASSESS_MOVE
+
+
+def test_apply_decision_search_over_no_hidden_fact_completes_immediately():
+    situation = _situation(secrets=())
+    state = _state(move=None)
+    result = DecisionResult(
+        decision_id="d1",
+        kind=DecisionKind.READ_MOVE,
+        value=ReadMoveDecision(intent="search", refs={}, proposed=None),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    assert delta["action"].status == "complete"
+
+
+def test_apply_decision_assessment_that_applies_builds_a_request_roll_plan():
+    situation = _situation(secrets=(_secret(dc=5),))
+    action = ActionCursor(
+        action_id="action-1",
+        actor_id="hero-1",
+        kind="search",
+        plan=(),
+        step_index=0,
+        status="assessing",
+        roll_id=None,
+        roll_consumed=False,
+    )
+    state = _state(move=Move(intent="search", refs={}), action=action)
+    result = DecisionResult(
+        decision_id="d2",
+        kind=DecisionKind.ASSESS_MOVE,
+        value=MoveAssessment(
+            applies=True,
+            dc=5,
+            dc_source="authored",
+            consequence_ids=(),
+            secret_index=0,
+            fixture_id=None,
+            check_action=None,
+        ),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    plan = delta["action"].plan
+    assert delta["action"].status == "planned"
+    assert plan[0].kind == OperationKind.REQUEST_ROLL
+    assert plan[0].payload["ability"] == "wisdom"
+    assert plan[0].payload["skill"] == "Perception"
+    assert plan[0].payload["dc"] == 5
+    assert plan[1].kind == OperationKind.RESOLVE_CHECK
+    assert plan[2].kind == OperationKind.COMPLETE_ACTION
+
+
+def test_apply_decision_assessment_that_does_not_apply_completes_the_action():
+    situation = _situation(secrets=(_secret(),))
+    action = ActionCursor(
+        action_id="action-1",
+        actor_id="hero-1",
+        kind="search",
+        plan=(),
+        step_index=0,
+        status="assessing",
+        roll_id=None,
+        roll_consumed=False,
+    )
+    state = _state(move=Move(intent="search", refs={}), action=action)
+    result = DecisionResult(
+        decision_id="d2",
+        kind=DecisionKind.ASSESS_MOVE,
+        value=MoveAssessment(
+            applies=False,
+            dc=None,
+            dc_source=None,
+            consequence_ids=(),
+            secret_index=None,
+            fixture_id=None,
+            check_action=None,
+        ),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    assert delta["action"].status == "complete"
+    assert delta["action"].plan == ()
+
+
+def test_apply_decision_assessment_refuses_a_rules_sourced_dc_for_now():
+    situation = _situation(secrets=(_secret(),))
+    action = ActionCursor(
+        action_id="action-1",
+        actor_id="hero-1",
+        kind="search",
+        plan=(),
+        step_index=0,
+        status="assessing",
+        roll_id=None,
+        roll_consumed=False,
+    )
+    state = _state(move=Move(intent="search", refs={}), action=action)
+    result = DecisionResult(
+        decision_id="d2",
+        kind=DecisionKind.ASSESS_MOVE,
+        value=MoveAssessment(
+            applies=True,
+            dc=12,
+            dc_source="rules",
+            consequence_ids=(),
+            secret_index=None,
+            fixture_id=None,
+            check_action=None,
+        ),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    assert delta["action"].status == "complete"
+
+
+def test_resumed_resolve_check_success_reaches_an_outcome_beat_citing_the_fact():
+    """The end-to-end shape once the roll comes back successful: the
+    `RESOLVE_CHECK` step's own result is captured (`capture_check_outcome`)
+    before `COMPLETE_ACTION` runs, so the outcome beat may cite the fact
+    the check revealed."""
+    situation = _situation(secrets=(_secret(fact="a wool-marked narrow cut"),))
+    from app.modules.game.agent.advance import capture_check_outcome, player_roll_plan
+
+    plan = player_roll_plan(
+        actor_id="hero-1",
+        consumer=OperationKind.RESOLVE_CHECK,
+        payload={
+            "ability": "wisdom",
+            "skill": "Perception",
+            "dc": 5,
+            "fact": "a wool-marked narrow cut",
+        },
+    )
+    action = ActionCursor(
+        action_id="action-1",
+        actor_id="hero-1",
+        kind="search",
+        plan=plan,
+        step_index=1,
+        status="planned",
+        roll_id="roll-1",
+        roll_consumed=False,
+    )
+    resolve_op = Operation(operation_id="op-1", kind=OperationKind.RESOLVE_CHECK, payload={})
+    resolve_result = OperationResult(
+        operation_id="op-1", status="ok", reason=None, event_ids=(), value={"success": True}
+    )
+    state = _state(
+        move=Move(intent="search", refs={}),
+        action=action,
+        effect=resolve_op,
+        result=resolve_result,
+    )
+
+    captured = capture_check_outcome(state)
+    assert captured == {"check_outcome": True}
+    state.update(captured)
+    state["action"] = replace_step_index(action, 3)  # past COMPLETE_ACTION -> "complete"
+
+    effect = select_next_effect(state, situation)
+    assert isinstance(effect, BeatRequest)
+    assert effect.kind == "outcome"
+    assert effect.payload["discovered"] == "a wool-marked narrow cut"
+
+
+def replace_step_index(action: ActionCursor, step_index: int) -> ActionCursor:
+    from dataclasses import replace
+
+    return replace(action, step_index=step_index, status="complete")
