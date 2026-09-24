@@ -2,6 +2,8 @@
 scheduler priority order (AC1, AC2, AC3, AC5), plus `resume_operation` and the
 guard path."""
 
+from dataclasses import replace
+
 from app.modules.game.agent.advance import (
     apply_decision,
     eligible_hostiles,
@@ -16,6 +18,7 @@ from app.modules.game.agent.decisions import (
     DecisionResult,
     MoveAssessment,
     ReadMoveDecision,
+    ReferenceJudgement,
 )
 from app.modules.game.agent.effects import BeatRequest, PlayerWait, ResumeResult, TurnComplete
 from app.modules.game.agent.flow_state import (
@@ -683,3 +686,99 @@ def replace_step_index(action: ActionCursor, step_index: int) -> ActionCursor:
     from dataclasses import replace
 
     return replace(action, step_index=step_index, status="complete")
+
+
+def test_apply_decision_recognises_a_free_text_attack_intent():
+    """← live bug: the real model's own `intent` reads "attack the goblin
+    with my spear", never the bare word "attack" every combat check in
+    this module compares against exactly."""
+    goblin = _actor("goblin-1")
+    situation = _situation(actors=(goblin,))
+    state = _state(move=None)
+    result = DecisionResult(
+        decision_id="d1",
+        kind=DecisionKind.READ_MOVE,
+        value=ReadMoveDecision(
+            intent="attack the goblin with my spear", refs={"target_id": "goblin-1"}, proposed=None
+        ),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    assert delta["move"].intent == "attack"
+    assert delta["move"].refs["target_id"] == "goblin-1"
+    assert "action" not in delta
+
+
+def test_apply_decision_drops_an_invented_attack_target():
+    situation = _situation(actors=(_actor("goblin-1"),))
+    state = _state(move=None)
+    result = DecisionResult(
+        decision_id="d1",
+        kind=DecisionKind.READ_MOVE,
+        value=ReadMoveDecision(
+            intent="attack the goblin", refs={"target_id": "not-a-real-id"}, proposed=None
+        ),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    assert "target_id" not in delta["move"].refs
+
+
+def test_apply_decision_attack_with_no_target_requests_judge_reference():
+    goblins = (_actor("goblin-1"), _actor("goblin-2"), _actor("goblin-3"))
+    situation = _situation(actors=goblins)
+    state = _state(move=None)
+    result = DecisionResult(
+        decision_id="d1",
+        kind=DecisionKind.READ_MOVE,
+        value=ReadMoveDecision(intent="I swing at one of the goblins", refs={}, proposed=None),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+    working = _state(move=delta["move"], action=None)
+
+    effect = select_next_effect(working, situation)
+
+    assert isinstance(effect, DecisionRequest)
+    assert effect.kind is DecisionKind.JUDGE_REFERENCE
+    assert effect.payload["text"] == "I attack the goblin"
+
+
+def _named_actor(id: str, name: str) -> ActorView:
+    return replace(_actor(id), name=name)
+
+
+def test_apply_decision_ambiguous_reference_offers_human_readable_labels():
+    """← live bug: three identically-named goblins offered as `options`
+    used to be their own raw ids -- unreadable, and unusable by a player
+    who cannot see one."""
+    goblins = tuple(_named_actor(f"goblin-{i}", "Goblin Raider") for i in range(1, 4))
+    situation = _situation(actors=goblins)
+    state = _state(move=Move(intent="attack", refs={}))
+    result = DecisionResult(
+        decision_id="d2",
+        kind=DecisionKind.JUDGE_REFERENCE,
+        value=ReferenceJudgement(chosen_id=None, ask_choice=tuple(g.id for g in goblins)),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    effect = delta["effect"]
+    assert isinstance(effect, Operation)
+    assert effect.kind == OperationKind.REQUEST_CHOICE
+    assert effect.payload["options"] == [
+        "Goblin Raider (1)",
+        "Goblin Raider (2)",
+        "Goblin Raider (3)",
+    ]
+    assert effect.payload["consumer_payload"]["choices"] == {
+        "Goblin Raider (1)": "goblin-1",
+        "Goblin Raider (2)": "goblin-2",
+        "Goblin Raider (3)": "goblin-3",
+    }

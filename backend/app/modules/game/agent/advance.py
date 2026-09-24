@@ -133,6 +133,92 @@ def needs_move_assessment(intent: str, refs: Mapping[str, str], situation: Situa
     return False
 
 
+# Same free-text problem as `_SEARCH_KEYWORDS` (← live bug, round 3): the
+# real model's `intent` read "attack the goblin with my spear", never the
+# bare word "attack" `apply_decision`'s every combat check (here and in
+# `advance_action`/`advance_combat`/`materialize_hero_action`) compares
+# against, so the exact-equality check silently fell through to the pure-
+# narrative branch and closed the turn with an attempt-flavoured beat and
+# no mechanics at all -- no `judge_reference`, no initiative, no attack
+# roll. Canonicalising `intent` once, right here, keeps every downstream
+# `== "attack"` check unchanged.
+_ATTACK_KEYWORDS = ("attack", "strike", "stab", "swing at", "shoot", "slash", "fight")
+
+
+def _canonical_intent(intent: str, proposed: tuple[OperationSpec, ...] | None) -> str:
+    """`decision.intent` normalised to the literal `"attack"` every combat
+    check in this module compares against, when it reads as an attack and
+    proposes no mechanical plan of its own (`READ_MOVE`'s own
+    `allowed_operations` never includes an attack operation -- an attack
+    move never has `proposed`)."""
+    if proposed:
+        return intent
+    lowered = intent.casefold()
+    if any(keyword in lowered for keyword in _ATTACK_KEYWORDS):
+        return "attack"
+    return intent
+
+
+def _sanitized_refs(intent: str, refs: Mapping[str, str], situation: Situation) -> dict[str, str]:
+    """Drops an attack move's own `target_id` when it names no actor
+    actually present (← live bug: an invented id, or one belonging to a
+    scene the hero has already left, would otherwise reach
+    `attack_plan`'s own `RESOLVE_ATTACK` step and be refused there with no
+    recovery -- dropping it here instead lets `advance_action`'s own
+    `JUDGE_REFERENCE` request run exactly as it does for a never-named
+    target)."""
+    sanitized = dict(refs)
+    if intent != "attack":
+        return sanitized
+    target_id = sanitized.get("target_id")
+    if target_id is not None:
+        known_ids = {actor.id for actor in situation.actors} | {situation.hero.id}
+        if target_id not in known_ids:
+            sanitized.pop("target_id", None)
+    return sanitized
+
+
+def _describe_candidate(situation: Situation, object_id: str) -> str:
+    """A human-readable label for any id `judge_reference` may name (actor,
+    fixture, loose item or exit -- its own prompt's own candidate kinds),
+    falling back to the bare id for one this `Situation` no longer
+    recognises."""
+    for actor in (*situation.actors, situation.hero):
+        if actor.id == object_id:
+            return actor.name
+    for fixture in situation.fixtures:
+        if fixture.id == object_id:
+            return fixture.name
+    for item in situation.loose_items:
+        if item.id == object_id:
+            return item.name
+    for exit_ in situation.exits:
+        if exit_.id == object_id:
+            return exit_.description
+    return object_id
+
+
+def choice_options(situation: Situation, ids: tuple[str, ...]) -> dict[str, str]:
+    """A private label -> id mapping for `REQUEST_CHOICE`'s own `options`
+    (← brief: "human-readable options mapped privately to ids"). Same-
+    named candidates (three identical "Goblin Raider"s, ← live bug) are
+    numbered in encounter order so every label stays unique and every
+    label still round-trips through `operations._accept_choice`'s own
+    lookup."""
+    labels = [_describe_candidate(situation, object_id) for object_id in ids]
+    counts: dict[str, int] = {}
+    for label in labels:
+        counts[label] = counts.get(label, 0) + 1
+    seen: dict[str, int] = {}
+    options: dict[str, str] = {}
+    for object_id, label in zip(ids, labels, strict=True):
+        if counts[label] > 1:
+            seen[label] = seen.get(label, 0) + 1
+            label = f"{label} ({seen[label]})"
+        options[label] = object_id
+    return options
+
+
 def _authored_check_entry(
     situation: Situation, assessment: MoveAssessment
 ) -> tuple[Any, str, str | None] | None:
@@ -194,7 +280,12 @@ def fixture_roll_plan(
 
 
 def attack_plan(
-    *, actor_id: str, target_id: str, attack: str, is_player: bool, item_id: str | None = None
+    *,
+    actor_id: str,
+    target_id: str,
+    attack: str | None,
+    is_player: bool,
+    item_id: str | None = None,
 ) -> tuple[OperationSpec, ...]:
     """Roll (player or monster) → resolve attack → complete action. A hit
     sets `pending_hit_id` (the `RESOLVE_ATTACK` handler's own job); the
@@ -372,20 +463,22 @@ def apply_decision(
 
     if result.kind is DecisionKind.READ_MOVE:
         decision: ReadMoveDecision = result.value
-        move = Move(intent=decision.intent, refs=dict(decision.refs))
+        intent = _canonical_intent(decision.intent, decision.proposed)
+        refs = _sanitized_refs(intent, decision.refs, situation)
+        move = Move(intent=intent, refs=refs)
         delta: dict[str, Any] = {"move": move}
         if decision.proposed:
             delta["action"] = ActionCursor(
                 action_id=_new_id(),
                 actor_id=hero_id,
-                kind=decision.intent,
+                kind=intent,
                 plan=_expand_read_move_plan(hero_id, decision.proposed),
                 step_index=0,
                 status="planned",
                 roll_id=None,
                 roll_consumed=False,
             )
-        elif decision.intent != "attack":
+        elif intent != "attack":
             # No mechanical plan proposed. A search-like move over a scene
             # with hidden facts, or a move naming a fixture that still
             # carries an unachieved authored check, first needs
@@ -397,15 +490,11 @@ def apply_decision(
             # next, without a second decision call this scheduler does
             # not need (the mechanic diagrams' extra `decide` step is not
             # required -- ← brief, "never node sequences").
-            status = (
-                "assessing"
-                if needs_move_assessment(decision.intent, decision.refs, situation)
-                else "complete"
-            )
+            status = "assessing" if needs_move_assessment(intent, refs, situation) else "complete"
             delta["action"] = ActionCursor(
                 action_id=_new_id(),
                 actor_id=hero_id,
-                kind=decision.intent,
+                kind=intent,
                 plan=(),
                 step_index=0,
                 status=status,
@@ -454,6 +543,7 @@ def apply_decision(
         if judgement.chosen_id is not None and move is not None:
             return {"move": replace(move, refs={**move.refs, "target_id": judgement.chosen_id})}
         if judgement.ask_choice:
+            options = choice_options(situation, judgement.ask_choice)
             return {
                 "effect": Operation(
                     operation_id=_new_id(),
@@ -461,9 +551,14 @@ def apply_decision(
                     payload={
                         "actor_id": hero_id,
                         "text": "Which one do you mean?",
-                        "options": list(judgement.ask_choice),
+                        "options": list(options.keys()),
                         "consumer": OperationKind.ACCEPT_CHOICE.value,
-                        "consumer_payload": {"ref_key": "target_id"},
+                        # `"choices"` is the private label -> id mapping
+                        # `operations._accept_choice` resolves the
+                        # player's own answer text against -- the player
+                        # only ever sees `options`' own human-readable
+                        # labels (← brief), never an id.
+                        "consumer_payload": {"ref_key": "target_id", "choices": options},
                     },
                 )
             }
@@ -497,14 +592,52 @@ def progress_combat(state: GameFlowState, situation: Situation) -> dict[str, Any
     whose `ActionCursor` just reached `"complete"`, so `eligible_hostiles`
     stops re-offering an actor who already acted this round and
     `flow_nodes.materialize_hero_action` stops re-building the hero's own
-    plan. Nothing previously moved this cursor at all (← bug)."""
+    plan. Nothing previously moved this cursor at all (← bug).
+
+    A hostile's own completed cursor is also cleared back to `None` here
+    (← live bug, round 3: when the hero lost initiative, every one of the
+    three hostiles that acted before her left its own completed
+    `ActionCursor` sitting in `state["action"]` -- `materialize_hero_
+    action`'s own `action is not None` guard then mistook it for an
+    unfinished obligation forever, and the hero's own turn never
+    materialized at all). The hero's own completed cursor is left alone:
+    `advance_narration`'s final outcome beat still needs to read it."""
     combat = state["combat"]
     action = state["action"]
     if combat is None or action is None or action.status != "complete":
         return {}
     if combat.index >= len(combat.order) or combat.order[combat.index] != action.actor_id:
         return {}
-    return {"combat": replace(combat, index=combat.index + 1)}
+    delta: dict[str, Any] = {"combat": replace(combat, index=combat.index + 1)}
+    if action.actor_id != situation.hero.id:
+        delta["action"] = None
+    return delta
+
+
+def _resolve_hero_weapon(situation: Situation, refs: Mapping[str, str]) -> str | None:
+    """Defaults an attack's own `item_id` to a carried item matching the
+    named `attack` word, or the hero's first carried item as a last
+    resort, when `READ_MOVE` left it unset -- `dice.derive_formula`
+    refuses a character's own attack roll outright with no `item_id` at
+    all (← live bug: "attack the goblin with my spear" named no item in
+    `evidence` at all, since the hero carries only a knife, so
+    `READ_MOVE` correctly left `item_id` unset per its own "never invent
+    an id" rule; the hero's own attack roll is never an interrupt
+    (`attack_plan`'s own docstring) and crashed the whole turn instead of
+    asking again)."""
+    item_id = refs.get("item_id")
+    if item_id is not None:
+        return item_id
+    inventory = situation.hero.inventory
+    if not inventory:
+        return None
+    attack_name = (refs.get("attack") or "").casefold()
+    if attack_name:
+        for item in inventory:
+            item_name = item.name.casefold()
+            if attack_name in item_name or item_name in attack_name:
+                return item.id
+    return inventory[0].id
 
 
 def materialize_hero_action(state: GameFlowState, situation: Situation) -> dict[str, Any]:
@@ -533,9 +666,15 @@ def materialize_hero_action(state: GameFlowState, situation: Situation) -> dict[
             plan=attack_plan(
                 actor_id=situation.hero.id,
                 target_id=target_id,
-                attack=move.refs.get("attack", "attack"),
+                # `None`, not a placeholder string, when the move named
+                # no attack: `dice._select_attack` picks the hero's own
+                # sole attack automatically with a bare weapon (← live
+                # bug: the literal string `"attack"` used to reach
+                # `_select_attack` as an unmatched *name*, refusing the
+                # roll outright even with only one real attack to pick).
+                attack=move.refs.get("attack"),
                 is_player=True,
-                item_id=move.refs.get("item_id"),
+                item_id=_resolve_hero_weapon(situation, move.refs),
             ),
             step_index=0,
             status="planned",
@@ -663,12 +802,16 @@ def advance_action(state: GameFlowState, situation: Situation) -> NextEffect | N
         if move.intent == "attack" and not move.refs.get("target_id"):
             # An attack move with no bound target -- one or more live
             # candidates were ambiguous (scenario 8); `decide()`'s
-            # `JUDGE_REFERENCE` either picks one on its own or asks.
+            # `JUDGE_REFERENCE` either picks one on its own or asks. ←
+            # live bug: this payload used to carry only the hero's own
+            # id, never the player's own text -- the model had nothing
+            # naming *which* ambiguity ("the goblin" among three) to
+            # resolve at all.
             return DecisionRequest(
                 decision_id=_new_id(),
                 kind=DecisionKind.JUDGE_REFERENCE,
                 evidence_ids=(),
-                payload={"actor_id": situation.hero.id},
+                payload={"actor_id": situation.hero.id, "text": state["turn"].text},
             )
         # A move is read but no plan has been reserved into an ActionCursor
         # yet -- building that cursor from the decision's proposed plan is

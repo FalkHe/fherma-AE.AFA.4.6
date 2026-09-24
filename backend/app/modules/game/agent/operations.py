@@ -8,7 +8,7 @@ service call it wraps commits, exactly as `agent/tools.py` already relies
 on for the old graph.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -202,7 +202,17 @@ async def _accept_choice(
     # for a different `Operation` shape entirely.
     choice_key = payload.get("ref_key")
     if choice_key is not None and state["move"] is not None:
-        object_id = awaiting.consumer_payload.get(choice_key)
+        # `"choices"` (`advance.choice_options`'s own private label -> id
+        # mapping, ← live bug round 3): the player's own answer echoes
+        # one of `REQUEST_CHOICE`'s human-readable `options`, never an
+        # id, so it is looked up here first. `consumer_payload.get(
+        # choice_key)` is the older, single pre-resolved target shape
+        # (`advance.apply_choice_answer`'s own docstring) -- still tried
+        # as a fallback, never the other way around.
+        choices = awaiting.consumer_payload.get("choices")
+        object_id = choices.get(payload["text"]) if isinstance(choices, Mapping) else None
+        if object_id is None:
+            object_id = awaiting.consumer_payload.get(choice_key)
         if object_id is not None:
             delta["move"] = replace(
                 state["move"], refs={**state["move"].refs, choice_key: object_id}

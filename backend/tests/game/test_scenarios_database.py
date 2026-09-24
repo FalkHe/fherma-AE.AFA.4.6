@@ -433,10 +433,13 @@ def test_combat_from_ambiguous_target_to_defeat(playthrough_db):
 
         result = await graph.ainvoke(initial_state(frame), config=config)
 
-        # Resolve the ambiguous choice.
-        assert result["__interrupt__"][0].value["options"] == list(goblin_ids)
-        chosen_target = goblin_ids[0]
-        result = await graph.ainvoke(Command(resume=chosen_target), config=config)
+        # Resolve the ambiguous choice -- human-readable, numbered labels
+        # (never a raw id, ← brief), privately mapped back to the goblins'
+        # own ids by `operations._accept_choice`.
+        expected_labels = [f"Goblin Raider ({i + 1})" for i in range(len(goblin_ids))]
+        assert result["__interrupt__"][0].value["options"] == expected_labels
+        chosen_label = expected_labels[0]
+        result = await graph.ainvoke(Command(resume=chosen_label), config=config)
 
         # Settle initiative: a hero-side roll, then whichever side is
         # asked for a roll never interrupts twice in a row without this

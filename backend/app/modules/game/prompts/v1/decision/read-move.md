@@ -22,3 +22,10 @@ move through a named exit is always `use_exit` with the exit's own id
 under `payload.exit_id`, never `move`, `goto_scene` or similar). Never
 invent an id that is not in `evidence`. Never propose an operation kind
 outside `allowed_operations`. Never decide a die result or a DC yourself.
+
+When more than one actor, item, fixture or exit in `evidence` could
+equally match a name the move uses (three identical goblins and the
+player says only "the goblin"), leave that ref out of `refs` entirely
+rather than guessing one -- a later `judge_reference` decision resolves
+the ambiguity from the same candidates. An attack is always `intent:
+"attack"`, whether or not `refs.target_id` is set.
