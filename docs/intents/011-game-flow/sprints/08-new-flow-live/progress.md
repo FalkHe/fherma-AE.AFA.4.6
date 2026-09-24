@@ -10,14 +10,19 @@ stage: draft
 | WI | Status | Note |
 |---|---|---|
 | 1 | done | five-node graph composed, initial_state, topology test; old service call site pending WI2 |
-| 2 | running | |
-| 3 | running | |
+| 2 | done | run_turn, thread_state, CLI on the new flow; four old test files deleted, run_turn tests added |
+| 3 | done | four database scenarios pass; fixed flow gaps found on the way (decision/execute reconciliation, roll kinds, hit attribution, choice payload key, usage shape) |
 
 Status: `open | running | done | failed`
 
 ## Issues
 - No Dungeon Master tone value exists anywhere in the backend, so the sprint 06 proposal to wire it into narration is not a one-liner and stays out; the requirement-map claim needs a decision (proposal stands).
 - No qa agent, per owner's "reduce testing"; AC1 is checked live in the browser by the sprint lead.
+
+## Issues (gates and live check)
+- Gates green: lint, 1243 unit, 188 database tests. No wire-schema drift.
+- Live on the hosted app: conversation and search turns run on the new flow with the composer, transcript and awaiting behaving as before. A move north narrated a walk but used no exit; the hero stayed on the village green. Diagnosis and fix delegated.
+- Live logs showed checkpoint deserialization warnings for the new state types; the serializer now registers them and tests run in strict mode.
 
 ## Backlog proposals
 
