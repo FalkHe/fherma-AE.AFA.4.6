@@ -26,8 +26,25 @@ export type TranscriptRow =
   | { kind: "narration"; id: string; text: string; at: string }
   | { kind: "player"; id: string; author: string; text: string; at: string }
   | { kind: "system"; id: string; key: SystemKey; values: Record<string, string | number> }
-  | { kind: "dice"; id: string; label: string; notation: string; breakdown: string; total: number }
+  | {
+      kind: "dice";
+      id: string;
+      label: string;
+      notation: string;
+      breakdown: string;
+      total: number;
+      verdict?: "madeIt" | "missed";
+    }
   | { kind: "divider"; id: string; scene: string };
+
+/** The single question or dice roll the game is waiting on (sprint 010/09
+ * WI2, I1) -- the events read's `awaiting` marker, resolved against the
+ * `events` it came with into what D12's choice/roll buttons need: a
+ * `question` event's `options` verbatim, or a `roll_requested` event's
+ * `formula` as `notation`. */
+export type PendingPrompt =
+  | { kind: "choice"; id: string; options: string[] }
+  | { kind: "roll"; id: string; notation: string };
 
 type Payload = EventRead["payload"];
 
@@ -46,6 +63,11 @@ function numberArray(payload: Payload, key: string): number[] {
   return Array.isArray(value) ? value.filter((item): item is number => typeof item === "number") : [];
 }
 
+function stringArray(payload: Payload, key: string): string[] {
+  const value = payload[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 /** `context`/`toName`-style nested field, read defensively: `roll_requested`'s
  * `context` is free-form (`schemas.py:363-375`), never guaranteed to be an
  * object at all. */
@@ -55,6 +77,17 @@ function nestedString(value: unknown, key: string): string {
     return typeof nested === "string" ? nested : "";
   }
   return "";
+}
+
+/** Same defensive read as `nestedString`, for `context.dc` (sprint 010/09
+ * WI2, I1) -- undefined, never 0, when it is absent or not a number, so a
+ * missing difficulty is never mistaken for DC 0. */
+function nestedNumber(value: unknown, key: string): number | undefined {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const nested = (value as Record<string, unknown>)[key];
+    return typeof nested === "number" ? nested : undefined;
+  }
+  return undefined;
 }
 
 /** `"ability_check"` -> `"Ability check"` -- the roll kind, read as prose
@@ -88,29 +121,37 @@ function formatBreakdown(faces: number[], modifier: number): string {
  * `request_player_roll`'s own docstring gives only `{"ability": …}` for a
  * check/save), and the roll's own kind, read as prose, when neither is
  * known (`context: "kind"`, `check_kind` -- attack, damage, initiative and
- * custom rolls carry no ability at all). The difficulty is never included
- * here either way -- it lives only on the Dungeon Master's private
- * `tool_call` row (research.md, sprint 010/06) -- and is never invented.
- * `context` rides along inside `values` on purpose: `SystemLine` (WI2)
- * calls `t("system.check", values)` generically, and i18next's own context
- * selection reads that same options object -- no sentence is composed here,
- * only which of `play.json`'s own strings applies. */
+ * custom rolls carry no ability at all). `context` rides along inside
+ * `values` on purpose: `SystemLine` (WI2) calls `t("system.check", values)`
+ * generically, and i18next's own context selection reads that same options
+ * object -- no sentence is composed here, only which of `play.json`'s own
+ * strings applies.
+ *
+ * A numeric `context.dc` (sprint 010/09 WI2, I1 -- the transcript read's
+ * `roll_requested` payloads may now carry one) switches to the sibling
+ * `_dc` context variant (`check_full_dc` / `check_dc` / `check_kind_dc`)
+ * and adds `dc` to `values`, so the difficulty shows on the check line
+ * itself once the game states one; still never invented when absent. */
 function checkRow(event: EventRead): TranscriptRow {
   const payload = event.payload;
   const ability = nestedString(payload.context, "ability");
   const skill = nestedString(payload.context, "skill");
+  const dc = nestedNumber(payload.context, "dc");
   if (ability !== "" && skill !== "") {
-    return { kind: "system", id: event.id, key: "check", values: { ability, skill, context: "full" } };
+    const values: Record<string, string | number> = { ability, skill, context: dc === undefined ? "full" : "full_dc" };
+    if (dc !== undefined) {
+      values.dc = dc;
+    }
+    return { kind: "system", id: event.id, key: "check", values };
   }
   if (ability !== "") {
-    return { kind: "system", id: event.id, key: "check", values: { ability } };
+    const values: Record<string, string | number> = dc === undefined ? { ability } : { ability, dc, context: "dc" };
+    return { kind: "system", id: event.id, key: "check", values };
   }
-  return {
-    kind: "system",
-    id: event.id,
-    key: "check",
-    values: { kind: humanizeRollKind(str(payload, "kind")), context: "kind" },
-  };
+  const kind = humanizeRollKind(str(payload, "kind"));
+  const values: Record<string, string | number> =
+    dc === undefined ? { kind, context: "kind" } : { kind, dc, context: "kind_dc" };
+  return { kind: "system", id: event.id, key: "check", values };
 }
 
 function itemMovedRow(event: EventRead): TranscriptRow {
@@ -131,7 +172,12 @@ function itemMovedRow(event: EventRead): TranscriptRow {
  * `.ability`, and only falls back to the roll's own `kind` (e.g.
  * `"ability_check"`) when the request carried neither as a string -- or
  * when the roll names no request at all (a roll the game makes on its own,
- * D12 §1.9). */
+ * D12 §1.9).
+ *
+ * `verdict` (sprint 010/09 WI2, I1) is `"madeIt"` when the roll's `total`
+ * meets or beats the linked request's `context.dc`, `"missed"` when it
+ * falls short, and left off the row entirely -- not guessed at -- when the
+ * request carries no numeric DC or the roll names no request at all. */
 function rollRow(event: EventRead, requests: Map<string, Payload>): TranscriptRow {
   const payload = event.payload;
   const requestId = str(payload, "requestId");
@@ -139,14 +185,17 @@ function rollRow(event: EventRead, requests: Map<string, Payload>): TranscriptRo
   const skill = linked ? nestedString(linked.context, "skill") : "";
   const ability = linked ? nestedString(linked.context, "ability") : "";
   const label = skill || ability || str(payload, "kind");
-  return {
+  const dc = linked ? nestedNumber(linked.context, "dc") : undefined;
+  const total = num(payload, "total");
+  const row: TranscriptRow = {
     kind: "dice",
     id: event.id,
     label,
     notation: str(payload, "formula"),
     breakdown: formatBreakdown(numberArray(payload, "faces"), num(payload, "modifier")),
-    total: num(payload, "total"),
+    total,
   };
+  return dc === undefined ? row : { ...row, verdict: total >= dc ? "madeIt" : "missed" };
 }
 
 function toRow(event: EventRead, heroName: string, requests: Map<string, Payload>): TranscriptRow | null {
@@ -178,8 +227,6 @@ function toRow(event: EventRead, heroName: string, requests: Map<string, Payload
     case "roll_requested":
       return checkRow(event);
     case "roll":
-      // The dice chip's verdict (made it / missed) is never on this row for
-      // the same reason -- deliberately omitted, never invented.
       return rollRow(event, requests);
     case "scene_entered": {
       const scene = str(payload, "sceneTitle");
@@ -222,4 +269,33 @@ export function toTranscriptRows(events: EventRead[], heroName: string): Transcr
     }
   }
   return rows;
+}
+
+/** Resolves the events read's `awaiting` marker (`"none"`,
+ * `"answer:<eventId>"` or `"roll:<eventId>"`) against the same `events`
+ * into the one prompt D12's choice/roll buttons act on (sprint 010/09 WI2,
+ * I1). `null` covers every case that is not a clean, matching prompt --
+ * `"none"`, an id `events` does not carry, the marker's prefix pointing at
+ * the wrong event type, and a `question` whose `options` is empty or
+ * missing -- so a malformed or stale marker never renders a broken button,
+ * mirroring `toTranscriptRows`'s own never-throw stance. */
+export function toPendingPrompt(events: EventRead[], awaiting: string): PendingPrompt | null {
+  const separatorIndex = awaiting.indexOf(":");
+  if (separatorIndex === -1) {
+    return null;
+  }
+  const prefix = awaiting.slice(0, separatorIndex);
+  const id = awaiting.slice(separatorIndex + 1);
+  const target = events.find((candidate) => candidate.id === id);
+  if (target === undefined) {
+    return null;
+  }
+  if (prefix === "answer" && target.type === "question") {
+    const options = stringArray(target.payload, "options");
+    return options.length === 0 ? null : { kind: "choice", id, options };
+  }
+  if (prefix === "roll" && target.type === "roll_requested") {
+    return { kind: "roll", id, notation: str(target.payload, "formula") };
+  }
+  return null;
 }

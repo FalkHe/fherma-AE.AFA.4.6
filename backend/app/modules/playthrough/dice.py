@@ -126,15 +126,33 @@ def _actor_abilities(actor: GameObject, *, campaign_id: str, version: str) -> Ab
 def _select_attack(attacks: list[Attack], name: str | None) -> Attack:
     """Picks one attack out of a list by its own name -- never by position,
     since a monster may carry more than one (brief WI1). With only one
-    attack available, the name may be omitted."""
+    attack available, the name may be omitted.
+
+    Matched case-insensitively (← finding, sprint 010/09): the model calls
+    this with whatever casing it narrates the attack in (e.g. `"sling"`),
+    not necessarily the authored title case (`"Sling"`), and a DM-self-roll
+    for a monster's attack must not fail on that alone.
+
+    Every failure names the actor's own available attacks (← finding,
+    sprint 010/10): an empty list raises its own distinct message rather
+    than falling into "more than one attack is available" with nothing to
+    choose from, and an unknown name or an omitted one with several to
+    pick from both list what *is* there, so the caller's next attempt can
+    get `context['attack']` right without another guess."""
+    if not attacks:
+        raise ValueError("this actor has no attacks")
     if name is not None:
         for attack in attacks:
-            if attack.name == name:
+            if attack.name.casefold() == name.casefold():
                 return attack
-        raise ValueError(f"no attack named {name!r}")
+        available = ", ".join(a.name for a in attacks)
+        raise ValueError(f"no attack named {name!r}; this actor's attacks are: {available}")
     if len(attacks) == 1:
         return attacks[0]
-    raise ValueError("more than one attack is available; context['attack'] must name one")
+    available = ", ".join(a.name for a in attacks)
+    raise ValueError(
+        f"more than one attack is available; context['attack'] must name one of: {available}"
+    )
 
 
 def _attacks_for(
@@ -190,16 +208,24 @@ def derive_formula(
       otherwise the actor's own stat block; `context["attack"]` names
       which one when there is more than one to choose from.
     - `ability_check` / `saving_throw` -- the modifier of the ability
-      named in `context["ability"]`.
+      named in `context["ability"]`; missing or unrecognised names raise
+      `ValueError` naming the six valid abilities, rather than a bare
+      `KeyError` a caller can't act on.
     - `initiative` -- the actor's own Dexterity modifier.
     - `custom` -- `context["expression"]`, verbatim, reachable only under
-      this one kind and mixed with nothing derived.
+      this one kind and mixed with nothing derived; missing likewise
+      raises `ValueError`.
 
     Takes no `formula`, `modifier`, `bonus`, `faces` or `total` parameter
     -- there is no way to pass one in.
     """
     if kind == "custom":
-        return context["expression"]
+        expression = context.get("expression")
+        if not expression:
+            raise ValueError(
+                "a custom roll must name context['expression'], e.g. {'expression': '2d6+1'}"
+            )
+        return expression
 
     if kind in ("attack", "damage"):
         attacks = _attacks_for(
@@ -213,9 +239,15 @@ def derive_formula(
         return _signed_d20(attack.to_hit) if kind == "attack" else attack.damage
 
     if kind in ("ability_check", "saving_throw"):
+        ability = context.get("ability")
+        if not ability or ability not in Abilities.model_fields:
+            raise ValueError(
+                "an ability_check or saving_throw roll must name context['ability'], one of "
+                "strength, dexterity, constitution, intelligence, wisdom, charisma "
+                f"(got {ability!r})"
+            )
         abilities = _actor_abilities(actor, campaign_id=campaign_id, version=version)
-        score = getattr(abilities, context["ability"])
-        return _signed_d20(ability_modifier(score))
+        return _signed_d20(ability_modifier(getattr(abilities, ability)))
 
     if kind == "initiative":
         abilities = _actor_abilities(actor, campaign_id=campaign_id, version=version)

@@ -22,7 +22,7 @@
 // it (`height: "100%"`, `display: "flex"`, `minHeight: 0`) and scroll its
 // own rows within that, via `flex: "1 1 auto"` on the row list itself
 // rather than the `maxHeight: "100%"` this replaced.
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import { useTranslation } from "react-i18next";
@@ -40,6 +40,7 @@ import { ThinkingLine } from "./ThinkingLine";
 export interface TranscriptProps {
   rows: TranscriptRow[];
   thinking?: boolean;
+  prompt?: ReactNode;
 }
 
 function renderRow(row: TranscriptRow): ReactElement {
@@ -52,14 +53,21 @@ function renderRow(row: TranscriptRow): ReactElement {
       return <SystemLine key={row.id} systemKey={row.key} values={row.values} />;
     case "dice":
       return (
-        <DiceChip key={row.id} label={row.label} notation={row.notation} breakdown={row.breakdown} total={row.total} />
+        <DiceChip
+          key={row.id}
+          label={row.label}
+          notation={row.notation}
+          breakdown={row.breakdown}
+          total={row.total}
+          verdict={row.verdict}
+        />
       );
     case "divider":
       return <SceneDivider key={row.id} scene={row.scene} />;
   }
 }
 
-export function Transcript({ rows, thinking }: TranscriptProps): ReactElement {
+export function Transcript({ rows, thinking, prompt }: TranscriptProps): ReactElement {
   const { t } = useTranslation("play");
   const { scrollRef, atBottom, jumpToLatest } = useStickToLatest();
 
@@ -85,6 +93,7 @@ export function Transcript({ rows, thinking }: TranscriptProps): ReactElement {
         {rows.every((row) => row.kind === "divider") && (
           <Typography sx={{ color: "text.secondary", textAlign: "center" }}>{t("empty")}</Typography>
         )}
+        {prompt}
         {thinking && <ThinkingLine />}
       </Box>
 

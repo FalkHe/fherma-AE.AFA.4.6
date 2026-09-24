@@ -326,6 +326,26 @@ def test_no_text_field_at_all_is_also_an_opening_turn(engine):
     assert engine.calls.turn[0]["context"].record_action is False
 
 
+def test_no_text_with_a_stale_awaiting_request_refuses_instead_of_writing_filler(engine):
+    """Sprint 010/11 round 4, Fault A -- ← finding: no real interrupt is
+    pending and nothing is queued to retry, yet `get_awaiting` still names
+    something (a stale or dangling request `get_awaiting`'s own actor
+    check did not exclude). Posting `{text: null}` here used to fall
+    through to a DM-led opening turn that narrated filler instead of
+    resolving anything -- it must refuse, unwritten, the same shape a bad
+    answer already refuses."""
+    engine.thread.value = service.ThreadState(interrupt=None, pending=False)
+    engine.awaiting.value = "roll:stale-req-1"
+
+    with pytest.raises(ActionNotAvailableError) as exc_info:
+        _run(object(), user_id="u1", run_id="r1", text=None)
+
+    assert exc_info.value.code == ErrorCode.ACTION_NOT_AVAILABLE
+    assert exc_info.value.details == {"awaiting": "roll:stale-req-1", "options": []}
+    assert engine.calls.turn == []
+    assert engine.calls.append_event == []
+
+
 def test_a_caller_not_seated_at_the_run_is_refused_before_touching_the_thread(engine, monkeypatch):
     async def refuse(db, *, user_id, run_id):
         raise CampaignRunNotFoundError(run_id)

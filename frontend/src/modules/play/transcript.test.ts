@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import i18n from "../../core/i18n";
-import { isTurnUnfinished, toTranscriptRows, type EventRead, type SystemKey } from "./transcript";
+import { isTurnUnfinished, toPendingPrompt, toTranscriptRows, type EventRead, type SystemKey } from "./transcript";
 
 // `SystemLine` (WI2) calls `t(\`system.${key}\`, values)` verbatim -- this
 // reproduces exactly that call, so a `check` row's `values` (in particular
@@ -171,6 +171,39 @@ describe("toTranscriptRows (I1)", () => {
     expect(renderSystemRow("check", { kind: "Initiative", context: "kind" })).toBe("Initiative");
   });
 
+  it("maps roll_requested carrying a numeric context.dc to a check row with the DC context variant (← I1)", () => {
+    const e = event(
+      "roll_requested",
+      { kind: "ability_check", actorId: "hero-1", formula: "1d20+1", context: { ability: "Intelligence", skill: "Investigation", dc: 15 } },
+      { id: "req5" },
+    );
+
+    expect(toTranscriptRows([e], "Rosalind Thorn")).toEqual([
+      { kind: "system", id: "req5", key: "check", values: { ability: "Intelligence", skill: "Investigation", dc: 15, context: "full_dc" } },
+    ]);
+    expect(
+      renderSystemRow("check", { ability: "Intelligence", skill: "Investigation", dc: 15, context: "full_dc" }),
+    ).toBe("Intelligence (Investigation) · DC 15");
+  });
+
+  it("maps roll_requested (ability only, with a DC) to the ability-plus-DC context variant (← I1)", () => {
+    const e = event("roll_requested", { kind: "saving_throw", actorId: "hero-1", formula: "1d20+2", context: { ability: "Dexterity", dc: 12 } }, { id: "req6" });
+
+    expect(toTranscriptRows([e], "Rosalind Thorn")).toEqual([
+      { kind: "system", id: "req6", key: "check", values: { ability: "Dexterity", dc: 12, context: "dc" } },
+    ]);
+    expect(renderSystemRow("check", { ability: "Dexterity", dc: 12, context: "dc" })).toBe("Dexterity · DC 12");
+  });
+
+  it("maps roll_requested (neither ability nor skill, with a DC) to the kind-plus-DC context variant (← I1)", () => {
+    const e = event("roll_requested", { kind: "initiative", actorId: "hero-1", formula: "1d20", context: { dc: 10 } }, { id: "req7" });
+
+    expect(toTranscriptRows([e], "Rosalind Thorn")).toEqual([
+      { kind: "system", id: "req7", key: "check", values: { kind: "Initiative", dc: 10, context: "kind_dc" } },
+    ]);
+    expect(renderSystemRow("check", { kind: "Initiative", dc: 10, context: "kind_dc" })).toBe("Initiative · DC 10");
+  });
+
   it("maps a linked roll to a dice row, breakdown joining faces and the signed modifier, label from context.skill", () => {
     const request = event(
       "roll_requested",
@@ -193,6 +226,56 @@ describe("toTranscriptRows (I1)", () => {
       breakdown: "13 + 1",
       total: 14,
     });
+  });
+
+  it("gives a linked roll a madeIt verdict when its total meets the request's DC (← I1)", () => {
+    const request = event(
+      "roll_requested",
+      { kind: "ability_check", actorId: "hero-1", formula: "1d20+1", context: { ability: "Intelligence", skill: "Investigation", dc: 14 } },
+      { id: "req8" },
+    );
+    const roll = event(
+      "roll",
+      { requestId: "req8", kind: "ability_check", actorId: "hero-1", formula: "1d20+1", faces: [13], modifier: 1, total: 14 },
+      { id: "roll8" },
+    );
+
+    expect(toTranscriptRows([request, roll], "Rosalind Thorn")).toContainEqual(
+      expect.objectContaining({ kind: "dice", id: "roll8", total: 14, verdict: "madeIt" }),
+    );
+  });
+
+  it("gives a linked roll a missed verdict when its total falls short of the request's DC (← I1)", () => {
+    const request = event(
+      "roll_requested",
+      { kind: "ability_check", actorId: "hero-1", formula: "1d20+1", context: { ability: "Intelligence", skill: "Investigation", dc: 20 } },
+      { id: "req9" },
+    );
+    const roll = event(
+      "roll",
+      { requestId: "req9", kind: "ability_check", actorId: "hero-1", formula: "1d20+1", faces: [13], modifier: 1, total: 14 },
+      { id: "roll9" },
+    );
+
+    expect(toTranscriptRows([request, roll], "Rosalind Thorn")).toContainEqual(
+      expect.objectContaining({ kind: "dice", id: "roll9", total: 14, verdict: "missed" }),
+    );
+  });
+
+  it("leaves verdict absent when the linked request carries no DC (← I1)", () => {
+    const request = event(
+      "roll_requested",
+      { kind: "ability_check", actorId: "hero-1", formula: "1d20+1", context: { ability: "Intelligence", skill: "Investigation" } },
+      { id: "req10" },
+    );
+    const roll = event(
+      "roll",
+      { requestId: "req10", kind: "ability_check", actorId: "hero-1", formula: "1d20+1", faces: [13], modifier: 1, total: 14 },
+      { id: "roll10" },
+    );
+
+    const row = toTranscriptRows([request, roll], "Rosalind Thorn").find((r) => r.kind === "dice");
+    expect(row).not.toHaveProperty("verdict");
   });
 
   it("falls back to the linked request's ability when it names no skill", () => {
@@ -297,5 +380,50 @@ describe("isTurnUnfinished (I5)", () => {
     ];
 
     expect(isTurnUnfinished(events)).toBe(true);
+  });
+});
+
+// Sprint 010/09 WI2, I1. Turns the events read's `awaiting` marker into the
+// single prompt D12's choice/roll buttons render, or null when there is
+// nothing to answer yet or the marker cannot be resolved against `events`.
+describe("toPendingPrompt (I1)", () => {
+  it("resolves a pending question to a choice prompt, options verbatim", () => {
+    const q = event("question", { text: "Take it?", options: ["Take the knife", "Leave it with Mira"] }, { id: "q1" });
+
+    expect(toPendingPrompt([q], "answer:q1")).toEqual({
+      kind: "choice",
+      id: "q1",
+      options: ["Take the knife", "Leave it with Mira"],
+    });
+  });
+
+  it("resolves a pending roll_requested to a roll prompt, notation from formula", () => {
+    const r = event("roll_requested", { kind: "ability_check", formula: "1d20+3", context: { ability: "Strength" } }, { id: "req1" });
+
+    expect(toPendingPrompt([r], "roll:req1")).toEqual({ kind: "roll", id: "req1", notation: "1d20+3" });
+  });
+
+  it("is null for awaiting=none", () => {
+    const q = event("question", { text: "Take it?", options: ["Yes", "No"] }, { id: "q1" });
+
+    expect(toPendingPrompt([q], "none")).toBeNull();
+  });
+
+  it("is null when the awaited id names no recorded event", () => {
+    expect(toPendingPrompt([], "answer:missing")).toBeNull();
+  });
+
+  it("is null when the awaited id names an event of the wrong type", () => {
+    const r = event("roll_requested", { kind: "ability_check", formula: "1d20", context: {} }, { id: "req1" });
+
+    expect(toPendingPrompt([r], "answer:req1")).toBeNull();
+  });
+
+  it("is null when a question's options are empty or missing", () => {
+    const empty = event("question", { text: "Take it?", options: [] }, { id: "q1" });
+    const missing = event("question", { text: "Take it?" }, { id: "q2" });
+
+    expect(toPendingPrompt([empty], "answer:q1")).toBeNull();
+    expect(toPendingPrompt([missing], "answer:q2")).toBeNull();
   });
 });

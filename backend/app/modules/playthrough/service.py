@@ -24,7 +24,13 @@ from app.core.settings import get_settings
 from app.modules.character.schemas import CharacterSheet
 from app.modules.content import service as content_service
 from app.modules.content.errors import ContentError, ContentNotFoundError
-from app.modules.content.schemas import Abilities, LoadedCampaign, ObjectTemplate, SeedCharacter
+from app.modules.content.schemas import (
+    Abilities,
+    CreatureTemplate,
+    LoadedCampaign,
+    ObjectTemplate,
+    SeedCharacter,
+)
 from app.modules.playthrough import dice
 from app.modules.playthrough.errors import (
     ActionNotAvailableError,
@@ -70,6 +76,7 @@ from app.modules.playthrough.schemas import (
     Item,
     NarrationRead,
     RollKind,
+    RollPayload,
     RollRequestedPayload,
     RunCost,
     TableAdventure,
@@ -1027,6 +1034,141 @@ async def _resolve_actor_and_run(
     return actor, run
 
 
+async def resolve_actor_ref(db: AsyncSession, *, run_id: str, ref: str) -> GameObject:
+    """`ref` -- whatever the model passed as an `actor_id` -- resolved to
+    one creature of `run_id` (sprint 010/10, ← finding: a scene with
+    several identically-named monsters gave the model no way to tell them
+    apart, and its own id is the one thing that always does).
+
+    An id match wins outright, whether or not that object is still alive
+    -- `attack`/`damage`/`roll` already refuse a dead or out-of-scene
+    actor on their own terms once resolved, and an exact id is never
+    ambiguous. Failing that, `ref` is matched case-insensitively against
+    every *living, positioned* creature's own `name` in this run --
+    `scene_id IS NOT NULL` excludes a creature instantiated for a scene
+    the party has not reached yet (`start_campaign_run`/`enter_adventure`
+    instantiate a whole adventure's objects up front, unpositioned): it is
+    nowhere in the fiction yet and is never what a name alone should mean.
+    The first match (by id, i.e. creation order) wins when more than one
+    shares the name -- the caller's own result already names `actor_id`
+    with whichever one was actually used, so which twin acted is never
+    silently lost.
+
+    Raises `GameObjectNotFoundError(ref)` when neither an id nor a living,
+    positioned name matches -- the caller is expected to catch this and
+    hand the model `describe_scene_creatures` instead of a bare refusal
+    (← D11's own spirit, applied to a lookup rather than a mechanic)."""
+    result = await db.execute(select(GameObject).where(GameObject.id == ref))
+    obj = result.scalar_one_or_none()
+    if obj is not None and obj.campaign_run_id == run_id:
+        return obj
+
+    stmt = (
+        select(GameObject)
+        .where(
+            GameObject.campaign_run_id == run_id,
+            GameObject.kind == "creature",
+            GameObject.is_alive.is_(True),
+            GameObject.scene_id.is_not(None),
+        )
+        .order_by(GameObject.id)
+    )
+    result = await db.execute(stmt)
+    for candidate in result.scalars().all():
+        if candidate.name.casefold() == ref.casefold():
+            return candidate
+
+    raise GameObjectNotFoundError(ref)
+
+
+def _creature_attack_names(creature: GameObject, *, campaign_id: str, version: str) -> list[str]:
+    """The named attacks a scene creature's own stat block carries, or
+    `[]` for a template-less object (a player character, whose own
+    attacks live on carried items, not here) or one whose template fails
+    to load. Never raises -- this is display only."""
+    if creature.template_id is None:
+        return []
+    try:
+        template = content_service.load_object_template(campaign_id, version, creature.template_id)
+    except ContentError:
+        return []
+    if not isinstance(template, CreatureTemplate):
+        return []
+    return [attack.name for attack in template.stat_block.attacks]
+
+
+async def describe_scene_creatures(
+    db: AsyncSession,
+    *,
+    run_id: str,
+    scene_id: str | None = None,
+    near_actor_id: str | None = None,
+    campaign_id: str | None = None,
+    version: str | None = None,
+) -> list[dict[str, Any]]:
+    """Every creature positioned in one scene of `run_id` -- id first, so a
+    scene with several identically-named monsters can still be told apart
+    (sprint 010/10, ← finding). `scene_id` names the scene directly (what
+    `get_scene` already knows); `near_actor_id` instead names an actor
+    whose own `scene_id` is looked up first, the way `_build_game_context`
+    finds "the current scene" from the party's own position. Neither
+    given, or naming nobody positioned anywhere, answers `[]`. `campaign_id`
+    and `version` let a caller that already loaded the run (`_build_game_
+    context` does) skip re-reading it here; omitted, both are read off
+    `run_id`'s own row.
+
+    Each entry is `id, name, role, is_alive, current_hp, max_hp,
+    armour_class, attacks` -- `role` is `player` for a member's own
+    character, else `monster` when its stat block carries at least one
+    attack, else `npc` (Mira the innkeeper: `attacks: []`, never a
+    combatant) -- there is no authored hostile/friendly flag to read
+    instead. `attacks` is the creature's own named attacks, empty for a
+    template-less object or one with none, so a caller building
+    `context['attack']` never has to guess."""
+    if scene_id is None and near_actor_id is not None:
+        near = await db.get(GameObject, near_actor_id)
+        if near is not None and near.campaign_run_id == run_id:
+            scene_id = near.scene_id
+    if scene_id is None:
+        return []
+
+    if campaign_id is None or version is None:
+        run = await _get_run(db, run_id)
+        campaign_id = campaign_id or run.campaign_id
+        version = version or run.content_version
+
+    stmt = (
+        select(GameObject)
+        .where(
+            GameObject.campaign_run_id == run_id,
+            GameObject.scene_id == scene_id,
+            GameObject.kind == "creature",
+            GameObject.owner_object_id.is_(None),
+        )
+        .order_by(GameObject.id)
+    )
+    result = await db.execute(stmt)
+    creatures = list(result.scalars().all())
+
+    described = []
+    for creature in creatures:
+        attacks = _creature_attack_names(creature, campaign_id=campaign_id, version=version)
+        role = "player" if creature.member_id is not None else ("monster" if attacks else "npc")
+        described.append(
+            {
+                "id": creature.id,
+                "name": creature.name,
+                "role": role,
+                "is_alive": creature.is_alive,
+                "current_hp": creature.current_hp,
+                "max_hp": creature.max_hp,
+                "armour_class": creature.armour_class,
+                "attacks": attacks,
+            }
+        )
+    return described
+
+
 async def _get_roll_request_event(db: AsyncSession, request_id: str) -> Event:
     """The `roll_requested` event named `request_id`, with no run context
     yet -- `resolve_roll_request` learns which run to gate from this row's
@@ -1115,6 +1257,58 @@ async def _append_roll(
     )
 
 
+async def _find_pending_roll_request(
+    db: AsyncSession, *, run_id: str, turn_id: str, actor_id: str, kind: RollKind
+) -> Event | None:
+    """The most recent `roll_requested` this turn for `actor_id`/`kind` that
+    no `roll` has answered yet, or `None`.
+
+    Reads every payload back through `RollRequestedPayload`/`RollPayload`
+    rather than raw dict keys: `append_event` stores a payload's camelCase
+    wire alias (`CamelModel`), so a plain `payload.get("request_id")`
+    against the stored row silently never matches (← finding, sprint
+    010/09). Backs `request_player_roll`'s own idempotency: a LangGraph
+    resume re-executes the calling tool's code from the top, including
+    whatever ran before its `interrupt()`, so the same `turn_id`/
+    `actor_id`/`kind` seen twice in one turn is the same request replaying,
+    not a second one.
+    """
+    stmt = (
+        select(Event)
+        .where(
+            Event.campaign_run_id == run_id,
+            Event.turn_id == turn_id,
+            Event.type.in_(("roll_requested", "roll")),
+        )
+        .order_by(Event.id)
+    )
+    result = await db.execute(stmt)
+    events = list(result.scalars().all())
+    answered_request_ids = {
+        RollPayload.model_validate(e.payload).request_id for e in events if e.type == "roll"
+    }
+    candidates = [
+        e
+        for e in events
+        if e.type == "roll_requested"
+        and e.id not in answered_request_ids
+        and (requested := RollRequestedPayload.model_validate(e.payload))
+        and requested.actor_id == actor_id
+        and requested.kind == kind
+    ]
+    return candidates[-1] if candidates else None
+
+
+_PLAYER_ROLL_KINDS: frozenset[str] = frozenset(
+    {"ability_check", "saving_throw", "initiative", "custom"}
+)
+"""What `request_player_roll` may ask for (sprint 010/10, ← finding): a
+player rolls their own checks, saves, initiative and the odd bespoke
+`custom` roll -- never `attack`/`damage`, which the DM rolls itself
+through `roll`/`roll_dice` for every actor, hero included (`prompts/v1/
+system/dm.md`'s own rule)."""
+
+
 async def request_player_roll(
     db: AsyncSession,
     *,
@@ -1127,8 +1321,49 @@ async def request_player_roll(
     """Asks the player to make a roll of `kind`, appending `roll_requested`
     at `player` visibility -- the player is the one being asked. The
     event's own id is the request id `resolve_roll_request` answers later
-    (WI2, AC2)."""
+    (WI2, AC2).
+
+    Guarded against three ways the model can misuse this instead of
+    `roll`/`roll_dice` (sprint 010/10, ← finding: a monster's attack asked
+    the player for a "saving throw" that was never the rules', and a
+    dice-less `custom` expression such as `"10"` produced a button with
+    nothing to roll): `actor_id` must name a member's own character --
+    never an NPC or a monster, which have no player to ask; `kind` must be
+    one of `_PLAYER_ROLL_KINDS`, never `attack`/`damage`; and a `custom`
+    roll's `context['expression']` must contain a `d` -- a bare constant
+    is not a roll. Each raises `ValueError` naming what was wrong, exactly
+    `dice.derive_formula`'s own pattern for an actionable message the
+    model can act on next turn, before any event is written.
+
+    Idempotent within one turn (sprint 010/09, ← finding): when `turn_id`
+    is given and an unanswered `roll_requested` for the same actor and kind
+    already exists on it, that event is returned again rather than a
+    second one being written -- see `_find_pending_roll_request`."""
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+    if actor.member_id is None:
+        raise ValueError(
+            f"request_player_roll is for a player character only; {actor_id!r} "
+            "is not one of the party's own characters -- roll for it with roll_dice instead."
+        )
+    if kind not in _PLAYER_ROLL_KINDS:
+        raise ValueError(
+            f"request_player_roll cannot ask for a {kind!r} roll -- only "
+            f"{sorted(_PLAYER_ROLL_KINDS)} are the player's to roll; an attack or damage "
+            "roll, for any actor including the hero, goes through roll_dice."
+        )
+    if kind == "custom":
+        expression = context.get("expression") if isinstance(context, dict) else None
+        if not expression or "d" not in str(expression).casefold():
+            raise ValueError(
+                f"a custom player roll must name a dice expression in context['expression'] "
+                f"(e.g. '2d6+1'), got {expression!r} -- a plain number is not a roll."
+            )
+    if turn_id is not None:
+        pending = await _find_pending_roll_request(
+            db, run_id=run.id, turn_id=turn_id, actor_id=actor_id, kind=kind
+        )
+        if pending is not None:
+            return pending
     event = await _append_roll_requested(
         db, run=run, actor=actor, kind=kind, context=context, visibility="player", turn_id=turn_id
     )
@@ -1137,16 +1372,37 @@ async def request_player_roll(
     return event
 
 
+async def _find_roll_answering(db: AsyncSession, *, run_id: str, request_id: str) -> Event | None:
+    """The `roll` event, if any, whose own `request_id` already answers
+    `request_id` -- read through `RollPayload` rather than a raw dict key,
+    for the same reason `_find_pending_roll_request` does."""
+    stmt = select(Event).where(Event.campaign_run_id == run_id, Event.type == "roll")
+    result = await db.execute(stmt)
+    for candidate in result.scalars().all():
+        if RollPayload.model_validate(candidate.payload).request_id == request_id:
+            return candidate
+    return None
+
+
 async def resolve_roll_request(
     db: AsyncSession, *, user_id: str, request_id: str, turn_id: str | None = None
 ) -> Event:
     """Answers the `roll_requested` event named `request_id` with a `roll`,
     re-using its stored `formula`, `kind`, `actor_id` and `visibility`
-    verbatim (WI2, AC2)."""
+    verbatim (WI2, AC2).
+
+    Idempotent (sprint 010/09, ← finding): a second call naming a
+    `request_id` that already has a `roll` -- the `request_player_roll`
+    tool calling this again because its own enclosing LangGraph node
+    replayed on resume -- returns that `roll` again rather than rolling a
+    second time."""
     request_event = await _get_roll_request_event(db, request_id)
     run = await _require_ready_or_active_run(
         db, run_id=request_event.campaign_run_id, user_id=user_id
     )
+    existing = await _find_roll_answering(db, run_id=run.id, request_id=request_id)
+    if existing is not None:
+        return existing
     event = await _append_roll(db, run=run, request_event=request_event, turn_id=turn_id)
     await db.commit()
     await db.refresh(event)
@@ -2898,8 +3154,20 @@ async def get_awaiting(db: AsyncSession, *, user_id: str, run_id: str) -> str:
     most recently written event for `run_id` carries (`None` is a turn of
     its own, exactly as `_consume_roll` treats it); only that turn's own
     events are then read back, oldest first: the newest `roll_requested`
-    with no `roll` naming it in `requestId` yet, else the newest
-    `question` with no `player_action` written after it, else `"none"`.
+    with no `roll` naming it in `requestId` yet **and whose own actor is
+    one of the party's own characters** -- else the newest `question` with
+    no `player_action` written after it, else `"none"`.
+
+    The actor check (sprint 010/11 round 4, Fault A -- ← finding) exists
+    because `roll`/`roll_dice` write `roll_requested` and its own `roll`
+    as two separate rows, not one -- a session-level race (Fault A's own
+    concurrency fix aside, an old row written before that fix, or any
+    other way the pair falls out of sync) can leave a *monster's* attack
+    roll dangling with no matching `roll`. `awaiting` is read by the
+    player's own turn route and rendered as a roll button; a monster has
+    no player to press it, so a dangling monster roll must never surface
+    here -- it is skipped, not returned, and `get_awaiting` falls through
+    to the next candidate exactly as if that row did not exist.
     """
     await _require_member(db, run_id=run_id, user_id=user_id)
 
@@ -2917,9 +3185,24 @@ async def get_awaiting(db: AsyncSession, *, user_id: str, run_id: str) -> str:
         for event in events
         if event.type == "roll" and event.payload.get("requestId") is not None
     }
-    for event in reversed(events):
-        if event.type == "roll_requested" and event.id not in answered_request_ids:
-            return f"roll:{event.id}"
+    unanswered_requests = [
+        event
+        for event in events
+        if event.type == "roll_requested" and event.id not in answered_request_ids
+    ]
+    if unanswered_requests:
+        actor_ids = {
+            RollRequestedPayload.model_validate(event.payload).actor_id
+            for event in unanswered_requests
+        }
+        actors_result = await db.execute(
+            select(GameObject.id, GameObject.member_id).where(GameObject.id.in_(actor_ids))
+        )
+        member_id_by_actor = dict(actors_result.all())
+        for event in reversed(unanswered_requests):
+            actor_id = RollRequestedPayload.model_validate(event.payload).actor_id
+            if member_id_by_actor.get(actor_id) is not None:
+                return f"roll:{event.id}"
 
     question_events = [event for event in events if event.type == "question"]
     if question_events:

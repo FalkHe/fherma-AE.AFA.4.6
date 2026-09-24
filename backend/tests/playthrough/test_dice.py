@@ -255,6 +255,21 @@ def test_derive_formula_attack_from_a_monster_with_several_requires_the_name(mon
         dice.derive_formula("attack", actor, {}, campaign_id=CAMPAIGN_ID, version=VERSION)
 
 
+def test_derive_formula_attack_from_a_monster_with_no_attacks_names_that_clearly(monkeypatch):
+    # ← sprint 010/10 finding: an empty attacks list used to fall into
+    # "more than one attack is available" -- nothing was available at all,
+    # and the model had no way to tell the two failures apart.
+    monkeypatch.setattr(
+        dice.content_service,
+        "load_object_template",
+        lambda campaign_id, version, template_id: _goblin_template([]),
+    )
+    actor = _creature()
+
+    with pytest.raises(ValueError, match="no attacks"):
+        dice.derive_formula("attack", actor, {}, campaign_id=CAMPAIGN_ID, version=VERSION)
+
+
 # --- derive_formula: ability_check / saving_throw / initiative -------------
 
 
@@ -352,3 +367,56 @@ def test_derive_formula_custom_returns_the_explicit_expression_verbatim():
     )
 
     assert formula == "4d4"
+
+
+# --- derive_formula: actionable errors instead of a bare KeyError ----------
+# (sprint 010/09, ← finding: an empty `context` on an ability_check used to
+# crash `request_player_roll` with `KeyError: 'ability'`, which the calling
+# model could not recover from -- these name what is missing instead.)
+
+
+def test_derive_formula_custom_without_an_expression_names_what_is_missing():
+    actor = _character(abilities={"strength": 10})
+
+    with pytest.raises(ValueError, match="expression"):
+        dice.derive_formula("custom", actor, {}, campaign_id=CAMPAIGN_ID, version=VERSION)
+
+
+def test_derive_formula_ability_check_without_an_ability_names_what_is_missing():
+    actor = _character(abilities={"strength": 10})
+
+    with pytest.raises(ValueError, match="ability"):
+        dice.derive_formula("ability_check", actor, {}, campaign_id=CAMPAIGN_ID, version=VERSION)
+
+
+def test_derive_formula_saving_throw_with_an_unknown_ability_names_what_is_wrong():
+    actor = _character(abilities={"strength": 10})
+
+    with pytest.raises(ValueError, match="unknown-stat"):
+        dice.derive_formula(
+            "saving_throw",
+            actor,
+            {"ability": "unknown-stat"},
+            campaign_id=CAMPAIGN_ID,
+            version=VERSION,
+        )
+
+
+def test_derive_formula_attack_matches_the_attack_name_case_insensitively(monkeypatch):
+    monkeypatch.setattr(
+        dice.content_service,
+        "load_object_template",
+        lambda campaign_id, version, template_id: _goblin_template(
+            [
+                Attack(name="Rusty Shortsword", to_hit=4, damage="1d6+2"),
+                Attack(name="Sling", to_hit=2, damage="1d4+2"),
+            ]
+        ),
+    )
+    actor = _creature()
+
+    formula = dice.derive_formula(
+        "attack", actor, {"attack": "sling"}, campaign_id=CAMPAIGN_ID, version=VERSION
+    )
+
+    assert formula == "1d20+2"

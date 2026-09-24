@@ -3,8 +3,9 @@ the model must never be able to supply. It reaches a tool through
 `ToolRuntime`, so it is absent from every tool's model-facing schema.
 """
 
+import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, NotRequired
 
 from langchain_core.messages import AnyMessage, ToolMessage
@@ -44,6 +45,17 @@ class DmContext:
     """False suppresses `record_action`'s own `player_action` write (sprint
     010/03) -- the DM-led opening turn, which has no player text to record,
     is the only caller that sets this."""
+    db_lock: asyncio.Lock = field(default_factory=asyncio.Lock, compare=False, repr=False)
+    """Serialises tool execution against `db` (sprint 010/11 round 4, Fault
+    A -- ← finding): LangGraph's `ToolNode` runs a batch of tool calls in
+    one `AIMessage` concurrently (`asyncio.gather`), but one `AsyncSession`
+    is not safe for concurrent use -- two goblins attacking in the same
+    turn corrupted the session mid-flush and left a `roll_requested` with
+    no matching `roll`. `agent/nodes.py`'s `make_tools()` wraps every call
+    in `async with ctx.db_lock`, so only one tool body runs at a time even
+    though several are scheduled concurrently. `compare=False`/`repr=False`
+    keep two otherwise-identical contexts equal and printable -- a lock has
+    no meaningful equality of its own, only identity."""
 
 
 class DmState(MessagesState):

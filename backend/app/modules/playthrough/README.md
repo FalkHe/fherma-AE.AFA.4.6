@@ -87,12 +87,18 @@ Owns a player's playthrough of a campaign and who may act in it.
   expression on anything else. `derive_formula(kind, actor, context, *,
   campaign_id, version, item=None)` maps a `RollKind` and an actor to the
   formula that kind implies: an item's or a stat block's own attack
-  (chosen by name through `context["attack"]`, never by position), an
+  (chosen by name through `context["attack"]`, matched case-insensitively
+  — sprint 010/09, ← finding: a self-rolling DM tool call may not echo a
+  content-authored attack name's exact casing — never by position), an
   ability's own modifier (SRD floor division) for `ability_check` /
   `saving_throw`, Dexterity for `initiative`, or, for `custom` alone,
-  `context["expression"]` verbatim. For `attack`/`damage`, an `item` row
-  (sprint 009-02, WI2, AC5 — a sheet-born weapon row with no content
-  template) reads its attacks from its own `state["attacks"]`; otherwise
+  `context["expression"]` verbatim. A missing `context["ability"]` (or an
+  unrecognised one) or a missing `context["expression"]` raises `ValueError`
+  naming what is missing (sprint 010/09, ← finding) rather than a bare
+  `KeyError` the calling tool cannot recover from. For `attack`/`damage`,
+  an `item` row (sprint 009-02, WI2, AC5 — a sheet-born weapon row with no
+  content template) reads its attacks from its own `state["attacks"]`;
+  otherwise
   `context["item_id"]`'s content template, when given, or the actor's own
   stat block, exactly as before. Neither function has a `formula`,
   `modifier`, `bonus`, `faces` or `total` parameter — there is no argument
@@ -362,11 +368,25 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `request_player_roll` — derives the formula from `kind` and the actor via
   `dice.derive_formula`, then appends a player-visible `roll_requested`
   event naming the kind, the actor and that formula. No dice are rolled and
-  no total exists yet — only the request is on record.
+  no total exists yet — only the request is on record. Idempotent within
+  one `turn_id` (sprint 010/09, ← finding): a LangGraph resume re-executes
+  the calling `request_player_roll` tool's coroutine from the top, so this
+  call runs a second time before its own `interrupt()` resolves; a second
+  call for the same `turn_id`/`actor_id`/`kind` with no `roll` answering it
+  yet returns the first call's own event rather than writing a duplicate,
+  orphaned one. Guarded (sprint 010/10, ← finding): raises `ValueError`,
+  naming what was wrong, for an `actor_id` that is not a member's own
+  character, a `kind` outside `ability_check`/`saving_throw`/`initiative`/
+  `custom` (a monster's attack is never a hero's roll), or a `custom` roll
+  whose `context["expression"]` names no dice (a bare constant such as
+  `"10"` is not a roll) — before any event is written.
 - `resolve_roll_request` — answers a `roll_requested` event by id: re-uses
   the formula that event already stored rather than deriving it again,
   rolls it through `dice.roll`, and appends the resulting `roll` event —
   dice, modifier and total — at the same visibility the request carried.
+  Idempotent for the same reason `request_player_roll` is (sprint 010/09,
+  ← finding): a second call naming a `request_id` that already has a
+  `roll` returns that `roll` again rather than rolling twice.
 - `roll` — derives, rolls and appends the `roll` event in one call, `dm`
   visibility unless told otherwise; the path for a creature's own roll, or
   any roll the player must not see. Writes its own `roll_requested` event
@@ -382,6 +402,23 @@ Service functions (`service.py`), called as `service.f(...)`:
   finding out who goes first spends nobody's turn, so there is nothing here
   for a pass or a refusal to be recorded against. Full behaviour is
   `docs/modules/playthrough.md` §20.
+- `resolve_actor_ref` / `describe_scene_creatures` (sprint 010/10, ←
+  finding: a scene with several identically-named monsters gave the DM
+  agent no way to tell them apart, and no actionable way back when it
+  named the wrong one). `resolve_actor_ref(run_id, ref)` resolves an
+  `actor_id`-shaped string to one `GameObject`: an id match wins outright;
+  failing that, `ref` is matched case-insensitively against every living,
+  positioned creature's own `name` in the run, the first (by id) winning a
+  tie, raising `GameObjectNotFoundError(ref)` when neither matches. Callers
+  (`game.agent.tools`) use this as a fallback when an id lookup fails, not
+  a replacement for it. `describe_scene_creatures(run_id, scene_id=…|
+  near_actor_id=…)` reads every creature positioned in one scene — id
+  first, `role` (`player`/`monster`/`npc`, the last two told apart by
+  whether the stat block carries an attack, there being no authored
+  hostile/friendly flag), `is_alive`, HP, AC and named attacks — the shape
+  `game`'s own scene rendering, `get_scene` and every lookup-failure hint
+  are all built from, so a creature's own attacks are named consistently
+  everywhere the model can see them.
 - `passive_check` — no dice at all: adds the named ability's modifier to
   `10` and weighs the result against `dc`, returning the pass/fail outcome
   directly and appending one DM-visible `tool_call` event carrying that
@@ -564,10 +601,14 @@ Service functions (`service.py`), called as `service.f(...)`:
   `docs/modules/playthrough.md` §22.
 - `get_awaiting` — reads a run's open turn back from `events` alone and
   answers `"none"`, `"roll:<eventId>"` or `"answer:<eventId>"`: the id of
-  the newest `roll_requested` with no `roll` event answering it yet, else
-  the newest `question` with no `player_action` after it, else `"none"`.
-  No column records this; the same three-way answer is derived again on
-  every call. Called by the events route (below), never on its own.
+  the newest `roll_requested` with no `roll` event answering it yet
+  **and whose own actor is one of the party's own characters** (sprint
+  010/11 round 4, Fault A — ← finding: a session race left a monster's own
+  attack roll dangling, and `awaiting` read it back as a roll button for
+  the player, who has no such roll to make), else the newest `question`
+  with no `player_action` after it, else `"none"`. No column records this;
+  the same three-way answer is derived again on every call. Called by the
+  events route (below), never on its own.
 - `open_turn_id` (sprint 010/03) — the run's open turn id alone: whichever
   `turn_id` its newest event carries, or `None` when there is no event yet
   or the newest one carries no turn. `game.service.run_turn` calls this to

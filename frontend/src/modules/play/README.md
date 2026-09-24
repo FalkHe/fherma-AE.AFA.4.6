@@ -157,6 +157,49 @@ module owns everything past "Start adventure" / "Continue".
   adventure's first `scene_entered` row lands before the opening turn's
   narration does.
 
+## Owns (sprint 010/09 — choices and rolls are buttons)
+
+- `transcript.ts` — also exports `PendingPrompt` (`{ kind: "choice", id,
+  options }` or `{ kind: "roll", id, notation }`) and `toPendingPrompt(events,
+  awaiting)`, which resolves the events read's `awaiting` marker against the
+  same `events` into the one prompt the buttons below act on. `null` for
+  every case that is not a clean match (`"none"`, a stale/missing id, the
+  marker's prefix pointing at the wrong event type, an empty `options`),
+  same never-throw stance as `toTranscriptRows`. A `roll`'s dice row also now
+  carries a `verdict` (`"madeIt"` / `"missed"`) once its linked
+  `roll_requested`'s `context.dc` is known, and the check line itself shows
+  that same `dc` — both left off entirely, never guessed, when no DC was
+  ever recorded.
+- `hooks/usePlayTranscript.ts` — also exposes `pending: PendingPrompt | null`,
+  `toPendingPrompt` applied to the same read; the fallback poll's own
+  "still running" check already excludes a pending question or roll (it only
+  fires while `isSendingRef` reads true or `awaiting === "none"`), so the
+  poll stays stopped while the buttons below wait on the player.
+- `components/PendingPrompt.tsx` — `PendingPrompt({ prompt, onChoose,
+  onRoll })`. A `choice` prompt draws one button per option, its text
+  verbatim off the wire; a `roll` prompt draws exactly one button, labelled
+  `roll.button` with the notation interpolated in. The only way to answer
+  while a prompt is open — no free-text field, nothing here calls the
+  network itself.
+- `components/Transcript.tsx` — also takes an optional `prompt` node
+  (`TranscriptProps`), rendered before the thinking line so a pending
+  prompt and a running turn's spinner never show at once.
+- `hooks/useTakeTurn.ts` — also exposes `roll()`: posts `{ text: null }`
+  through the same mutation `startOpening` uses (same settle behaviour, no
+  optimistic row — the server rolls itself and this route writes no player
+  row either).
+- `PlayRoute` composes `pending` (from `usePlayTranscript`) and `roll` (from
+  `useTakeTurn`) into the transcript's `prompt` slot: shown as soon as a
+  prompt exists and nothing is sending, gone the instant `send`/`roll` is
+  called even before the transcript re-read catches up, since a stale read
+  still names the same prompt for a moment otherwise. The composer's state
+  now picks in this order: `isSending` first (→ `"turnRunning"`, so the
+  buttons and the field alike are gone the moment a click fires), then
+  `awaiting`'s `roll:`/`answer:` prefix (→ `"awaitingRoll"`/
+  `"awaitingChoice"`), then the plain running/open split sprint 010/07 WI6
+  already had. Reloading mid-prompt shows the same buttons, since both
+  `pending` and `awaiting` come straight off the transcript read.
+
 ## Surface
 
 - `TranscriptRow`, `SystemKey`, `EventRead` (re-exported) — consumed by
@@ -172,3 +215,7 @@ module owns everything past "Start adventure" / "Continue".
 - `useOpeningTurn` and `useTakeTurn`'s `startOpening` — consumed by
   `routes/PlayRoute.tsx` (sprint 010/08 WI4) to fire the opening turn once
   when the route is reached from `playthrough`'s "Start adventure" flow.
+- `usePlayTranscript`'s `pending`, `useTakeTurn`'s `roll`, and
+  `PendingPrompt` — consumed by `routes/PlayRoute.tsx` (sprint 010/09 WI5) to
+  show the answer/roll buttons in the transcript's `prompt` slot and drive
+  the composer's `awaitingChoice`/`awaitingRoll` states.
