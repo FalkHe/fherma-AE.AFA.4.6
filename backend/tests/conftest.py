@@ -24,6 +24,7 @@ os.environ["CHAT_MODEL"] = "test/model"
 os.environ["EMBEDDING_MODEL"] = "test/embedding-model"
 os.environ["EMBEDDING_DIMENSIONS"] = "4"
 os.environ["IMAGE_MODEL"] = "test/image-model"
+os.environ["LANGGRAPH_STRICT_MSGPACK"] = "true"
 
 import pytest  # noqa: E402
 import structlog  # noqa: E402

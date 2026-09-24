@@ -1,8 +1,14 @@
 """Sprint 011/05, WI1 -- flow_state round-trips through the checkpointer's
-own serializer and the two pure clearers do exactly what they promise."""
+own serializer and the two pure clearers do exactly what they promise.
 
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+Sprint 011/08 live-check fix: the round-trip now goes through
+`checkpointer_service.checkpoint_serde()` - the same serde both
+`AsyncPostgresSaver` and the `InMemorySaver()` fallback are built with -
+under `LANGGRAPH_STRICT_MSGPACK=true` (pinned by `tests/conftest.py`), so a
+flow-state dataclass that isn't registered fails this test the same way it
+would get silently blocked (or, pre-fix, warned about) in production."""
 
+from app.core.checkpointer import service as checkpointer_service
 from app.modules.game.agent.flow_state import (
     ActionCursor,
     AwaitingRef,
@@ -66,8 +72,13 @@ def _state() -> GameFlowState:
     )
 
 
-def test_state_round_trips_through_the_checkpoint_serializer():
-    serde = JsonPlusSerializer()
+def test_state_round_trips_through_the_app_configured_serde_under_strict_msgpack():
+    """`checkpoint_serde()` is what `checkpointer()` and `build_agent()`'s
+    `InMemorySaver()` fallback actually use in production - this proves it
+    restores every flow-state dataclass byte-for-byte even with
+    `LANGGRAPH_STRICT_MSGPACK=true` set (← `tests/conftest.py`), which
+    blocks any type `allowed_msgpack_modules` doesn't name."""
+    serde = checkpointer_service.checkpoint_serde()
     state = _state()
 
     type_, blob = serde.dumps_typed(state)
@@ -76,6 +87,7 @@ def test_state_round_trips_through_the_checkpoint_serializer():
     assert restored["awaiting"] == state["awaiting"]
     assert restored["combat"] == state["combat"]
     assert isinstance(restored["combat"].order, tuple)
+    assert isinstance(restored["action"].plan, tuple)
     assert restored == state
 
 

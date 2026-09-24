@@ -78,7 +78,11 @@ def build_agent(
 ) -> CompiledStateGraph:
     return build_graph(
         model if model is not None else chat_model(),
-        checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
+        checkpointer=(
+            checkpointer
+            if checkpointer is not None
+            else InMemorySaver(serde=checkpointer_service.checkpoint_serde())
+        ),
     )
 
 

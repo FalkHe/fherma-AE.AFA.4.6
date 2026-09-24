@@ -20,6 +20,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 from sqlalchemy import text
 
+from app.core.checkpointer import service as checkpointer_service
 from app.core.ids import generate_id
 from app.modules.game.agent import flow_nodes
 from app.modules.game.agent.decisions import (
@@ -138,7 +139,7 @@ def test_opening_then_conversation_narrates_and_closes(playthrough_db, monkeypat
         db = playthrough_db
         owner_id, run_id, hero_id = await _setup_run(db, username="opening-flow")
 
-        saver = InMemorySaver()
+        saver = InMemorySaver(serde=checkpointer_service.checkpoint_serde())
         config = {"configurable": {"thread_id": run_id}}
 
         # --- Turn 1: the opening (no player input). --------------------
@@ -215,7 +216,7 @@ def test_active_investigation_pauses_for_a_roll_then_restarts(playthrough_db):
             db, user_id=owner_id, actor_id=hero_id, exit_id=TO_THORNWAY
         )
 
-        saver = InMemorySaver()
+        saver = InMemorySaver(serde=checkpointer_service.checkpoint_serde())
         config = {"configurable": {"thread_id": run_id}}
 
         search_text = "I search the wool-marked narrow cut at ankle height for signs of passage."
@@ -300,7 +301,7 @@ def test_movement_persists_scene_change_and_narrates_arrival(playthrough_db):
         db = playthrough_db
         owner_id, run_id, hero_id = await _setup_run(db, username="movement-flow")
 
-        saver = InMemorySaver()
+        saver = InMemorySaver(serde=checkpointer_service.checkpoint_serde())
         config = {"configurable": {"thread_id": run_id}}
 
         move_text = "I follow the cart track to the treeline."
@@ -390,7 +391,7 @@ def test_combat_from_ambiguous_target_to_defeat(playthrough_db):
         ).one()
         knife_id = knife_row.id
 
-        saver = InMemorySaver()
+        saver = InMemorySaver(serde=checkpointer_service.checkpoint_serde())
         config = {"configurable": {"thread_id": run_id}}
 
         attack_text = "I attack one of the goblins with my knife."
