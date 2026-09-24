@@ -51,6 +51,8 @@
       "hidden": [
         {
           "fact": "The narrower cut has been deliberately widened at ankle height, as if something has dragged heavy loads through it more than once.",
+          "ability": "wisdom",
+          "skill": "Perception",
           "dc": 5,
           "discovered_by": "a Wisdom (Perception) check when the player deliberately searches the wool-marked narrow cut at ankle height, examining the low thorn and ground for signs of passage; merely walking through or glancing at the wool does not reveal the deliberate widening"
         }
@@ -81,6 +83,8 @@
       "hidden": [
         {
           "fact": "A second, smaller gap in the rock to the side of the main entrance is not watched at all and leads to the same chamber below.",
+          "ability": "wisdom",
+          "skill": "Perception",
           "dc": 14,
           "discovered_by": "a Wisdom (Perception) check on the rock face, or deliberately searching the outcrop for another way in before approaching the main entrance"
         }

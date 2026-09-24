@@ -12,6 +12,15 @@ class ContentModel(BaseModel):
 ContentId = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")]
 ProseText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
+AbilityName = Literal[
+    "strength",
+    "dexterity",
+    "constitution",
+    "intelligence",
+    "wisdom",
+    "charisma",
+]
+
 
 class Abilities(ContentModel):
     strength: int = Field(ge=1, le=30)
@@ -56,6 +65,8 @@ class ItemTemplate(ObjectTemplateBase):
 
 class FixtureCheck(ContentModel):
     action: ProseText
+    ability: AbilityName
+    skill: ProseText | None = None
     dc: int = Field(ge=5, le=30)
     success: ProseText
     bypassed_by: list[ContentId] = Field(default_factory=list)
@@ -74,6 +85,8 @@ ObjectTemplate = Annotated[
 
 class Secret(ContentModel):
     fact: ProseText
+    ability: AbilityName
+    skill: ProseText | None = None
     dc: int = Field(ge=5, le=30)
     discovered_by: ProseText
 

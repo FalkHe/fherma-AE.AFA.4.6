@@ -422,7 +422,13 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `passive_check` — no dice at all: adds the named ability's modifier to
   `10` and weighs the result against `dc`, returning the pass/fail outcome
   directly and appending one DM-visible `tool_call` event carrying that
-  outcome, with no `faces` anywhere in it.
+  outcome, with no `faces` anywhere in it. Its optional `skill` argument
+  rides along in that same event's args purely as a record; it never
+  changes the modifier.
+- `authored_check(entry)` — pulls `(ability, skill, dc)` off a content
+  module `Secret`/`FixtureCheck` verbatim, never off its prose, for a
+  caller to hand into `passive_check`, `request_player_roll` or
+  `roll`/`resolve_check`/`resolve_save`.
 - `ask_player` — appends a player-visible `question` event carrying the
   text asked and the options offered; the next `player_action` is expected
   to answer it.

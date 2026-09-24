@@ -186,6 +186,8 @@ One entry of a `FixtureTemplate.checks` list.
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
 | `action` | prose string | yes | — | What a character *does*, in plain prose — not a skill enum |
+| `ability` | ability name (`strength` \| `dexterity` \| `constitution` \| `intelligence` \| `wisdom` \| `charisma`) | yes | — | Which ability score the check is made against |
+| `skill` | prose string | no | `null` | The named skill, if one applies, e.g. `"Perception"`; `null` for a bare ability check |
 | `dc` | integer, 5–30 | yes | — | The authored target number |
 | `success` | prose string | yes | — | What is true afterwards — a fact, never narration to be recited |
 | `bypassed_by` | list of content ids | no | `[]` | The ids of the **item**-kind templates that make this check succeed with no roll. Holding any one of them is enough. `[]` means nothing bypasses it |
@@ -206,8 +208,10 @@ earn.
 | JSON key | Type | Required | Default | Purpose |
 |---|---|---|---|---|
 | `fact` | prose string | yes | — | What is true but not apparent |
+| `ability` | ability name (`strength` \| `dexterity` \| `constitution` \| `intelligence` \| `wisdom` \| `charisma`) | yes | — | Which ability score the check is made against |
+| `skill` | prose string | no | `null` | The named skill, if one applies, e.g. `"Perception"`; `null` for a bare ability check |
 | `dc` | integer, 5–30 | yes | — | The target number to discover it |
-| `discovered_by` | prose string | yes | — | Prose describing the ability/skill and the action that reveals it, e.g. `"a Wisdom (Perception) check on entering, or searching the crates"` — not a skill enum |
+| `discovered_by` | prose string | yes | — | Prose narration guidance for how the fact is revealed, e.g. `"a Wisdom (Perception) check on entering, or searching the crates"` |
 
 `hidden` and `dc` are DM-only and must never be shown to the player.
 
@@ -605,11 +609,13 @@ scenes included, is one of them.
       "checks": [
         {
           "action": "Force the swollen door with a shoulder",
+          "ability": "strength",
           "dc": 14,
           "success": "The door gives way and the passage beyond stands open."
         },
         {
           "action": "Turn the lock with a key that still fits it",
+          "ability": "dexterity",
           "dc": 8,
           "success": "The lock turns without a sound and the door swings open.",
           "bypassed_by": ["rusty-key"]
@@ -642,6 +648,8 @@ scenes included, is one of them.
       "hidden": [
         {
           "fact": "Fresh bootprints lead into the mill and none lead out.",
+          "ability": "wisdom",
+          "skill": "Perception",
           "dc": 12,
           "discovered_by": "a Wisdom (Perception) check on the mud, or searching the bank"
         }

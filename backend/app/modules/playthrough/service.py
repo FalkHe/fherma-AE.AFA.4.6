@@ -26,9 +26,12 @@ from app.modules.content import service as content_service
 from app.modules.content.errors import ContentError, ContentNotFoundError
 from app.modules.content.schemas import (
     Abilities,
+    AbilityName,
     CreatureTemplate,
+    FixtureCheck,
     LoadedCampaign,
     ObjectTemplate,
+    Secret,
     SeedCharacter,
 )
 from app.modules.playthrough import dice
@@ -1501,6 +1504,16 @@ async def roll_initiative(
     return event_a, event_b
 
 
+def authored_check(entry: Secret | FixtureCheck) -> tuple[AbilityName, str | None, int]:
+    """Pulls the mechanics -- ability, skill, DC -- off an authored `Secret`
+    or `FixtureCheck` verbatim, never off its prose (`fact`/`action`,
+    `success`, `discovered_by`). The one place a check built from content
+    turns authored fields into the tuple `passive_check`, `resolve_check`
+    and `resolve_save`'s own callers pass on: nothing here rolls a die or
+    writes an event."""
+    return entry.ability, entry.skill, entry.dc
+
+
 async def passive_check(
     db: AsyncSession,
     *,
@@ -1509,11 +1522,15 @@ async def passive_check(
     ability: str,
     dc: int,
     turn_id: str | None = None,
+    skill: str | None = None,
 ) -> bool:
     """A passive score -- `10` plus the named ability's modifier, no die
     rolled at all -- against `dc`. Recorded as a `tool_call` at `dm`, never
     a `roll`: it has no faces and must never be consumable by a later
-    sprint's check consumer (WI2, AC2)."""
+    sprint's check consumer (WI2, AC2). `skill`, when an authored check or
+    secret named one (`authored_check`), rides along in the same event
+    payload/args purely as a record -- it never changes the modifier,
+    which is always the named ability's own."""
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
     abilities = dice._actor_abilities(
         actor, campaign_id=run.campaign_id, version=run.content_version
@@ -1529,7 +1546,7 @@ async def passive_check(
         turn_id=turn_id,
         payload={
             "name": "passive_check",
-            "args": {"actorId": actor_id, "ability": ability, "dc": dc},
+            "args": {"actorId": actor_id, "ability": ability, "skill": skill, "dc": dc},
             "roll_ids": [],
             "result": "ok",
             "outcome": {"passiveScore": passive_score, "dc": dc, "success": success},

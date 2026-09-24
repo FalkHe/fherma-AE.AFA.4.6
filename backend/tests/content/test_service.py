@@ -123,6 +123,7 @@ def test_bypassed_by_entry_unknown_template_yields_one_r12_on_campaign_json_c14(
                     fixture_template()["checks"][0],
                     {
                         "action": "unlock it",
+                        "ability": "dexterity",
                         "dc": 8,
                         "success": "opens",
                         "bypassed_by": ["no-such-item"],
@@ -150,6 +151,7 @@ def test_bypassed_by_two_undeclared_entries_yields_two_r12_c14a(content_root):
                     fixture_template()["checks"][0],
                     {
                         "action": "unlock it",
+                        "ability": "dexterity",
                         "dc": 8,
                         "success": "opens",
                         "bypassed_by": ["no-such-item", "also-no-such-item"],
@@ -179,6 +181,7 @@ def test_bypassed_by_one_valid_one_undeclared_yields_exactly_one_r12_c14a(conten
                     fixture_template()["checks"][0],
                     {
                         "action": "unlock it",
+                        "ability": "dexterity",
                         "dc": 8,
                         "success": "opens",
                         "bypassed_by": ["rusty-key", "no-such-item"],
@@ -270,6 +273,7 @@ def test_template_referenced_only_as_first_bypassed_by_entry_is_not_orphaned_c16
                     fixture_template()["checks"][0],
                     {
                         "action": "unlock it",
+                        "ability": "dexterity",
                         "dc": 8,
                         "success": "opens",
                         "bypassed_by": ["lockpick", "rusty-key"],
@@ -294,6 +298,7 @@ def test_template_referenced_only_as_later_bypassed_by_entry_is_not_orphaned_c16
                     fixture_template()["checks"][0],
                     {
                         "action": "unlock it",
+                        "ability": "dexterity",
                         "dc": 8,
                         "success": "opens",
                         "bypassed_by": ["rusty-key", "lockpick"],
@@ -454,6 +459,7 @@ def test_bypassed_by_entry_non_item_yields_one_r17_on_campaign_json_c19(content_
                     fixture_template()["checks"][0],
                     {
                         "action": "scare it off",
+                        "ability": "dexterity",
                         "dc": 8,
                         "success": "it flees",
                         "bypassed_by": ["bog-lurker"],
@@ -483,6 +489,7 @@ def test_bypassed_by_one_item_one_creature_yields_exactly_one_r17_c19a(content_r
                     fixture_template()["checks"][0],
                     {
                         "action": "get past it",
+                        "ability": "dexterity",
                         "dc": 8,
                         "success": "past it",
                         "bypassed_by": ["rusty-key", "bog-lurker"],
@@ -513,6 +520,7 @@ def test_bypassed_by_two_non_item_entries_yields_two_r17_c19a(content_root):
                     fixture_template()["checks"][0],
                     {
                         "action": "get past it",
+                        "ability": "dexterity",
                         "dc": 8,
                         "success": "past it",
                         "bypassed_by": ["bog-lurker", "second-lurker"],
