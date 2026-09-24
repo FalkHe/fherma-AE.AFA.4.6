@@ -828,3 +828,71 @@ def test_actions_verbose_includes_pending_interrupts(monkeypatch):
     assert result.exit_code == 0, result.output
     assert '"checkpoint": "cp-9"' in result.stdout
     assert '"type": "question"' in result.stdout
+
+
+def test_a_session_quit_while_the_dm_waits_for_an_answer_still_has_it_waiting_on_replay(
+    monkeypatch,
+):
+    question_event = _Event(
+        id="q-event-1",
+        type="question",
+        payload={"text": "Do you sneak or run?", "options": ["Sneak", "Run"]},
+    )
+
+    async def fake_get_member_character(db, *, user_id, run_id):
+        return _Character(id="actor-1")
+
+    monkeypatch.setattr(playthrough_service, "get_member_character", fake_get_member_character)
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+
+    # First invocation: the run's own turn engine leaves the question
+    # pending -- no answer is supplied before the input stream ends, quitting
+    # the session with it still waiting.
+    async def fake_run_turn_first(db, *, user_id, run_id, text):
+        return _Outcome(turn_id="turn-1", kind="action", awaiting="answer:q-event-1")
+
+    async def fake_list_events_first(db, *, user_id, run_id, after=None):
+        return [question_event]
+
+    monkeypatch.setattr(game_service, "run_turn", fake_run_turn_first)
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events_first)
+
+    first_result = _invoke(
+        ["game", "play", "--user", USER_ID, "--run-id", RUN_ID],
+        input="I approach the goblins.\n",
+    )
+    assert first_result.exit_code == 0, first_result.output
+    assert "Do you sneak or run?" in first_result.stdout
+
+    # Second invocation, same run: rejoining alone (no fresh player message
+    # is sent for the opening call) surfaces the same still-pending question.
+    async def fake_run_turn_second(db, *, user_id, run_id, text):
+        if text is None:
+            return _Outcome(turn_id="turn-1", kind="action", awaiting="answer:q-event-1")
+        return _Outcome(turn_id="turn-1", kind="answer", awaiting="none")
+
+    calls = []
+
+    async def fake_list_events_second(db, *, user_id, run_id, after=None):
+        calls.append(after)
+        if len(calls) == 1:
+            return [question_event]
+        return [
+            _Event(
+                id="n-event-1",
+                type="narration",
+                payload={"text": "You choose to sneak quietly."},
+            )
+        ]
+
+    monkeypatch.setattr(game_service, "run_turn", fake_run_turn_second)
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events_second)
+
+    second_result = _invoke(
+        ["game", "play", "--user", USER_ID, "--run-id", RUN_ID],
+        input="1\n",
+    )
+
+    assert second_result.exit_code == 0, second_result.output
+    assert "Do you sneak or run?" in second_result.stdout
+    assert "You choose to sneak quietly." in second_result.stdout
