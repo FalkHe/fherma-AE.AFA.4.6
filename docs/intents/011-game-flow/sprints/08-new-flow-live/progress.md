@@ -9,9 +9,9 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
-| 2 | open | after WI1 |
-| 3 | open | after WI1 |
+| 1 | done | five-node graph composed, initial_state, topology test; old service call site pending WI2 |
+| 2 | running | |
+| 3 | running | |
 
 Status: `open | running | done | failed`
 
