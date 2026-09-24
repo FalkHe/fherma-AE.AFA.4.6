@@ -191,8 +191,12 @@ def test_attack_accepts_a_target_name_that_matches_case_insensitively(monkeypatc
 
     monkeypatch.setattr(tools.playthrough_service, "describe_scene_creatures", fake_describe)
 
+    from app.modules.playthrough import schemas as playthrough_schemas
+
     async def fake_attack(*args, **kwargs):
-        return "hit"
+        return playthrough_schemas.AttackResult(
+            status="hit", hit_id="hit-1", total=19, natural=15, armour_class=13
+        )
 
     monkeypatch.setattr(tools.playthrough_service, "attack", fake_attack)
 

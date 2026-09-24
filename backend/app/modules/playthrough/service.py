@@ -9,7 +9,7 @@ suite's monkeypatching depends on it (AGENTS.md).
 import asyncio
 from collections.abc import Sequence
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 from pydantic import BaseModel, ValidationError
@@ -69,6 +69,7 @@ from app.modules.playthrough.models import (
 )
 from app.modules.playthrough.schemas import (
     EVENT_PAYLOADS,
+    AttackResult,
     CampaignRunAdventureRead,
     CampaignRunMemberRead,
     CampaignRunOverviewRead,
@@ -76,6 +77,8 @@ from app.modules.playthrough.schemas import (
     CharacterAbilities,
     CharacterRead,
     CharacterState,
+    DamageResult,
+    InitiativeResult,
     Item,
     NarrationRead,
     RollKind,
@@ -400,6 +403,26 @@ def _character_abilities(scores: Abilities) -> CharacterAbilities:
     )
 
 
+def is_down(obj: GameObject) -> bool:
+    """True when `obj` cannot act, or be acted on as a living target (sprint
+    011/02, WI3, I3): any object with `is_alive == False` -- a dead
+    creature, the only way a non-member ever reaches this -- or a member's
+    own character whose `state` was written `down=True` at 0 hp
+    (`damage`'s own write). Only a character's `state` ever carries `down`;
+    a template-less monster/npc's `is_alive` already says everything there
+    is to say, so `member_id is None` short-circuits to that alone.
+
+    The one rule `damage` writes by and every read (`describe_scene_
+    creatures`, `character_read`, `resolve_actor_ref`, the live-creature
+    hint, `attack`'s own refusal) checks by -- HP, `is_alive` and `down`
+    agree everywhere (intent §1.5)."""
+    if not obj.is_alive:
+        return True
+    if obj.member_id is None:
+        return False
+    return bool(obj.state.get("down", False))
+
+
 def character_read(obj: GameObject, *, items: Sequence[GameObject] = ()) -> CharacterRead:
     """`CharacterRead` from a character `GameObject` (sprint 009-07, ←
     research Decision 5; widened WI1 sprint 010/05 into the one hero shape
@@ -427,6 +450,7 @@ def character_read(obj: GameObject, *, items: Sequence[GameObject] = ()) -> Char
         appearance=state.appearance,
         backstory=state.background,
         items=[Item(id=item.id, name=item.name) for item in items],
+        down=is_down(obj),
     )
 
 
@@ -1078,6 +1102,8 @@ async def resolve_actor_ref(db: AsyncSession, *, run_id: str, ref: str) -> GameO
     )
     result = await db.execute(stmt)
     for candidate in result.scalars().all():
+        if is_down(candidate):
+            continue
         if candidate.name.casefold() == ref.casefold():
             return candidate
 
@@ -1120,8 +1146,11 @@ async def describe_scene_creatures(
     context` does) skip re-reading it here; omitted, both are read off
     `run_id`'s own row.
 
-    Each entry is `id, name, role, is_alive, current_hp, max_hp,
-    armour_class, attacks` -- `role` is `player` for a member's own
+    Each entry is `id, name, role, is_alive, down, current_hp, max_hp,
+    armour_class, attacks` -- `down` is `is_down(creature)` (sprint 011/02,
+    WI3, I3): `is_alive` alone lets a downed hero read as a living,
+    targetable actor, since `damage` never flips a member's own `is_alive`
+    at 0 hp. `role` is `player` for a member's own
     character, else `monster` when its stat block carries at least one
     attack, else `npc` (Mira the innkeeper: `attacks: []`, never a
     combatant) -- there is no authored hostile/friendly flag to read
@@ -1163,6 +1192,7 @@ async def describe_scene_creatures(
                 "name": creature.name,
                 "role": role,
                 "is_alive": creature.is_alive,
+                "down": is_down(creature),
                 "current_hp": creature.current_hp,
                 "max_hp": creature.max_hp,
                 "armour_class": creature.armour_class,
@@ -1441,20 +1471,25 @@ async def roll(
     return event
 
 
-async def _roll_for_side(
-    db: AsyncSession, *, user_id: str, side_ids: list[str], turn_id: str | None
+async def request_hero_initiative(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    hero_ids: list[str],
+    turn_id: str | None = None,
 ) -> Event:
-    """One roll for a whole side (WI2, AC4): scans `side_ids` for the
-    first one that carries a `member_id` -- a player's own character --
-    and asks it to roll through `request_player_roll`, a player's own
-    click still deciding that side's roll. A side with no member on it is
-    rolled outright instead, through `roll` at `player` visibility --
-    `roll`'s own path for a creature's roll, never `dm`'s default, since
-    an initiative roll is not DM-only bookkeeping -- on the side's own
-    first id, there being no other id to prefer once none of them is a
-    member's own character.
-    """
-    for candidate_id in side_ids:
+    """Asks the hero side to roll initiative (WI1, AC1/AC4, intent §1.3:
+    "one hero-side roll"): scans `hero_ids` for the first id that carries
+    a `member_id` -- a player's own character -- and asks it to roll
+    through `request_player_roll`, a player's own click still deciding
+    the hero side's roll, exactly as the old `_roll_for_side` did for a
+    member-holding side. A side with no member on it (never expected in
+    practice, but not assumed) falls back to rolling its own first id
+    outright, through `roll` at `player` visibility, so this never raises
+    for an empty scan. Returns the `roll_requested` event -- unanswered
+    until the player resolves it -- for `settle_initiative` to settle
+    against once it exists."""
+    for candidate_id in hero_ids:
         candidate = await _get_game_object(db, candidate_id)
         if candidate.member_id is not None:
             return await request_player_roll(
@@ -1468,7 +1503,7 @@ async def _roll_for_side(
     return await roll(
         db,
         user_id=user_id,
-        actor_id=side_ids[0],
+        actor_id=hero_ids[0],
         kind="initiative",
         context={},
         visibility="player",
@@ -1476,32 +1511,52 @@ async def _roll_for_side(
     )
 
 
-async def roll_initiative(
+async def settle_initiative(
     db: AsyncSession,
     *,
     user_id: str,
-    side_a_ids: list[str],
-    side_b_ids: list[str],
+    run_id: str,
+    hero_roll_id: str,
+    hero_ids: list[str],
+    hostile_ids: list[str],
     turn_id: str | None = None,
-) -> tuple[Event, Event]:
-    """Rolls to see who acts first (WI2, AC4) -- two sides, each a list of
-    object ids and nothing else. Thin composition over `request_player_
-    roll` and `roll`, both already existing producers: per side,
-    `_roll_for_side` asks whichever id is a member's own character,
-    otherwise rolls the side outright. Dexterity is derived by the server
-    the same way every other formula is (← D6, `dice.derive_formula`) --
-    this function never takes a number of its own.
-
-    Writes no row beyond whichever `roll_requested` / `roll` events those
-    two calls already write on their own, and no `tool_call` -- finding
-    out who goes first spends nobody's turn, so there is nothing here for
-    a pass or a refusal to be recorded against. Nothing about a fight is
-    stored anywhere else either (← D7, 003-D8): no encounter, no turn
-    order, no `in_combat` flag, on this call or any other in this module.
-    """
-    event_a = await _roll_for_side(db, user_id=user_id, side_ids=side_a_ids, turn_id=turn_id)
-    event_b = await _roll_for_side(db, user_id=user_id, side_ids=side_b_ids, turn_id=turn_id)
-    return event_a, event_b
+) -> InitiativeResult:
+    """Settles a stable side and actor order once per fight (WI1, AC1/AC2,
+    intent §1.3): `hero_roll_id` must already be a resolved `roll` event
+    -- `request_hero_initiative`'s own return, once the player has
+    answered it (`RollNotFoundError` otherwise, exactly `_get_roll_event`'s
+    own refusal for any other roll-spending call, since there is nothing
+    to settle against yet). The hostile side then rolls automatically,
+    through `roll` at `player` visibility -- an initiative roll is not
+    DM-only bookkeeping. The two totals decide `winning_side`, the hero
+    side winning a tie; `order` lists every actor id, the winning side
+    first then the other, each side keeping its own given id order.
+    Nothing about the fight is stored anywhere else (← D7, 003-D8): no
+    encounter, no turn order, no `in_combat` flag, on this call or any
+    other in this module."""
+    await _require_ready_or_active_run(db, run_id=run_id, user_id=user_id)
+    hero_event = await _get_roll_event(db, hero_roll_id)
+    hostile_event = await roll(
+        db,
+        user_id=user_id,
+        actor_id=hostile_ids[0],
+        kind="initiative",
+        context={},
+        visibility="player",
+        turn_id=turn_id,
+    )
+    hero_total = RollPayload.model_validate(hero_event.payload).total
+    hostile_total = RollPayload.model_validate(hostile_event.payload).total
+    winning_side: Literal["hero", "hostile"] = "hostile" if hostile_total > hero_total else "hero"
+    order = [*hero_ids, *hostile_ids] if winning_side == "hero" else [*hostile_ids, *hero_ids]
+    return InitiativeResult(
+        hero_total=hero_total,
+        hostile_total=hostile_total,
+        hero_roll_id=hero_event.id,
+        hostile_roll_id=hostile_event.id,
+        winning_side=winning_side,
+        order=order,
+    )
 
 
 def authored_check(entry: Secret | FixtureCheck) -> tuple[AbilityName, str | None, int]:
@@ -2620,7 +2675,7 @@ async def attack(
     item_id: str | None = None,
     roll_id: str,
     turn_id: str | None = None,
-) -> str:
+) -> AttackResult:
     """Measures an `attack` roll against `target_id`'s own armour class,
     appending the outcome on a `tool_call` -- never a row (WI1, AC1):
     nothing about a swing landing or missing changes any `objects` row,
@@ -2636,9 +2691,12 @@ async def attack(
     `_ACTION_NAMES`) -> `target_id` and, when given, `item_id` loaded with
     no run filter first, exactly `take`'s own `_load_run_object` (← D12):
     unknown or foreign either way raises `GameObjectNotFoundError` before
-    any refusal is recorded -> both actor and target sharing one scene
-    (`OBJECT_NOT_REACHABLE` otherwise) -> the item, when named, carried by
-    the actor (`OBJECT_NOT_REACHABLE` otherwise) -> the roll consumed at
+    any refusal is recorded -> neither actor nor target down (sprint
+    011/02, WI3, I3 -- `OBJECT_NOT_REACHABLE`, a downed actor or target
+    treated exactly like an unreachable one) -> both actor and target
+    sharing one scene (`OBJECT_NOT_REACHABLE` otherwise) -> the item, when
+    named, carried by the actor (`OBJECT_NOT_REACHABLE` otherwise) -> the
+    roll consumed at
     `kind="attack"` (`ROLL_NOT_USABLE` on a wrong kind, another turn, or
     one already spent). Each of those three refusals is recorded and
     committed before the matching error is raised (← D11).
@@ -2650,7 +2708,15 @@ async def attack(
     armour class. Otherwise a `hit` when the total reaches the target's
     `armour_class`, else a `miss`. `tool_call` `ok`: `args {actorId,
     targetId, itemId?, rollId}`, `roll_ids [roll_id]`, `outcome {outcome,
-    total, natural, armourClass}`.
+    total, natural, armourClass}` -- the stored `outcome` string stays
+    `hit`/`crit`/`miss` (`_consume_hit`'s own check), the returned
+    `AttackResult.status` spells the third one out as `critical` (WI2,
+    I2).
+
+    Returns an `AttackResult` naming the `tool_call` event's own id as
+    `hit_id` on `hit`/`critical`, `None` on a `miss` -- there is nothing
+    for `damage` to consume when nothing landed, and no more scanning the
+    transcript for the newest event to guess it (← finding, WI2).
     """
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
 
@@ -2671,6 +2737,32 @@ async def attack(
     item = None
     if item_id is not None:
         item = await _load_run_object(db, item_id, run_id=run.id)
+
+    if is_down(actor):
+        await _refuse_attack(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            target_id=target_id,
+            item_id=item_id,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="actor is down",
+        )
+        raise ObjectNotReachableError(actor_id)
+
+    if is_down(target):
+        await _refuse_attack(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            target_id=target_id,
+            item_id=item_id,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="target is down",
+        )
+        raise ObjectNotReachableError(target_id)
 
     same_scene = (
         actor.scene_id is not None
@@ -2735,7 +2827,7 @@ async def attack(
         args["itemId"] = item_id
     args["rollId"] = roll_id
 
-    await append_event(
+    hit_event = await append_event(
         db,
         run_id=run.id,
         type="tool_call",
@@ -2755,7 +2847,13 @@ async def attack(
         },
     )
     await db.commit()
-    return outcome_name
+    return AttackResult(
+        status="critical" if outcome_name == "crit" else outcome_name,  # type: ignore[arg-type]
+        hit_id=hit_event.id if outcome_name in ("hit", "crit") else None,
+        total=total,
+        natural=natural,
+        armour_class=armour_class,
+    )
 
 
 async def _hit_already_damaged(
@@ -2855,10 +2953,23 @@ async def damage(
     roll_id: str,
     hit_id: str,
     turn_id: str | None = None,
-) -> int:
+    critical: bool = False,
+) -> DamageResult:
     """Applies the hit `hit_id` named -- an `attack` `tool_call`'s own
     event id -- to `target_id`, clamped so hit points never fall below 0
-    (WI1, AC2). Returns the hit points actually applied.
+    (WI1, AC2). Returns a `DamageResult` naming the hit points actually
+    applied.
+
+    `critical=True` (WI2, I2, intent §1.4) doubles the consumed roll's own
+    dice -- never the flat modifier: `applied` is derived from `2 *
+    sum(faces) + modifier`, not the roll's own `total`. The `damage` roll
+    is normally requested and rolled before `attack` settles hit/miss/
+    critical, so its own formula is never crit-aware (`dice.derive_
+    formula`'s `context={"critical": True}` doubling is for a caller that
+    requests the roll already knowing the hit was critical); doubling here
+    instead, from the roll's own `faces`/`modifier`, applies the same rule
+    -- double the dice, the modifier once -- without discarding an
+    already-spent roll or rolling a second one.
 
     No `actor_id`: unlike every other mechanic in this module, `damage` is
     anchored on the *target* it wounds, not on whoever struck it (that
@@ -2928,6 +3039,8 @@ async def damage(
         raise
 
     total = consumed.payload["total"]
+    if critical:
+        total = 2 * sum(consumed.payload["faces"]) + consumed.payload["modifier"]
     before_hp = target.current_hp
     applied = min(total, target.current_hp)
     target.current_hp -= applied
@@ -2941,6 +3054,12 @@ async def damage(
             )
             target.state = new_state.model_dump()
 
+    # Not `is_down(target)`: this `down` means "a character stayed alive but
+    # hit zero", the narrower fact `DamageResult`/`hp_changed`/`tool_call`
+    # have always reported -- `False` for a dead, memberless creature, which
+    # `is_down` (the broader read-side eligibility rule, sprint 011/02, WI3)
+    # would instead call down. Both already agree on the one case that
+    # matters for a mutation: a downed member's own `state.down`.
     down = target.member_id is not None and bool(target.state.get("down", False))
 
     await append_event(
@@ -2980,7 +3099,13 @@ async def damage(
         },
     )
     await db.commit()
-    return applied
+    return DamageResult(
+        applied=applied,
+        current_hp=target.current_hp,
+        max_hp=target.max_hp,
+        is_alive=target.is_alive,
+        down=down,
+    )
 
 
 async def append_event(

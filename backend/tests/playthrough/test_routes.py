@@ -105,6 +105,7 @@ def _make_character(**overrides):
         current_hp=12,
         max_hp=12,
         armour_class=15,
+        is_alive=True,
         member_id=generate_id(),
         template_id=None,
         instance_key="pc:member-placeholder:1",
@@ -543,6 +544,7 @@ def test_create_character_response_has_exactly_the_camelcase_field_set(
         "appearance",
         "backstory",
         "items",
+        "down",
     }
 
 

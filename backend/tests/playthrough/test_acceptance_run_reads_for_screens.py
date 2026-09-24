@@ -230,6 +230,7 @@ def test_ac3_overview_answers_run_members_and_adventures_in_campaign_order(
             appearance="Barely three feet of him, all elbows and grin.",
             backstory="Raised in the kitchens of a river inn.",
             items=[],
+            down=False,
         ),
     )
     overview = SimpleNamespace(
