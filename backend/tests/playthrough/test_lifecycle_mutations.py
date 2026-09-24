@@ -98,9 +98,7 @@ def test_leave_scene_clears_position_and_remembers_where(playthrough_db):
         left_scene_id = character.scene_id
         left_adventure_run_id = character.adventure_run_id
 
-        result = await service.leave_scene(
-            playthrough_db, user_id=user_id, actor_id=character.id
-        )
+        result = await service.leave_scene(playthrough_db, user_id=user_id, actor_id=character.id)
         assert result.status == "ok"
 
         await playthrough_db.refresh(character)

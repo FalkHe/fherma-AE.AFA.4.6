@@ -3430,6 +3430,129 @@ async def record_rule_lookup(
     return event
 
 
+async def record_player_action(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    text: str,
+    turn_id: str,
+    answers_question_id: str | None = None,
+) -> Event:
+    """Records the player's own free-text turn -- a submitted action, or an
+    answer to an in-turn question when `answers_question_id` is given
+    (sprint 011/03, WI3). This is the module's own `player_action` write;
+    the game module used to write this row itself and no longer may.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    event = await append_event(
+        db,
+        run_id=run_id,
+        type="player_action",
+        visibility="player",
+        turn_id=turn_id,
+        payload={"text": text, "answersQuestionId": answers_question_id},
+    )
+    await db.commit()
+    return event
+
+
+async def record_answer(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    text: str,
+    question_id: str,
+    turn_id: str,
+) -> Event:
+    """Records the player's answer to a pending `question` interrupt
+    (sprint 011/03, WI3) -- the same `player_action` shape
+    `record_player_action` writes, `answers_question_id` always given here
+    since answering a question is exactly what this call is for.
+    """
+    return await record_player_action(
+        db,
+        user_id=user_id,
+        run_id=run_id,
+        text=text,
+        turn_id=turn_id,
+        answers_question_id=question_id,
+    )
+
+
+async def record_narration(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    text: str,
+    turn_id: str,
+    usage: Usage | None = None,
+) -> Event:
+    """Records the DM's own narration for the turn (sprint 011/03, WI3),
+    then -- matching the game module's own former behaviour exactly --
+    activates a `ready` run into `active` on its first narration, never on
+    any later one (`activate_campaign_run` is itself a no-op once
+    `active`).
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    event = await append_event(
+        db,
+        run_id=run_id,
+        type="narration",
+        visibility="player",
+        turn_id=turn_id,
+        payload={"text": text},
+        usage=usage,
+    )
+    await db.commit()
+
+    run = await get_campaign_run(db, user_id=user_id, run_id=run_id)
+    if run.status == "ready":
+        await activate_campaign_run(db, user_id=user_id, run_id=run_id)
+
+    return event
+
+
+async def record_outcome(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    name: str,
+    args: dict[str, Any],
+    outcome: dict[str, Any],
+    turn_id: str | None = None,
+    roll_ids: Sequence[str] = (),
+) -> Event:
+    """Records one mechanic invocation as a `dm`-visible `tool_call`
+    (sprint 011/03, WI3) -- the same shape every mechanic in this module
+    already writes for itself. `result` is derived from `outcome`, not a
+    separate argument: an `outcome` carrying a `"reason"` key is the
+    module's own refusal convention (e.g. `set_hostility`'s non-creature
+    actor), everything else is `"ok"`.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    result = "refused" if "reason" in outcome else "ok"
+    event = await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": name,
+            "args": args,
+            "roll_ids": list(roll_ids),
+            "result": result,
+            "outcome": outcome,
+        },
+    )
+    await db.commit()
+    return event
+
+
 async def list_events(
     db: AsyncSession,
     *,

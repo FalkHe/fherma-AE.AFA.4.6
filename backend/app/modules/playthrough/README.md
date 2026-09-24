@@ -690,6 +690,15 @@ Service functions (`service.py`), called as `service.f(...)`:
   `lookup_rule` tool only when its search matched. No refusal path — a
   lookup that matched nothing never calls this at all, so there is nothing
   here to refuse.
+- `record_player_action`, `record_answer`, `record_narration` and
+  `record_outcome` (sprint 011/03, WI3) — the module's own recording of a
+  turn: a `player_action`, an answer to a pending question (the same
+  `player_action` shape, `answers_question_id` set), the DM's `narration`
+  (activating a `ready` run to `active` on its first one) and a mechanic's
+  `tool_call` (`result` derived from whether `outcome` carries a
+  `"reason"` key). Each is `_require_member`, append, commit, matching
+  `record_rule_lookup`'s own shape — the game module no longer writes any
+  of these itself.
 - `list_events` — the caller's `player`-visible events for a run, ordered by
   `id`, `after` exclusive, `limit` capped at 500 (default 200). Checks
   membership; `dm`-visible rows are excluded, not merely hidden downstream.
