@@ -16,7 +16,7 @@ Every turn now runs through the new game flow. Talking, searching, moving betwee
 - Climb to the lair and attack a goblin: initiative is asked once, then the fight runs hit by hit until someone falls.
 
 ## Heads-up
-The old flow's files remain on disk until sprint 09 removes them. The narrator has one voice; a selectable tone is still a proposal.
+After the second verdict the roll button was fixed: it now writes the roll and continues the turn, checked live and by a test that drives a pause through the turn endpoint; the verifier has not seen this fix, so please press one roll yourself before merging. The old flow's files remain on disk until sprint 09 removes them. The narrator has one voice; a selectable tone is still a proposal.
 
 Brief: docs/intents/011-game-flow/sprints/08-new-flow-live/brief.md
 

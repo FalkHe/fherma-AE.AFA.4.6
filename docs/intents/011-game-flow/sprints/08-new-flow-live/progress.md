@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-24
 updated: 2026-09-24
-stage: draft
+stage: done
 ---
 # Progress: Sprint 08
 
@@ -29,7 +29,9 @@ Status: `open | running | done | failed`
 - Live logs showed checkpoint deserialization warnings for the new state types; the serializer now registers them and tests run in strict mode.
 
 ## Backlog proposals
+- The verifier repeatedly found live gaps the scripted scenarios did not: consider one database-marked test that drives the real turn endpoint through a pause and resume with the exact values the frontend sends (now added for rolls; add the choice path too).
 
 ## Verify
 Round 1: changes-requested — AC1/Outcome: a model-proposed operation missing a required payload key raised inside execute (500, run stuck); runs whose pending roll request predates the new flow refuse the roll (409).
 Round 2: changes-requested — AC1/AC2: the roll button resumed the pause with an empty value, which the graph library treats as resuming nothing; the two round-1 defects are fixed.
+After round 2: the roll resume value fixed and live-verified by the implementer; no third verifier round per process, merge request left as draft.
