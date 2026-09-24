@@ -80,6 +80,7 @@ from app.modules.playthrough.schemas import (
     DamageResult,
     InitiativeResult,
     Item,
+    MutationResult,
     NarrationRead,
     RollKind,
     RollPayload,
@@ -1018,6 +1019,267 @@ async def enter_adventure(db: AsyncSession, *, user_id: str, run_id: str) -> Adv
     await db.commit()
     await db.refresh(adventure_run)
     return adventure_run
+
+
+async def set_hostility(
+    db: AsyncSession, *, user_id: str, actor_id: str, hostile: bool, turn_id: str | None = None
+) -> MutationResult:
+    """Sets whether the creature at `actor_id` is hostile, in `state["hostile"]`
+    (sprint 011/03, WI2). Absent means undecided -- the situation falls back
+    to the creature's authored disposition prose; this call is the only way
+    that ever changes.
+
+    Gate order matches every other mechanic in this module:
+    `_resolve_actor_and_run` first (an unknown or foreign actor, an archived
+    run, a run outside `ready`/`active` each raise before anything else
+    runs). A non-creature actor (`item`/`fixture`) is refused
+    (`ACTOR_NOT_CREATURE` is not a distinct code -- reuses `outcome.reason`
+    text; there is no dedicated exception because this is an expected
+    refusal, not a programming error). `state` is reassigned whole, never
+    mutated in place, matching the house rule for `GameObject.state`.
+    """
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+
+    if actor.kind != "creature":
+        reason = f"actor is not a creature: {actor_id}"
+        event = await append_event(
+            db,
+            run_id=run.id,
+            type="tool_call",
+            visibility="dm",
+            turn_id=turn_id,
+            payload={
+                "name": "set_hostility",
+                "args": {"actorId": actor_id, "hostile": hostile},
+                "roll_ids": [],
+                "result": "refused",
+                "outcome": {"reason": reason},
+            },
+        )
+        await db.commit()
+        return MutationResult(status="refused", reason=reason, event_ids=[event.id])
+
+    state = dict(actor.state)
+    state["hostile"] = hostile
+    actor.state = state
+
+    event = await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "set_hostility",
+            "args": {"actorId": actor_id, "hostile": hostile},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {},
+        },
+    )
+    await db.commit()
+    return MutationResult(status="ok", event_ids=[event.id], facts={"hostile": hostile})
+
+
+async def leave_scene(
+    db: AsyncSession, *, user_id: str, actor_id: str, turn_id: str | None = None
+) -> MutationResult:
+    """Removes the actor at `actor_id` from its scene, remembering where it
+    left in `state["left_scene"] = {"sceneId", "adventureRunId"}` (sprint
+    011/03, WI2). `scene_id` and `adventure_run_id` are cleared together --
+    `GameObject`'s own `position` CHECK allows only both null or both set,
+    never one alone.
+
+    Gate order matches `set_hostility`. An actor with no `scene_id` already
+    -- never positioned, or already departed -- is refused
+    (`ALREADY_LEFT` is not a distinct code, same convention as above).
+    """
+    actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
+
+    if actor.scene_id is None:
+        reason = f"actor has already left the scene: {actor_id}"
+        event = await append_event(
+            db,
+            run_id=run.id,
+            type="tool_call",
+            visibility="dm",
+            turn_id=turn_id,
+            payload={
+                "name": "leave_scene",
+                "args": {"actorId": actor_id},
+                "roll_ids": [],
+                "result": "refused",
+                "outcome": {"reason": reason},
+            },
+        )
+        await db.commit()
+        return MutationResult(status="refused", reason=reason, event_ids=[event.id])
+
+    scene_id = actor.scene_id
+    adventure_run_id = actor.adventure_run_id
+    state = dict(actor.state)
+    state["left_scene"] = {"sceneId": scene_id, "adventureRunId": adventure_run_id}
+    actor.state = state
+    actor.scene_id = None
+    actor.adventure_run_id = None
+
+    event = await append_event(
+        db,
+        run_id=run.id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "leave_scene",
+            "args": {"actorId": actor_id},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {},
+        },
+    )
+    await db.commit()
+    return MutationResult(
+        status="ok",
+        event_ids=[event.id],
+        facts={"sceneId": scene_id, "adventureRunId": adventure_run_id},
+    )
+
+
+async def enter_next_adventure(
+    db: AsyncSession, *, user_id: str, run_id: str, turn_id: str | None = None
+) -> MutationResult:
+    """Thin graph-facing wrapper over `enter_adventure` (sprint 011/03,
+    WI2): same gates, same writes, but returns `MutationResult` and records
+    its own dm `tool_call` -- `enter_adventure`'s own callers (sprint 06)
+    predate that convention and are left alone.
+
+    `AdventureExhaustedError` -- every adventure already entered -- is the
+    one expected refusal (← AC4); every other error `enter_adventure`
+    raises (`CampaignRunNotFoundError`, `RunArchivedError`,
+    `InvalidRunStatusError`, `AdventureActiveError`) keeps raising.
+    """
+    try:
+        adventure_run = await enter_adventure(db, user_id=user_id, run_id=run_id)
+    except AdventureExhaustedError:
+        reason = f"campaign run has no adventure left to enter: {run_id}"
+        event = await append_event(
+            db,
+            run_id=run_id,
+            type="tool_call",
+            visibility="dm",
+            turn_id=turn_id,
+            payload={
+                "name": "enter_next_adventure",
+                "args": {},
+                "roll_ids": [],
+                "result": "refused",
+                "outcome": {"reason": reason},
+            },
+        )
+        await db.commit()
+        return MutationResult(status="refused", reason=reason, event_ids=[event.id])
+
+    event = await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "enter_next_adventure",
+            "args": {},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {},
+        },
+    )
+    await db.commit()
+    return MutationResult(
+        status="ok", event_ids=[event.id], facts={"adventureRunId": adventure_run.id}
+    )
+
+
+_FINISH_RUN_MESSAGES: dict[str, str] = {
+    "victory": "The party has triumphed. The adventure ends in victory.",
+    "defeat": "The party has fallen. The adventure ends in defeat.",
+    "authored": "The story has run its course.",
+}
+
+
+async def finish_run(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    outcome: Literal["victory", "defeat", "authored"],
+    turn_id: str | None = None,
+) -> MutationResult:
+    """Marks `run_id` finished with `outcome` (sprint 011/03, WI2): sets
+    `status="finished"` on the run and appends one player-visible `system`
+    event carrying the ending prose plus `details.outcome` -- there is no
+    column for how a run ended and the persistence boundary forbids adding
+    one (← research), so the event is the only record.
+
+    Gate order: `_require_member` -> `_get_run` -> `_require_writable` (an
+    archived run keeps raising `RunArchivedError`). A run already
+    `status="finished"` is refused, typed, rather than raising -- calling
+    this twice is an expected shape (`use_exit`'s own last-adventure branch
+    and a retried `authored` ending can both reach here), not a programming
+    error.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+    run = await _get_run(db, run_id)
+    _require_writable(run)
+
+    if run.status == "finished":
+        reason = f"campaign run is already finished: {run_id}"
+        event = await append_event(
+            db,
+            run_id=run_id,
+            type="tool_call",
+            visibility="dm",
+            turn_id=turn_id,
+            payload={
+                "name": "finish_run",
+                "args": {"outcome": outcome},
+                "roll_ids": [],
+                "result": "refused",
+                "outcome": {"reason": reason},
+            },
+        )
+        await db.commit()
+        return MutationResult(status="refused", reason=reason, event_ids=[event.id])
+
+    run.status = "finished"
+
+    ending_event = await append_event(
+        db,
+        run_id=run_id,
+        type="system",
+        visibility="player",
+        turn_id=turn_id,
+        payload={"message": _FINISH_RUN_MESSAGES[outcome], "details": {"outcome": outcome}},
+    )
+    tool_call_event = await append_event(
+        db,
+        run_id=run_id,
+        type="tool_call",
+        visibility="dm",
+        turn_id=turn_id,
+        payload={
+            "name": "finish_run",
+            "args": {"outcome": outcome},
+            "roll_ids": [],
+            "result": "ok",
+            "outcome": {},
+        },
+    )
+    await db.commit()
+    return MutationResult(
+        status="ok",
+        event_ids=[ending_event.id, tool_call_event.id],
+        facts={"outcome": outcome},
+    )
 
 
 async def _get_game_object(db: AsyncSession, object_id: str) -> GameObject:
