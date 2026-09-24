@@ -39,6 +39,10 @@ or writes an event.
   telling the model what actually happened (and flagging any
   `attack`/`damage` roll no matching tool call has consumed yet) before
   it narrates, with an explicit rule not to contradict it.
+- `agent/flow_state.py` — sprint 011/05, WI1: the new flow's checkpoint-native
+  state (`GameFlowState`, `OperationKind` and its dataclasses) that the old
+  graph below does not use yet; `agent/state.py`'s `DmState`/`DmContext`
+  still runs the live graph untouched.
 - `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id,
   `record_action` —
   what tools need and the model must never supply) and readers.
