@@ -77,7 +77,7 @@ def validate_refs(situation: Situation, op: Operation) -> str | None:
     loose_item_ids = {item.id for item in situation.loose_items}
     known_ids = actor_ids | fixture_ids | exit_ids | inventory_ids | loose_item_ids
 
-    for key in ("actor_id", "target_id"):
+    for key in ("actor_id", "target_id", "from_id", "to_id"):
         value = payload.get(key)
         if value is not None and value not in actor_ids:
             return "stale_reference"

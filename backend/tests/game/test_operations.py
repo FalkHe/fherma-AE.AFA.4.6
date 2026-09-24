@@ -121,3 +121,29 @@ def test_execute_operation_refuses_a_stale_actor_reference_without_a_service_cal
     assert result.reason == "stale_reference"
     assert delta == {}
     assert called is False
+
+
+def test_execute_operation_refuses_give_item_with_a_stale_receiver(monkeypatch):
+    called = False
+
+    async def fake_give(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(playthrough_service, "give", fake_give)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.GIVE_ITEM,
+        payload={"from_id": "hero-1", "to_id": "ghost-not-present", "item_id": "item-1"},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "refused"
+    assert result.reason == "stale_reference"
+    assert delta == {}
+    assert called is False
