@@ -9,9 +9,9 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
-| 2 | open | after WI1's effects |
-| 3 | open | after WI1's effects |
+| 1 | done | effects, pure scheduler, plan builders, eligibility, guard, resume mapping; table test |
+| 2 | running | |
+| 3 | done | folded into WI1 (resume_operation in advance.py) |
 
 Status: `open | running | done | failed`
 
