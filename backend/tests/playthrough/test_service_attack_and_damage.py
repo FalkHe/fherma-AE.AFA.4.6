@@ -265,145 +265,6 @@ async def _rolled(db, *, user_id, actor_id, kind, context, face, visibility="dm"
 
 
 @pytest.mark.database
-def test_attack_hits_when_the_total_meets_the_targets_armour_class(playthrough_db):
-    async def _scenario():
-        user_id, run, character = await _reach_lair_maw(playthrough_db, username="attack-hit")
-        goblin_id = (await _goblin_ids(playthrough_db, run_id=run.id))[0]
-        knife_id = await _owned_object_id(
-            playthrough_db, owner_id=character.id, template_id=KNIFE_TEMPLATE
-        )
-        turn_id = generate_id()
-
-        # goblin AC 13; face 15 + to_hit 4 = 19, not a natural 20.
-        attack_roll = await _rolled(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            kind="attack",
-            context={"item_id": KNIFE_TEMPLATE},
-            face=15,
-            turn_id=turn_id,
-        )
-
-        outcome = await service.attack(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            target_id=goblin_id,
-            item_id=knife_id,
-            roll_id=attack_roll.id,
-            turn_id=turn_id,
-        )
-        assert outcome == "hit"
-
-        ok_calls = await _tool_calls(playthrough_db, run.id, result="ok", name="attack")
-        assert len(ok_calls) == 1
-        call = ok_calls[0]
-        assert call["args"] == {
-            "actorId": character.id,
-            "targetId": goblin_id,
-            "itemId": knife_id,
-            "rollId": attack_roll.id,
-        }
-        assert call["rollIds"] == [attack_roll.id]
-        assert call["outcome"] == {
-            "outcome": "hit",
-            "total": 19,
-            "natural": 15,
-            "armourClass": 13,
-        }
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
-def test_attack_misses_when_the_total_falls_short(playthrough_db):
-    async def _scenario():
-        user_id, run, character = await _reach_lair_maw(playthrough_db, username="attack-miss")
-        goblin_id = (await _goblin_ids(playthrough_db, run_id=run.id))[0]
-        knife_id = await _owned_object_id(
-            playthrough_db, owner_id=character.id, template_id=KNIFE_TEMPLATE
-        )
-        turn_id = generate_id()
-
-        # goblin AC 13; face 3 + to_hit 4 = 7.
-        attack_roll = await _rolled(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            kind="attack",
-            context={"item_id": KNIFE_TEMPLATE},
-            face=3,
-            turn_id=turn_id,
-        )
-
-        outcome = await service.attack(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            target_id=goblin_id,
-            item_id=knife_id,
-            roll_id=attack_roll.id,
-            turn_id=turn_id,
-        )
-        assert outcome == "miss"
-
-        ok_calls = await _tool_calls(playthrough_db, run.id, result="ok", name="attack")
-        assert ok_calls[0]["outcome"]["outcome"] == "miss"
-        assert ok_calls[0]["outcome"]["total"] == 7
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
-def test_attack_crits_on_a_natural_20_even_when_the_total_would_not_meet_the_armour_class(
-    playthrough_db,
-):
-    async def _scenario():
-        user_id, run, character = await _reach_lair_maw(playthrough_db, username="attack-crit")
-        goblin_id = (await _goblin_ids(playthrough_db, run_id=run.id))[0]
-        knife_id = await _owned_object_id(
-            playthrough_db, owner_id=character.id, template_id=KNIFE_TEMPLATE
-        )
-        # No shipped armour class is high enough to fall short of a
-        # natural 20 with a +4 to-hit -- raised here so the assertion
-        # genuinely distinguishes "crit" from "hit", not just from "miss".
-        await _set_armour_class(playthrough_db, goblin_id, 999)
-        turn_id = generate_id()
-
-        attack_roll = await _rolled(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            kind="attack",
-            context={"item_id": KNIFE_TEMPLATE},
-            face=20,
-            turn_id=turn_id,
-        )
-
-        outcome = await service.attack(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            target_id=goblin_id,
-            item_id=knife_id,
-            roll_id=attack_roll.id,
-            turn_id=turn_id,
-        )
-        assert outcome == "crit"
-
-        ok_calls = await _tool_calls(playthrough_db, run.id, result="ok", name="attack")
-        assert ok_calls[0]["outcome"] == {
-            "outcome": "crit",
-            "total": 24,
-            "natural": 20,
-            "armourClass": 999,
-        }
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
 def test_attack_from_a_monsters_own_stat_block_needs_no_item(playthrough_db):
     async def _scenario():
         user_id, run, character = await _reach_lair_maw(playthrough_db, username="attack-monster")
@@ -429,7 +290,7 @@ def test_attack_from_a_monsters_own_stat_block_needs_no_item(playthrough_db):
             roll_id=attack_roll.id,
             turn_id=turn_id,
         )
-        assert outcome == "hit"
+        assert outcome.status == "hit"
 
         ok_calls = await _tool_calls(playthrough_db, run.id, result="ok", name="attack")
         assert "itemId" not in ok_calls[0]["args"]
@@ -711,7 +572,7 @@ def test_damage_lowers_hp_and_clamps_at_zero_killing_a_memberless_creature(playt
             hit_id=hit_id,
             turn_id=turn_id,
         )
-        assert applied == 7
+        assert applied.applied == 7
 
         row = await _object_row(playthrough_db, goblin_id)
         assert row.current_hp == 0
@@ -775,7 +636,7 @@ def test_damage_leaves_a_character_alive_and_down_at_zero_hp(playthrough_db):
             hit_id=hit_id,
             turn_id=turn_id,
         )
-        assert applied == 5
+        assert applied.applied == 5
 
         row = await _object_row(playthrough_db, character.id)
         assert row.current_hp == 0
@@ -1129,7 +990,7 @@ def test_ac4_a_sheet_born_characters_full_state_survives_a_damage_write_back(pla
             hit_id=hit_id,
             turn_id=turn_id,
         )
-        assert applied == 11
+        assert applied.applied == 11
 
         row = await _object_row(playthrough_db, character.id)
         assert row.current_hp == 0
@@ -1189,7 +1050,7 @@ def test_ac5_attack_resolves_from_a_carried_rows_own_state_and_a_template_item_s
             roll_id=attack_roll.id,
             turn_id=turn_id,
         )
-        assert outcome == "hit"
+        assert outcome.status == "hit"
 
         damage_roll = await _rolled(
             playthrough_db,
@@ -1233,6 +1094,6 @@ def test_ac5_attack_resolves_from_a_carried_rows_own_state_and_a_template_item_s
             roll_id=seed_attack_roll.id,
             turn_id=seed_turn_id,
         )
-        assert seed_outcome == "hit"
+        assert seed_outcome.status == "hit"
 
     asyncio.run(_scenario())

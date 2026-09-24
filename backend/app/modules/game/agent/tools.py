@@ -41,6 +41,7 @@ from app.modules.game.agent.state import (
     DmContext,
 )
 from app.modules.playthrough import models as playthrough_models
+from app.modules.playthrough import schemas as playthrough_schemas
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import (
     GameObjectNotFoundError,
@@ -366,24 +367,28 @@ async def roll_initiative(
     """Roll initiative for two opposing sides to determine turn order.
     `side_a_ids` and `side_b_ids` are lists of actor IDs for each side."""
     ctx = runtime.context
-    event_a, event_b = await playthrough_service.roll_initiative(
+    if not ctx.run_id:
+        raise ValueError("run_id is required for roll_initiative.")
+    result = await playthrough_service.settle_initiative(
         ctx.db,
         user_id=ctx.user_id,
-        side_a_ids=side_a_ids,
-        side_b_ids=side_b_ids,
+        run_id=ctx.run_id,
+        hero_ids=side_a_ids,
+        hostile_ids=side_b_ids,
         turn_id=ctx.turn_id,
     )
     return {
         "side_a": {
-            "id": event_a.id,
-            "type": event_a.type,
-            "payload": event_a.payload,
+            "id": result.hero_roll_id,
+            "type": "roll",
+            "payload": {"kind": "initiative", "total": result.hero_total},
         },
         "side_b": {
-            "id": event_b.id,
-            "type": event_b.type,
-            "payload": event_b.payload,
+            "id": result.hostile_roll_id,
+            "type": "roll",
+            "payload": {"kind": "initiative", "total": result.hostile_total},
         },
+        "order": result.order,
     }
 
 
@@ -838,7 +843,7 @@ async def attack(
                 "living_creatures": creatures,
             }
 
-    async def _do_attack(actor: str) -> str:
+    async def _do_attack(actor: str) -> playthrough_schemas.AttackResult:
         return await playthrough_service.attack(
             ctx.db,
             user_id=ctx.user_id,
@@ -850,7 +855,7 @@ async def attack(
         )
 
     try:
-        target_actor_id, outcome, hint = await _run_for_actor(ctx, ref, _do_attack)
+        target_actor_id, result, hint = await _run_for_actor(ctx, ref, _do_attack)
     except (GameObjectNotFoundError, ObjectNotReachableError) as exc:
         return {
             "status": "not_in_scene",
@@ -861,19 +866,10 @@ async def attack(
     if hint is not None:
         return hint
 
-    hit_id = None
-    if outcome in ("hit", "crit"):
-        stmt = (
-            select(playthrough_models.Event.id)
-            .where(
-                playthrough_models.Event.type == "tool_call",
-                playthrough_models.Event.turn_id == ctx.turn_id,
-            )
-            .order_by(playthrough_models.Event.id.desc())
-            .limit(1)
-        )
-        result = await ctx.db.execute(stmt)
-        hit_id = result.scalar_one_or_none()
+    # `result.status` spells a critical out in full; the tool's own wire
+    # shape keeps the shorter "crit" it has always reported (← finding,
+    # WI2 -- no reason to also change what the model reads back).
+    outcome = "crit" if result.status == "critical" else result.status
 
     return {
         "status": "ok",
@@ -882,7 +878,7 @@ async def attack(
         "target_id": target_id,
         "item_id": item_id,
         "roll_id": roll_id,
-        "hit_id": hit_id,
+        "hit_id": result.hit_id,
     }
 
 
@@ -902,14 +898,30 @@ async def damage(
     (plus `living_creatures` when the target could not be found), so your
     next call can be right."""
     ctx = runtime.context
+    # `hit_id` is the landed `attack` tool_call's own event id; its stored
+    # outcome already says whether that hit was a critical one, cheaper
+    # than asking the model to remember and re-pass its own `attack`
+    # result (WI2, I2). A hit that turns out not to exist or not to be a
+    # `tool_call` at all is left for `playthrough_service.damage` -> `_
+    # consume_hit` to refuse below, exactly as before.
+    hit_event_result = await ctx.db.execute(
+        select(playthrough_models.Event).where(playthrough_models.Event.id == hit_id)
+    )
+    hit_event = hit_event_result.scalar_one_or_none()
+    critical = (
+        hit_event is not None
+        and hit_event.type == "tool_call"
+        and hit_event.payload.get("outcome", {}).get("outcome") == "crit"
+    )
     try:
-        applied = await playthrough_service.damage(
+        result = await playthrough_service.damage(
             ctx.db,
             user_id=ctx.user_id,
             target_id=target_id,
             roll_id=roll_id,
             hit_id=hit_id,
             turn_id=ctx.turn_id,
+            critical=critical,
         )
     except GameObjectNotFoundError as exc:
         return {
@@ -929,7 +941,7 @@ async def damage(
         "target_id": target_id,
         "roll_id": roll_id,
         "hit_id": hit_id,
-        "applied": applied,
+        "applied": result.applied,
     }
 
 

@@ -455,7 +455,7 @@ def test_ac1_attack_compares_the_roll_to_armour_and_refuses_the_rest(playthrough
             roll_id=miss_roll.id,
             turn_id=miss_turn,
         )
-        assert miss_outcome == "miss"
+        assert miss_outcome.status == "miss"
 
         # -- A hit: total (13) exactly reaches the armour class, not a
         # natural 20.
@@ -478,7 +478,7 @@ def test_ac1_attack_compares_the_roll_to_armour_and_refuses_the_rest(playthrough
             roll_id=hit_roll.id,
             turn_id=hit_turn,
         )
-        assert hit_outcome == "hit"
+        assert hit_outcome.status == "hit"
 
         # -- A natural 20: a crit regardless of the armour it is measured
         # against -- the total (24) would already have hit on its own, so
@@ -503,7 +503,7 @@ def test_ac1_attack_compares_the_roll_to_armour_and_refuses_the_rest(playthrough
             roll_id=crit_roll.id,
             turn_id=crit_turn,
         )
-        assert crit_outcome == "crit"
+        assert crit_outcome.status == "critical"
 
         ok_calls = await _tool_calls(playthrough_db, run.id, name="attack", result="ok")
         assert len(ok_calls) == 3
@@ -715,13 +715,8 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
             roll_id=hit1_roll.id,
             turn_id=turn1,
         )
-        assert outcome1 == "hit"
-        hit1 = next(
-            c
-            for c in await _tool_calls(playthrough_db, run.id, name="attack", result="ok")
-            if c["rollIds"] == [str(hit1_roll.id)]
-        )
-        hit1_id = hit1["id"]
+        assert outcome1.status == "hit"
+        hit1_id = outcome1.hit_id
 
         # A `hit_id` from another turn is refused before it is ever
         # spent -- the roll offered alongside it is otherwise entirely
@@ -769,7 +764,7 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
             hit_id=hit1_id,
             turn_id=turn1,
         )
-        assert applied1 == 6
+        assert applied1.applied == 6
         after_damage1 = await _object_row(playthrough_db, target_goblin)
         assert after_damage1.current_hp == GOBLIN_MAX_HP - 6 == 1
         assert after_damage1.is_alive is True
@@ -835,12 +830,8 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
             roll_id=hit2_roll.id,
             turn_id=turn2,
         )
-        assert outcome2 == "hit"
-        hit2_id = next(
-            c
-            for c in await _tool_calls(playthrough_db, run.id, name="attack", result="ok")
-            if c["rollIds"] == [str(hit2_roll.id)]
-        )["id"]
+        assert outcome2.status == "hit"
+        hit2_id = outcome2.hit_id
 
         damage2_roll = await _rolled(
             playthrough_db,
@@ -859,7 +850,7 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
             hit_id=hit2_id,
             turn_id=turn2,
         )
-        assert applied2 == 1  # clamped: rolled 6, only 1 hp remained
+        assert applied2.applied == 1  # clamped: rolled 6, only 1 hp remained
         after_damage2 = await _object_row(playthrough_db, target_goblin)
         assert after_damage2.current_hp == 0
         assert after_damage2.is_alive is False
@@ -895,7 +886,7 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
             roll_id=miss_roll.id,
             turn_id=turn3,
         )
-        assert miss_outcome == "miss"
+        assert miss_outcome.status == "miss"
         miss_hit_id = next(
             c
             for c in await _tool_calls(playthrough_db, run.id, name="attack", result="ok")
@@ -946,12 +937,8 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
             roll_id=goblin_hit1_roll.id,
             turn_id=turn4,
         )
-        assert goblin_outcome1 == "hit"
-        goblin_hit1_id = next(
-            c
-            for c in await _tool_calls(playthrough_db, run.id, name="attack", result="ok")
-            if c["rollIds"] == [str(goblin_hit1_roll.id)]
-        )["id"]
+        assert goblin_outcome1.status == "hit"
+        goblin_hit1_id = goblin_outcome1.hit_id
         goblin_damage1_roll = await _rolled(
             playthrough_db,
             user_id=owner_id,
@@ -969,7 +956,7 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
             hit_id=goblin_hit1_id,
             turn_id=turn4,
         )
-        assert applied_to_char1 == 8
+        assert applied_to_char1.applied == 8
         after_char1 = await _object_row(playthrough_db, character.id)
         assert after_char1.current_hp == CHARACTER_MAX_HP - 8 == 4
         assert after_char1.is_alive is True
@@ -993,12 +980,8 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
             roll_id=goblin_hit2_roll.id,
             turn_id=turn5,
         )
-        assert goblin_outcome2 == "hit"
-        goblin_hit2_id = next(
-            c
-            for c in await _tool_calls(playthrough_db, run.id, name="attack", result="ok")
-            if c["rollIds"] == [str(goblin_hit2_roll.id)]
-        )["id"]
+        assert goblin_outcome2.status == "hit"
+        goblin_hit2_id = goblin_outcome2.hit_id
         goblin_damage2_roll = await _rolled(
             playthrough_db,
             user_id=owner_id,
@@ -1016,7 +999,7 @@ def test_ac2_damage_is_bound_to_the_hit_that_landed_it(playthrough_db):
             hit_id=goblin_hit2_id,
             turn_id=turn5,
         )
-        assert applied_to_char2 == 4  # clamped: rolled 8, only 4 hp remained
+        assert applied_to_char2.applied == 4  # clamped: rolled 8, only 4 hp remained
         after_char2 = await _object_row(playthrough_db, character.id)
         assert after_char2.current_hp == 0
         assert after_char2.is_alive is True  # a character never becomes not-alive here
@@ -1071,7 +1054,7 @@ def test_ac3_one_attack_per_turn_and_a_monster_needs_no_player_roll(playthrough_
             roll_id=attack_roll.id,
             turn_id=turn,
         )
-        assert outcome == "hit"
+        assert outcome.status == "hit"
 
         # -- A second attack by the very same creature, same turn, is
         # refused -- even against a different, otherwise-valid target.
@@ -1098,11 +1081,7 @@ def test_ac3_one_attack_per_turn_and_a_monster_needs_no_player_roll(playthrough_
 
         # -- The turn's wound, bound to the hit that landed it -- completed
         # without ever asking the player to roll.
-        hit_id = next(
-            c
-            for c in await _tool_calls(playthrough_db, run.id, name="attack", result="ok")
-            if c["rollIds"] == [str(attack_roll.id)]
-        )["id"]
+        hit_id = outcome.hit_id
         damage_roll = await _rolled(
             playthrough_db,
             user_id=owner_id,
@@ -1120,7 +1099,7 @@ def test_ac3_one_attack_per_turn_and_a_monster_needs_no_player_roll(playthrough_
             hit_id=hit_id,
             turn_id=turn,
         )
-        assert applied == 8
+        assert applied.applied == 8
         after = await _object_row(playthrough_db, character.id)
         assert after.current_hp == CHARACTER_MAX_HP - 8
 
@@ -1162,42 +1141,26 @@ def test_ac4_initiative_rolls_and_no_fight_is_ever_stored(playthrough_db):
         # events, and not one row of the world changes.
         objects_before = await _objects_snapshot(playthrough_db, run.id)
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(playthrough_dice, "_rng", lambda: _ScriptedRandom([15]))
-            event_a, event_b = await playthrough_service.roll_initiative(
+            mp.setattr(playthrough_dice, "_rng", lambda: _ScriptedRandom([15, 10]))
+            event_a, event_b = await playthrough_service.roll_side_initiative(
                 playthrough_db,
                 user_id=owner_id,
-                side_a_ids=[character.id],
-                side_b_ids=goblin_ids,
+                run_id=run.id,
+                hero_ids=[character.id],
+                hostile_ids=goblin_ids,
             )
-        types = {event_a.type, event_b.type}
-        assert types == {"roll_requested", "roll"}, "side_a has a member; side_b does not"
-        requested_event = event_a if event_a.type == "roll_requested" else event_b
-        outright_event = event_b if event_a.type == "roll_requested" else event_a
+        assert event_a.type == "roll"
+        assert event_b.type == "roll"
 
-        outright_row = (
-            await playthrough_db.execute(
-                text("SELECT visibility, payload FROM events WHERE id = :id"),
-                {"id": outright_event.id},
-            )
-        ).one()
-        assert outright_row.visibility == "player"
-        assert _payload(outright_row)["kind"] == "initiative"
-
-        requested_row = (
-            await playthrough_db.execute(
-                text("SELECT visibility, payload FROM events WHERE id = :id"),
-                {"id": requested_event.id},
-            )
-        ).one()
-        assert requested_row.visibility == "player"
-        assert _payload(requested_row)["kind"] == "initiative"
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(playthrough_dice, "_rng", lambda: _ScriptedRandom([10]))
-            answered = await playthrough_service.resolve_roll_request(
-                playthrough_db, user_id=owner_id, request_id=requested_event.id
-            )
-        assert answered.type == "roll"
+        for event in (event_a, event_b):
+            row = (
+                await playthrough_db.execute(
+                    text("SELECT visibility, payload FROM events WHERE id = :id"),
+                    {"id": event.id},
+                )
+            ).one()
+            assert row.visibility == "player"
+            assert _payload(row)["kind"] == "initiative"
 
         initiative_rolls = (
             await playthrough_db.execute(

@@ -9,7 +9,7 @@ suite's monkeypatching depends on it (AGENTS.md).
 import asyncio
 from collections.abc import Sequence
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 from pydantic import BaseModel, ValidationError
@@ -69,6 +69,7 @@ from app.modules.playthrough.models import (
 )
 from app.modules.playthrough.schemas import (
     EVENT_PAYLOADS,
+    AttackResult,
     CampaignRunAdventureRead,
     CampaignRunMemberRead,
     CampaignRunOverviewRead,
@@ -76,6 +77,8 @@ from app.modules.playthrough.schemas import (
     CharacterAbilities,
     CharacterRead,
     CharacterState,
+    DamageResult,
+    InitiativeResult,
     Item,
     NarrationRead,
     RollKind,
@@ -1441,67 +1444,84 @@ async def roll(
     return event
 
 
-async def _roll_for_side(
-    db: AsyncSession, *, user_id: str, side_ids: list[str], turn_id: str | None
-) -> Event:
-    """One roll for a whole side (WI2, AC4): scans `side_ids` for the
-    first one that carries a `member_id` -- a player's own character --
-    and asks it to roll through `request_player_roll`, a player's own
-    click still deciding that side's roll. A side with no member on it is
-    rolled outright instead, through `roll` at `player` visibility --
-    `roll`'s own path for a creature's roll, never `dm`'s default, since
-    an initiative roll is not DM-only bookkeeping -- on the side's own
-    first id, there being no other id to prefer once none of them is a
-    member's own character.
-    """
-    for candidate_id in side_ids:
-        candidate = await _get_game_object(db, candidate_id)
-        if candidate.member_id is not None:
-            return await request_player_roll(
-                db,
-                user_id=user_id,
-                actor_id=candidate_id,
-                kind="initiative",
-                context={},
-                turn_id=turn_id,
-            )
-    return await roll(
-        db,
-        user_id=user_id,
-        actor_id=side_ids[0],
-        kind="initiative",
-        context={},
-        visibility="player",
-        turn_id=turn_id,
-    )
-
-
-async def roll_initiative(
+async def roll_side_initiative(
     db: AsyncSession,
     *,
     user_id: str,
-    side_a_ids: list[str],
-    side_b_ids: list[str],
+    run_id: str,
+    hero_ids: list[str],
+    hostile_ids: list[str],
     turn_id: str | None = None,
 ) -> tuple[Event, Event]:
-    """Rolls to see who acts first (WI2, AC4) -- two sides, each a list of
-    object ids and nothing else. Thin composition over `request_player_
-    roll` and `roll`, both already existing producers: per side,
-    `_roll_for_side` asks whichever id is a member's own character,
-    otherwise rolls the side outright. Dexterity is derived by the server
-    the same way every other formula is (← D6, `dice.derive_formula`) --
-    this function never takes a number of its own.
+    """One roll per side (WI1, AC1/AC4): gates `run_id` once, then rolls
+    each side outright, through `roll` at `player` visibility -- `roll`'s
+    own path for a creature's roll, never `dm`'s default, since an
+    initiative roll is not DM-only bookkeeping -- on the side's own first
+    id. Settlement needs both totals in the same call (`settle_initiative`),
+    so unlike an ability check or a save this is never asked of the player
+    through `request_player_roll`: a side with a member's own character on
+    it rolls exactly like one without. Exactly two roll events result, one
+    per side (AC1)."""
+    await _require_ready_or_active_run(db, run_id=run_id, user_id=user_id)
 
-    Writes no row beyond whichever `roll_requested` / `roll` events those
-    two calls already write on their own, and no `tool_call` -- finding
-    out who goes first spends nobody's turn, so there is nothing here for
-    a pass or a refusal to be recorded against. Nothing about a fight is
-    stored anywhere else either (← D7, 003-D8): no encounter, no turn
-    order, no `in_combat` flag, on this call or any other in this module.
-    """
-    event_a = await _roll_for_side(db, user_id=user_id, side_ids=side_a_ids, turn_id=turn_id)
-    event_b = await _roll_for_side(db, user_id=user_id, side_ids=side_b_ids, turn_id=turn_id)
-    return event_a, event_b
+    async def _roll_one_side(side_ids: list[str]) -> Event:
+        return await roll(
+            db,
+            user_id=user_id,
+            actor_id=side_ids[0],
+            kind="initiative",
+            context={},
+            visibility="player",
+            turn_id=turn_id,
+        )
+
+    hero_event = await _roll_one_side(hero_ids)
+    hostile_event = await _roll_one_side(hostile_ids)
+    return hero_event, hostile_event
+
+
+async def settle_initiative(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    hero_ids: list[str],
+    hostile_ids: list[str],
+    turn_id: str | None = None,
+) -> InitiativeResult:
+    """Rolls to see who acts first, then settles a stable side and actor
+    order once per fight (WI1, AC1/AC2) -- one hero-side roll and one
+    hostile-side roll from `roll_side_initiative`, compared by total, the
+    hero side winning a tie (intent §1.3). `order` lists every actor id,
+    the winning side first then the other, each side keeping its own
+    given id order -- the only settlement this call performs; nothing
+    about a fight is stored anywhere else (← D7, 003-D8): no encounter,
+    no turn order, no `in_combat` flag, on this call or any other in this
+    module."""
+    hero_event, hostile_event = await roll_side_initiative(
+        db,
+        user_id=user_id,
+        run_id=run_id,
+        hero_ids=hero_ids,
+        hostile_ids=hostile_ids,
+        turn_id=turn_id,
+    )
+    hero_total = RollPayload.model_validate(hero_event.payload).total
+    hostile_total = RollPayload.model_validate(hostile_event.payload).total
+    winning_side: Literal["hero", "hostile"] = (
+        "hostile" if hostile_total > hero_total else "hero"
+    )
+    order = (
+        [*hero_ids, *hostile_ids] if winning_side == "hero" else [*hostile_ids, *hero_ids]
+    )
+    return InitiativeResult(
+        hero_total=hero_total,
+        hostile_total=hostile_total,
+        hero_roll_id=hero_event.id,
+        hostile_roll_id=hostile_event.id,
+        winning_side=winning_side,
+        order=order,
+    )
 
 
 def authored_check(entry: Secret | FixtureCheck) -> tuple[AbilityName, str | None, int]:
@@ -2620,7 +2640,7 @@ async def attack(
     item_id: str | None = None,
     roll_id: str,
     turn_id: str | None = None,
-) -> str:
+) -> AttackResult:
     """Measures an `attack` roll against `target_id`'s own armour class,
     appending the outcome on a `tool_call` -- never a row (WI1, AC1):
     nothing about a swing landing or missing changes any `objects` row,
@@ -2650,7 +2670,15 @@ async def attack(
     armour class. Otherwise a `hit` when the total reaches the target's
     `armour_class`, else a `miss`. `tool_call` `ok`: `args {actorId,
     targetId, itemId?, rollId}`, `roll_ids [roll_id]`, `outcome {outcome,
-    total, natural, armourClass}`.
+    total, natural, armourClass}` -- the stored `outcome` string stays
+    `hit`/`crit`/`miss` (`_consume_hit`'s own check), the returned
+    `AttackResult.status` spells the third one out as `critical` (WI2,
+    I2).
+
+    Returns an `AttackResult` naming the `tool_call` event's own id as
+    `hit_id` on `hit`/`critical`, `None` on a `miss` -- there is nothing
+    for `damage` to consume when nothing landed, and no more scanning the
+    transcript for the newest event to guess it (← finding, WI2).
     """
     actor, run = await _resolve_actor_and_run(db, actor_id=actor_id, user_id=user_id)
 
@@ -2735,7 +2763,7 @@ async def attack(
         args["itemId"] = item_id
     args["rollId"] = roll_id
 
-    await append_event(
+    hit_event = await append_event(
         db,
         run_id=run.id,
         type="tool_call",
@@ -2755,7 +2783,13 @@ async def attack(
         },
     )
     await db.commit()
-    return outcome_name
+    return AttackResult(
+        status="critical" if outcome_name == "crit" else outcome_name,  # type: ignore[arg-type]
+        hit_id=hit_event.id if outcome_name in ("hit", "crit") else None,
+        total=total,
+        natural=natural,
+        armour_class=armour_class,
+    )
 
 
 async def _hit_already_damaged(
@@ -2855,10 +2889,23 @@ async def damage(
     roll_id: str,
     hit_id: str,
     turn_id: str | None = None,
-) -> int:
+    critical: bool = False,
+) -> DamageResult:
     """Applies the hit `hit_id` named -- an `attack` `tool_call`'s own
     event id -- to `target_id`, clamped so hit points never fall below 0
-    (WI1, AC2). Returns the hit points actually applied.
+    (WI1, AC2). Returns a `DamageResult` naming the hit points actually
+    applied.
+
+    `critical=True` (WI2, I2, intent §1.4) doubles the consumed roll's own
+    dice -- never the flat modifier: `applied` is derived from `2 *
+    sum(faces) + modifier`, not the roll's own `total`. The `damage` roll
+    is normally requested and rolled before `attack` settles hit/miss/
+    critical, so its own formula is never crit-aware (`dice.derive_
+    formula`'s `context={"critical": True}` doubling is for a caller that
+    requests the roll already knowing the hit was critical); doubling here
+    instead, from the roll's own `faces`/`modifier`, applies the same rule
+    -- double the dice, the modifier once -- without discarding an
+    already-spent roll or rolling a second one.
 
     No `actor_id`: unlike every other mechanic in this module, `damage` is
     anchored on the *target* it wounds, not on whoever struck it (that
@@ -2928,6 +2975,8 @@ async def damage(
         raise
 
     total = consumed.payload["total"]
+    if critical:
+        total = 2 * sum(consumed.payload["faces"]) + consumed.payload["modifier"]
     before_hp = target.current_hp
     applied = min(total, target.current_hp)
     target.current_hp -= applied
@@ -2980,7 +3029,13 @@ async def damage(
         },
     )
     await db.commit()
-    return applied
+    return DamageResult(
+        applied=applied,
+        current_hp=target.current_hp,
+        max_hp=target.max_hp,
+        is_alive=target.is_alive,
+        down=down,
+    )
 
 
 async def append_event(

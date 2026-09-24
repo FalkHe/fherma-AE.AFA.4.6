@@ -549,30 +549,30 @@ def test_passive_check_tool_evaluates_score_without_rolling(prompt, monkeypatch)
 
 
 def test_roll_initiative_tool_rolls_both_sides(prompt, monkeypatch):
+    from app.modules.playthrough import schemas as playthrough_schemas
+
     initiative_calls = []
 
-    async def fake_roll_initiative(db, *, user_id, side_a_ids, side_b_ids, turn_id=None):
+    async def fake_settle_initiative(db, *, user_id, run_id, hero_ids, hostile_ids, turn_id=None):
         initiative_calls.append(
             {
                 "user_id": user_id,
-                "side_a_ids": side_a_ids,
-                "side_b_ids": side_b_ids,
+                "run_id": run_id,
+                "hero_ids": hero_ids,
+                "hostile_ids": hostile_ids,
                 "turn_id": turn_id,
             }
         )
-        event_a = _Event(
-            payload={"kind": "initiative", "total": 18, "formula": "1d20+2"},
-            id="init-event-a",
-            type="roll",
+        return playthrough_schemas.InitiativeResult(
+            hero_total=18,
+            hostile_total=12,
+            hero_roll_id="init-event-a",
+            hostile_roll_id="init-event-b",
+            winning_side="hero",
+            order=["hero-1", "goblin-1"],
         )
-        event_b = _Event(
-            payload={"kind": "initiative", "total": 12, "formula": "1d20+1"},
-            id="init-event-b",
-            type="roll",
-        )
-        return event_a, event_b
 
-    monkeypatch.setattr(tools.playthrough_service, "roll_initiative", fake_roll_initiative)
+    monkeypatch.setattr(tools.playthrough_service, "settle_initiative", fake_settle_initiative)
 
     init_call = AIMessage(
         content="",
@@ -592,8 +592,9 @@ def test_roll_initiative_tool_rolls_both_sides(prompt, monkeypatch):
     assert initiative_calls == [
         {
             "user_id": "user-1",
-            "side_a_ids": ["hero-1"],
-            "side_b_ids": ["goblin-1"],
+            "run_id": "run-1",
+            "hero_ids": ["hero-1"],
+            "hostile_ids": ["goblin-1"],
             "turn_id": "turn-1",
         }
     ]
@@ -1528,6 +1529,8 @@ def test_action_tool_refusal_is_caught_and_narrated(prompt, monkeypatch):
 
 
 def test_combat_tools_delegate_to_playthrough_service(prompt, monkeypatch):
+    from app.modules.playthrough import schemas as playthrough_schemas
+
     calls = []
 
     async def fake_attack(db, *, user_id, actor_id, target_id, roll_id, item_id=None, turn_id=None):
@@ -1542,9 +1545,11 @@ def test_combat_tools_delegate_to_playthrough_service(prompt, monkeypatch):
                 "turn_id": turn_id,
             }
         )
-        return "hit"
+        return playthrough_schemas.AttackResult(
+            status="hit", hit_id="hit-event-1", total=19, natural=15, armour_class=13
+        )
 
-    async def fake_damage(db, *, user_id, target_id, roll_id, hit_id, turn_id=None):
+    async def fake_damage(db, *, user_id, target_id, roll_id, hit_id, turn_id=None, critical=False):
         calls.append(
             {
                 "tool": "damage",
@@ -1555,7 +1560,9 @@ def test_combat_tools_delegate_to_playthrough_service(prompt, monkeypatch):
                 "turn_id": turn_id,
             }
         )
-        return 7
+        return playthrough_schemas.DamageResult(
+            applied=7, current_hp=0, max_hp=7, is_alive=False, down=False
+        )
 
     monkeypatch.setattr(tools.playthrough_service, "attack", fake_attack)
     monkeypatch.setattr(tools.playthrough_service, "damage", fake_damage)

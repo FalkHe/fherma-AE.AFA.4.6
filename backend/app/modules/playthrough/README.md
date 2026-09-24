@@ -100,7 +100,10 @@ Owns a player's playthrough of a campaign and who may act in it.
   content template) reads its attacks from its own `state["attacks"]`;
   otherwise
   `context["item_id"]`'s content template, when given, or the actor's own
-  stat block, exactly as before. Neither function has a `formula`,
+  stat block, exactly as before. A `damage` roll with a truthy
+  `context["critical"]` doubles the attack's own dice count alone, never
+  its flat modifier (`1d8+3` -> `2d8+3`, sprint 011/02, WI2, intent §1.4).
+  Neither function has a `formula`,
   `modifier`, `bonus`, `faces` or `total` parameter — there is no argument
   through which a caller could pass one in.
 
@@ -392,16 +395,19 @@ Service functions (`service.py`), called as `service.f(...)`:
   any roll the player must not see. Writes its own `roll_requested` event
   first, so the `roll` it appends still points back to a request, exactly
   as `resolve_roll_request`'s does.
-- `roll_initiative` — takes two sides, each a list of object ids, and
-  nothing else. Per side, the first row that carries a `member_id` goes
-  through `request_player_roll(kind="initiative")` — a player's own click
-  still decides that side's roll — otherwise the side is rolled outright
-  through `roll(..., visibility="player")`, `roll`'s own path above for a
-  creature's roll. Writes no row beyond whichever `roll_requested` / `roll`
-  events those two calls already write on their own, and no `tool_call` —
-  finding out who goes first spends nobody's turn, so there is nothing here
-  for a pass or a refusal to be recorded against. Full behaviour is
-  `docs/modules/playthrough.md` §20.
+- `roll_side_initiative` — takes a `run_id` plus `hero_ids`/`hostile_ids`,
+  each a list of object ids, and rolls each side outright on its own first
+  id through `roll(kind="initiative", visibility="player")` — exactly two
+  `roll` events, never a `request_player_roll`, since `settle_initiative`
+  needs both totals in the same call. Writes no `tool_call` — finding out
+  who goes first spends nobody's turn.
+- `settle_initiative` — calls `roll_side_initiative` then compares the two
+  totals, the hero side winning a tie, and returns an `InitiativeResult`
+  with both totals, both roll ids, the winning side and a stable actor
+  order (winning side first, each side keeping its own given id order).
+  Nothing about the fight is stored anywhere (no encounter, no turn order,
+  no `in_combat` flag). Full behaviour is `docs/modules/playthrough.md`
+  §20.
 - `resolve_actor_ref` / `describe_scene_creatures` (sprint 010/10, ←
   finding: a scene with several identically-named monsters gave the DM
   agent no way to tell them apart, and no actionable way back when it
@@ -578,7 +584,11 @@ Service functions (`service.py`), called as `service.f(...)`:
   armourClass}}` and commits once; a refusal keeps the same shape,
   `result: "refused"`, committed on its own before the error is raised,
   the pattern every refusal in this module already keeps. Full behaviour
-  is `docs/modules/playthrough.md` §21.
+  is `docs/modules/playthrough.md` §21. Returns a frozen `AttackResult`
+  (sprint 011/02, WI2, internal, never a wire shape) naming the `tool_call`
+  event's own id as `hit_id` — `status` spells a crit out as `"critical"`
+  — so a caller no longer scans the transcript for the newest event to
+  guess it.
 - `damage` — binds a wound to the blow that landed it: takes a `damage`
   roll and a **hit id**, the event id of an `attack` `tool_call`, and reads
   its target from that entry rather than from any argument, refusing
@@ -604,7 +614,14 @@ Service functions (`service.py`), called as `service.f(...)`:
   result: "ok", outcome: {rolled, applied, currentHp, isAlive, down}}` and
   commits once; a refusal keeps the same shape, `result: "refused"`,
   committed on its own before the error is raised. Full behaviour is
-  `docs/modules/playthrough.md` §22.
+  `docs/modules/playthrough.md` §22. Returns a frozen `DamageResult`
+  (sprint 011/02, WI2, internal). An optional `critical` flag (intent
+  §1.4) doubles the consumed roll's own dice, never its flat modifier —
+  `applied` is `2 * sum(faces) + modifier`, not the roll's `total` — since
+  the `damage` roll is spent before an attack's own criticality is
+  usually known and its formula is therefore never crit-aware itself
+  (`dice.derive_formula`'s own `context["critical"]` doubling is for a
+  caller that already knows and requests the roll pre-doubled instead).
 - `get_awaiting` — reads a run's open turn back from `events` alone and
   answers `"none"`, `"roll:<eventId>"` or `"answer:<eventId>"`: the id of
   the newest `roll_requested` with no `roll` event answering it yet
@@ -700,7 +717,7 @@ accident.
 Rolling, and spending a roll once it exists, both have **no HTTP route
 either, for the same reason `use_exit` has none**: the only thing meant to
 call `request_player_roll`, `resolve_roll_request`, `roll`,
-`roll_initiative`, `passive_check`, `ask_player`, `resolve_check` or
+`roll_side_initiative`, `settle_initiative`, `passive_check`, `ask_player`, `resolve_check` or
 `resolve_save` is the Dungeon Master's own tool layer, a later phase's
 work. Until that layer exists, `app
 playthrough roll <kind> --actor <object-id> --user <user-id>` (Typer,
@@ -741,8 +758,9 @@ dealing damage all have no HTTP route either, for the same reason**:
 `interact`, `take`, `drop`, `give`, `use_item`, `attack` and `damage` are
 meant to be reached by the Dungeon Master's own tool layer, not called
 directly, and none has a CLI command of its own either — nothing outside
-the test suite calls any of them today. Neither does `roll_initiative`,
-for the same reason as every other roll above.
+the test suite calls any of them today. Neither does
+`roll_side_initiative`/`settle_initiative`, for the same reason as every
+other roll above.
 
 **One action per creature per turn** is a rule `interact` keeps and
 `take`, `give`, `use_item` and `attack` all share — five actions in all,
