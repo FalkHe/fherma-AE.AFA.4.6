@@ -3,7 +3,7 @@ author: fhit:architect
 owner: human
 created: 2026-09-24
 updated: 2026-09-24
-stage: draft
+stage: approved
 ---
 # Sprint 06: Narrow decisions and evidence-bound narration
 

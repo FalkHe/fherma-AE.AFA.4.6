@@ -3,7 +3,7 @@ author: fhit:architect
 owner: human
 created: 2026-09-24
 updated: 2026-09-24
-stage: draft
+stage: approved
 ---
 # Sprint 09: The old game flow is gone
 

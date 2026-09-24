@@ -3,7 +3,7 @@ author: fhit:architect
 owner: human
 created: 2026-09-24
 updated: 2026-09-24
-stage: draft
+stage: approved
 ---
 # Sprint 02: Fights with one roll per side, real criticals and a fallen hero
 

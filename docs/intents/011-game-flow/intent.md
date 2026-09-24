@@ -4,6 +4,7 @@ owner: human
 created: 2026-09-23
 updated: 2026-09-24
 stage: approved
+milestone: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/milestones/16
 ---
 # Game Flow
 
