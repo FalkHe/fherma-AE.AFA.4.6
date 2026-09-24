@@ -26,3 +26,4 @@ Status: `open | running | done | failed`
 ## Backlog proposals
 
 ## Verify
+Round 1: changes-requested — AC1 (turn close left pending_hit_id set), AC3 (give-item from_id/to_id not validated).

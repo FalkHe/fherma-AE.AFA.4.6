@@ -18,3 +18,4 @@ The new game flow now has its memory and its hands. Its memory is the small set 
 Brief: docs/intents/011-game-flow/sprints/05-operations-and-turn-memory/brief.md
 
 ## Verdict
+Round 1: changes requested — closing a turn does not forget an unresolved wound, so a hit never turned into damage carries into the next turn; handing an item from one creature to another is the one action that does not first check both creatures are in the scene.
