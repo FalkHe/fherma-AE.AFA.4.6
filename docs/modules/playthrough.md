@@ -1107,6 +1107,20 @@ only whatever narration the Dungeon Master goes on to write around it — an
 attack, landed or not, leaves nothing else for the player's own read of the
 game to show.
 
+**Neither side of a swing may already be down.** Before the target and item
+are even loaded, `attack` checks both the actor and the target against the
+one down-state rule §22 defines below; either one already down is refused
+exactly like a target standing in another scene, under the same
+`OBJECT_NOT_REACHABLE` code — a downed creature can no longer swing, nor be
+swung at, even though it may still sit in the same scene as everyone else.
+
+**The caller reads a typed verdict, not a bare string.** `attack` answers a
+result naming its own `status` — `hit`, `miss` or `critical` — the same
+`total`, `natural` die and `armour_class` the verdict was weighed against,
+and, on anything but a miss, the `tool_call` entry's own id as `hit_id` —
+exactly the id `damage` (§22) needs and nothing the caller has to
+rediscover by scanning the transcript for the newest entry.
+
 ## 22. Wounding, and what is left when there is nothing
 
 **Damage never names its own target — it reads one off the blow that
@@ -1126,7 +1140,12 @@ Found and usable, `damage` spends its own roll — a `damage` roll, subject
 to the very same once-only rule every other roll answers to (§14) — and
 applies it: hit points fall by the roll's total, and never below zero; a
 wound worse than what remains simply empties the creature rather than
-going negative. **What happens at zero depends on who was hit.** A monster
+going negative. **A critical hit (§21) doubles the dice, never the flat
+modifier.** When the blow that landed was a critical, `damage` does not
+apply the roll's own total outright — it re-sums the roll's own die faces,
+doubles that sum, and adds the modifier once, so a `1d8+3` roll becomes
+`2d8+3` worth of hit points rather than the plain roll doubled whole; the
+roll itself is spent exactly once either way. **What happens at zero depends on who was hit.** A monster
 with nothing left is simply **no longer alive** — the same `is_alive`
 column §6 already reserves for exactly this becomes false. A player's
 character is not treated the same way: **it stays alive, and is marked
@@ -1167,3 +1186,26 @@ attack is even weighed against anything, and a refused attempt — at
 attacking, or at anything else this document guards the same way — costs
 it nothing: the turn is only ever spent by an attempt that lands somewhere,
 never by one that is turned away.
+
+**`damage` answers a typed result too**, not a bare integer: the hit points
+actually applied, the target's current and maximum hit points afterwards,
+and whether it is still alive and/or down — the same facts the `tool_call`
+and `hp_changed` entries above already carry, read back without a second
+trip through the transcript.
+
+**Alive and down are one rule everywhere, not just at the moment of the
+blow that causes it.** A monster emptied to zero has its `is_alive` column
+flipped false, same as always; a downed character's `is_alive` never
+changes, only its `state`'s own `down` key does — so a bare `is_alive` read
+is not enough to tell a downed hero from a standing one. Every read in this
+module that lists or resolves a creature now answers the one question that
+actually matters, "can this thing act, or be acted on" — is_down(obj), true
+for a member down at zero hit points exactly as `state` records it, or for
+anything with `is_alive` false — rather than `is_alive` alone: the scene
+listing (§13) carries a `down` flag beside `is_alive` for every creature it
+names, the character's own card (§8) carries the same `down` flag, and
+resolving an actor by name (§13) treats a downed creature as absent, the
+same way it already treats a dead one — an id match still finds it
+outright, but a name never does. §21's own attack refusal is this same rule
+applied to a swing: neither the one swinging nor the one being swung at may
+already be down.
