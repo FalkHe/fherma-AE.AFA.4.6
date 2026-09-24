@@ -21,3 +21,4 @@ Until the new flow replaces the old one, the Dungeon Master may attempt a second
 Brief: docs/intents/011-game-flow/sprints/03-durable-world-changes/brief.md
 
 ## Verdict
+Round 1: approve — forcing a fixture open sticks and survives a reload, a run can finish as victory, defeat or authored ending with the ending in the transcript, expected setbacks come back as a plain refusal the Dungeon Master can narrate, and every transcript line is written by the rules layer alone.

@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-24
 updated: 2026-09-24
-stage: draft
+stage: done
 ---
 # Progress: Sprint 03
 
@@ -23,5 +23,7 @@ Status: `open | running | done | failed`
 - WI1 folded its tests into existing files instead of one new file; WI3 reported done before committing and needed a nudge. Gates passed first time.
 
 ## Backlog proposals
+- Retired error codes (exit not available, roll required, already acted, item not consumable) still exist as enum members and HTTP mappings in the core error module; sprint 09's cleanup should drop them.
 
 ## Verify
+Round 1: approve, no failed criteria.
