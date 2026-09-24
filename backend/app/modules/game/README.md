@@ -129,6 +129,13 @@ or writes an event.
   `prompts/v1/decision/*.md` prompt and its own evidence view of
   `Situation` (public for most kinds, the private view for `assess_move`
   and `world_reaction`, which need authored DCs and hidden intent).
+  The model's own prompt payload carries `allowed_operations` (the
+  strategy's own set, as literal `kind` strings) alongside `evidence` and
+  `request`, so a `read_move` proposal names a real operation kind
+  instead of guessing one (← live bug: an unlisted kind such as `move`
+  always failed `_validate`'s `unknown_operation_kind` check and, after
+  `RETRY_BUDGET`, fell back to narration-only turns with no exit, item or
+  fixture operation ever proposed).
   `read_move` and `interpret_evidence` bind exactly `lookup_rule` and
   `recall_history` — fresh closures over the call's own `DecisionContext`,
   never the live graph's `agent/tools.py` — through a plain, ungraphed
@@ -159,7 +166,12 @@ or writes an event.
   hostile's `MONSTER_ACTION`), `advance_reactions`, `advance_narration` and
   `validate_turn_close` in that order, the first non-`None` result winning.
   Also builds the deterministic `player_roll_plan()`/`attack_plan()`/
-  `complete_action_plan()` plans decisions turn into `ActionCursor.plan`s,
+  `complete_action_plan()` plans decisions turn into `ActionCursor.plan`s;
+  `_expand_read_move_plan()` defaults every proposed step's missing
+  `actor_id` to the hero, since `read_move`'s own prompt only asks the
+  model for ids the move clearly names and the acting hero is never one
+  of those (← live bug, `execute` raising `KeyError` reaching for an
+  `actor_id` no proposal ever carried),
   and `resume_operation()`, which turns a checkpointed `ResumeResult` into
   its consuming `ROLL_PLAYER`/`ACCEPT_CHOICE` operation or rejects a stale
   `request_id`. `guard_state()` is the one piece of state the caller

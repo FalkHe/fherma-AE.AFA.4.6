@@ -11,11 +11,14 @@ Answer with:
 - `refs`: any ids from `evidence` the move clearly names (actor, item,
   fixture, exit), keyed by role (e.g. `"target_id"`).
 - `proposed`: zero or more operations this move should trigger, each an
-  object with `kind` (one of the operation kinds you have been told this
-  decision may propose) and `payload` (only ids and values already present
+  object with `kind` (one of the exact strings listed in
+  `allowed_operations`) and `payload` (only ids and values already present
   in `evidence`). Leave it `null` when the move needs no operation yet
   (e.g. it first needs a roll or a reference judgement).
 
-Never invent an id that is not in `evidence`. Never propose an operation
-kind outside the ones you were told are allowed. Never decide a die
-result or a DC yourself.
+`allowed_operations` lists the only `kind` values you may use for this
+move, verbatim -- never invent, translate or rename one (for example, a
+move through a named exit is always `use_exit` with the exit's own id
+under `payload.exit_id`, never `move`, `goto_scene` or similar). Never
+invent an id that is not in `evidence`. Never propose an operation kind
+outside `allowed_operations`. Never decide a die result or a DC yourself.

@@ -474,6 +474,7 @@ async def decide(
             "evidence": evidence,
             "request": dict(request.payload),
             "evidence_ids": list(request.evidence_ids),
+            "allowed_operations": sorted(op.value for op in strategy.allowed_operations),
         }
         if reason is not None:
             human_content["previous_error"] = reason

@@ -216,6 +216,18 @@ def apply_choice_answer(state: GameFlowState) -> dict[str, Any]:
     return {"move": replace(move, refs={**move.refs, choice_key: text})}
 
 
+def _with_default_actor(hero_id: str, spec: OperationSpec) -> OperationSpec:
+    """`READ_MOVE`'s own prompt only asks the model for ids the move
+    clearly names -- the acting hero is never one of them (← live bug:
+    the model proposed a valid `use_exit`/`take_item`/... naming only the
+    object, no `actor_id`, and execution raised `KeyError` reaching for
+    one). Every operation this decision may propose acts on the hero
+    unless the model already named an actor itself."""
+    if "actor_id" in spec.payload:
+        return spec
+    return OperationSpec(kind=spec.kind, payload={**spec.payload, "actor_id": hero_id})
+
+
 def _expand_read_move_plan(
     hero_id: str, proposed: tuple[OperationSpec, ...]
 ) -> tuple[OperationSpec, ...]:
@@ -233,7 +245,8 @@ def _expand_read_move_plan(
             consumer=OperationKind(payload["consumer"]),
             payload=payload,
         )
-    return (*proposed, OperationSpec(kind=OperationKind.COMPLETE_ACTION, payload={}))
+    defaulted = tuple(_with_default_actor(hero_id, spec) for spec in proposed)
+    return (*defaulted, OperationSpec(kind=OperationKind.COMPLETE_ACTION, payload={}))
 
 
 def apply_decision(
