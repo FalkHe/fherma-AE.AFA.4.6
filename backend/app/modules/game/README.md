@@ -43,6 +43,16 @@ or writes an event.
   state (`GameFlowState`, `OperationKind` and its dataclasses) that the old
   graph below does not use yet; `agent/state.py`'s `DmState`/`DmContext`
   still runs the live graph untouched.
+- `agent/operations.py` — sprint 011/05, WI2: `OperationContext`,
+  `validate_refs` (payload ids checked against `Situation` before any
+  service call), `execute_operation` (refuses `stale_reference` first, else
+  dispatches) and `OPERATION_HANDLERS`, the merge of this file's own
+  player-input/check/combat handlers with `operations_world.WORLD_HANDLERS`.
+  Also unused by the live graph yet.
+- `agent/operations_world.py` — sprint 011/05, WI3: the world and lifecycle
+  handlers (`interact`, item transfer, exits, adventures, hostility, leave
+  scene, `RECORD_BEAT`/`COMPLETE_ACTION`/`CLOSE_TURN`/`FINISH_RUN`) that
+  `agent/operations.py` folds into `OPERATION_HANDLERS`.
 - `agent/state.py` — `DmState`, `DmContext` (session, user, actor, run id, turn id,
   `record_action` —
   what tools need and the model must never supply) and readers.
