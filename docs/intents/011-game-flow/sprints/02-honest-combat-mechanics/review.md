@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-24
 updated: 2026-09-24
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/73
 ---
 # Review: Sprint 02 — Fights with one roll per side, real criticals and a fallen hero
 
