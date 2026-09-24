@@ -403,6 +403,26 @@ def _character_abilities(scores: Abilities) -> CharacterAbilities:
     )
 
 
+def is_down(obj: GameObject) -> bool:
+    """True when `obj` cannot act, or be acted on as a living target (sprint
+    011/02, WI3, I3): any object with `is_alive == False` -- a dead
+    creature, the only way a non-member ever reaches this -- or a member's
+    own character whose `state` was written `down=True` at 0 hp
+    (`damage`'s own write). Only a character's `state` ever carries `down`;
+    a template-less monster/npc's `is_alive` already says everything there
+    is to say, so `member_id is None` short-circuits to that alone.
+
+    The one rule `damage` writes by and every read (`describe_scene_
+    creatures`, `character_read`, `resolve_actor_ref`, the live-creature
+    hint, `attack`'s own refusal) checks by -- HP, `is_alive` and `down`
+    agree everywhere (intent §1.5)."""
+    if not obj.is_alive:
+        return True
+    if obj.member_id is None:
+        return False
+    return bool(obj.state.get("down", False))
+
+
 def character_read(obj: GameObject, *, items: Sequence[GameObject] = ()) -> CharacterRead:
     """`CharacterRead` from a character `GameObject` (sprint 009-07, ←
     research Decision 5; widened WI1 sprint 010/05 into the one hero shape
@@ -430,6 +450,7 @@ def character_read(obj: GameObject, *, items: Sequence[GameObject] = ()) -> Char
         appearance=state.appearance,
         backstory=state.background,
         items=[Item(id=item.id, name=item.name) for item in items],
+        down=is_down(obj),
     )
 
 
@@ -1081,6 +1102,8 @@ async def resolve_actor_ref(db: AsyncSession, *, run_id: str, ref: str) -> GameO
     )
     result = await db.execute(stmt)
     for candidate in result.scalars().all():
+        if is_down(candidate):
+            continue
         if candidate.name.casefold() == ref.casefold():
             return candidate
 
@@ -1123,8 +1146,11 @@ async def describe_scene_creatures(
     context` does) skip re-reading it here; omitted, both are read off
     `run_id`'s own row.
 
-    Each entry is `id, name, role, is_alive, current_hp, max_hp,
-    armour_class, attacks` -- `role` is `player` for a member's own
+    Each entry is `id, name, role, is_alive, down, current_hp, max_hp,
+    armour_class, attacks` -- `down` is `is_down(creature)` (sprint 011/02,
+    WI3, I3): `is_alive` alone lets a downed hero read as a living,
+    targetable actor, since `damage` never flips a member's own `is_alive`
+    at 0 hp. `role` is `player` for a member's own
     character, else `monster` when its stat block carries at least one
     attack, else `npc` (Mira the innkeeper: `attacks: []`, never a
     combatant) -- there is no authored hostile/friendly flag to read
@@ -1166,6 +1192,7 @@ async def describe_scene_creatures(
                 "name": creature.name,
                 "role": role,
                 "is_alive": creature.is_alive,
+                "down": is_down(creature),
                 "current_hp": creature.current_hp,
                 "max_hp": creature.max_hp,
                 "armour_class": creature.armour_class,
@@ -1508,12 +1535,8 @@ async def settle_initiative(
     )
     hero_total = RollPayload.model_validate(hero_event.payload).total
     hostile_total = RollPayload.model_validate(hostile_event.payload).total
-    winning_side: Literal["hero", "hostile"] = (
-        "hostile" if hostile_total > hero_total else "hero"
-    )
-    order = (
-        [*hero_ids, *hostile_ids] if winning_side == "hero" else [*hostile_ids, *hero_ids]
-    )
+    winning_side: Literal["hero", "hostile"] = "hostile" if hostile_total > hero_total else "hero"
+    order = [*hero_ids, *hostile_ids] if winning_side == "hero" else [*hostile_ids, *hero_ids]
     return InitiativeResult(
         hero_total=hero_total,
         hostile_total=hostile_total,
@@ -2656,9 +2679,12 @@ async def attack(
     `_ACTION_NAMES`) -> `target_id` and, when given, `item_id` loaded with
     no run filter first, exactly `take`'s own `_load_run_object` (← D12):
     unknown or foreign either way raises `GameObjectNotFoundError` before
-    any refusal is recorded -> both actor and target sharing one scene
-    (`OBJECT_NOT_REACHABLE` otherwise) -> the item, when named, carried by
-    the actor (`OBJECT_NOT_REACHABLE` otherwise) -> the roll consumed at
+    any refusal is recorded -> neither actor nor target down (sprint
+    011/02, WI3, I3 -- `OBJECT_NOT_REACHABLE`, a downed actor or target
+    treated exactly like an unreachable one) -> both actor and target
+    sharing one scene (`OBJECT_NOT_REACHABLE` otherwise) -> the item, when
+    named, carried by the actor (`OBJECT_NOT_REACHABLE` otherwise) -> the
+    roll consumed at
     `kind="attack"` (`ROLL_NOT_USABLE` on a wrong kind, another turn, or
     one already spent). Each of those three refusals is recorded and
     committed before the matching error is raised (← D11).
@@ -2699,6 +2725,32 @@ async def attack(
     item = None
     if item_id is not None:
         item = await _load_run_object(db, item_id, run_id=run.id)
+
+    if is_down(actor):
+        await _refuse_attack(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            target_id=target_id,
+            item_id=item_id,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="actor is down",
+        )
+        raise ObjectNotReachableError(actor_id)
+
+    if is_down(target):
+        await _refuse_attack(
+            db,
+            run_id=run.id,
+            actor_id=actor_id,
+            target_id=target_id,
+            item_id=item_id,
+            roll_id=roll_id,
+            turn_id=turn_id,
+            reason="target is down",
+        )
+        raise ObjectNotReachableError(target_id)
 
     same_scene = (
         actor.scene_id is not None
@@ -2990,7 +3042,7 @@ async def damage(
             )
             target.state = new_state.model_dump()
 
-    down = target.member_id is not None and bool(target.state.get("down", False))
+    down = is_down(target)
 
     await append_event(
         db,

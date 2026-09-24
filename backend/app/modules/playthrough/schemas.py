@@ -86,8 +86,11 @@ class CharacterRead(CamelModel):
     card facts -- ← research Decision 5; WI1 sprint 010/05 widens this to
     the one hero shape shared by every read that already returns one --
     the run overview, the `POST …/character` route and intent 009's
-    character card): no full state, no keys, no ownership, and no
-    `isAlive`/`down` (← D7 keeps conditions off the card). `race`/
+    character card): no full state, no keys, no ownership, and no `isAlive`
+    (← D7 keeps conditions off the card). `down` is the one exception
+    (sprint 011/02, WI3, I3, intent §1.5): a downed hero must read as
+    downed everywhere a read names it, the card included -- hp still reads
+    0, `down` is additive. `race`/
     `characterClass`/`level`/`appearance`/`abilities`/`backstory` are read
     off the object's `state` column (`CharacterState`), never stored as
     columns of their own -- `backstory` is `CharacterState.background`
@@ -107,6 +110,7 @@ class CharacterRead(CamelModel):
     appearance: str
     backstory: str
     items: list[Item]
+    down: bool
 
 
 class CampaignRunMemberRead(CamelModel):

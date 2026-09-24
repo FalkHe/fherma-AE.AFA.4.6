@@ -108,15 +108,17 @@ async def _resolve_campaign_and_version(
 async def _living_scene_creatures(
     ctx: DmContext, *, near_actor_id: str | None
 ) -> list[dict[str, Any]]:
-    """The living creatures of the current scene, id first, each with its
-    own attack names -- what a lookup failure hands back instead of a bare
-    refusal, so the model's next call names a real id."""
+    """The living, undowned creatures of the current scene, id first, each
+    with its own attack names -- what a lookup failure hands back instead
+    of a bare refusal, so the model's next call names a real id. A downed
+    hero is excluded exactly like a dead monster (sprint 011/02, WI3, I3):
+    `is_alive` alone would still list it."""
     if not ctx.run_id:
         return []
     creatures = await playthrough_service.describe_scene_creatures(
         ctx.db, run_id=ctx.run_id, near_actor_id=near_actor_id
     )
-    return [c for c in creatures if c["is_alive"]]
+    return [c for c in creatures if c["is_alive"] and not c["down"]]
 
 
 async def _actor_not_found_hint(ctx: DmContext, ref: str) -> dict[str, Any]:
