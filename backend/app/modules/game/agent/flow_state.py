@@ -153,8 +153,11 @@ class OperationResult:
         object.__setattr__(self, "event_ids", tuple(self.event_ids))
 
 
-# Sprint 07 owns the shape of the graph's next-step effect; this is a
-# forward-reference placeholder only, never resolved here.
+# `effects.NextEffect` (sprint 011/07) owns the real shape -- a union that
+# reaches back up through `decisions.DecisionRequest`, this module's own
+# `Operation` and `narration.BeatRequest`, which would circularly import
+# this module. `GameFlowState.effect` keeps the untyped placeholder; only
+# `TYPE_CHECKING` callers (none yet) should import the real alias.
 NextEffect = Any
 
 
@@ -164,6 +167,7 @@ class GameFlowState(TypedDict):
     action: ActionCursor | None
     combat: CombatCursor | None
     awaiting: AwaitingRef | None
+    resume: Any | None  # effects.ResumeResult | None (sprint 011/07, WI2)
     pending_hit_id: str | None
     reactions: list[ReactionSpec]
     narrative: NarrativeCursor
@@ -181,6 +185,7 @@ def close_turn_state(state: GameFlowState) -> StateDelta:
     `turn` are left for the caller to set explicitly."""
     return {
         "awaiting": None,
+        "resume": None,
         "move": None,
         "action": None,
         "pending_hit_id": None,
