@@ -90,7 +90,8 @@ outcomes, but cannot invent rolls or edit state.
 
 ### Remove
 
-- The LangChain `@tool` collection and `ToolNode` loop.
+- The LangChain `@tool` collection and `ToolNode` loop, except the two
+  read-only knowledge tools rebound inside `decide`.
 - `MessagesState` as durable game state and message-scanning helpers for
   answers, rolls, hits, and open turns.
 - The regex guard node and the prompt instructions used to police the tool loop.
@@ -119,6 +120,15 @@ workflow migration. Clear turn-only request, action, result and narration state
 when the turn closes. Keep `CombatCursor` across player turns while combat is
 active, then clear it when combat ends. Events already preserve the historical
 outcome.
+
+Player requests keep their two-row transcript form. The **request_roll** and
+**request_choice** operations append the player-visible `roll_requested` or
+`question` event before the graph pauses, and **roll_player** or
+**accept_choice** appends the answering `roll` or `player_action` event after
+it. Rows are never updated. The graph checkpoint decides control flow, while
+the events endpoint keeps deriving `awaiting` from an unanswered request row in
+the open turn, so the two can never disagree. The events read may add a derived
+per-request status, open or done with the answering event ID, for the UI.
 
 Operation and request IDs still correlate effects with results inside graph
 state, but they are not database identities. Accept the narrow failure window
@@ -235,7 +245,6 @@ Required handlers:
 
 - lifecycle: **record_beat**, **complete_action**, **close_turn** and
   **finish_run**;
-- knowledge: **lookup_rule**, **recall_history**;
 - player input: **request_roll**, **roll_player**, **request_choice**,
   **accept_choice**;
 - checks: **roll_actor**, **passive_check**, **resolve_check**,
@@ -268,8 +277,11 @@ Use one **decide** node with focused strategies for:
 - choosing a world reaction.
 
 Each strategy defines its prompt, structured output type, allowed operations and
-evidence view. Validate every proposed operation and reference. Retry invalid
-model output only within a small fixed budget.
+evidence view. Strategies that need rules or older history bind the two
+read-only tools **lookup_rule** and **recall_history**, capped at three calls
+per decision, as described in game-flow.v2.md. Validate every proposed
+operation and reference. Retry invalid model output only within a small fixed
+budget.
 
 Narration is a separate, unbound model call. It receives public situation data,
 the accepted player action and recorded public results. It returns a
@@ -347,7 +359,7 @@ Keep four end-to-end graph scenarios:
    combat continuation, and terminal defeat.
 
 Fold ambiguity into the combat scenario. Cover rules lookup and history recall
-at their registry and projection boundaries instead of adding broad graph
+at their tool and projection boundaries instead of adding broad graph
 tests.
 
 ### 9. Compose the graph last and remove superseded artifacts
@@ -394,7 +406,8 @@ frontend code changes. No database migration or new constraint test is expected.
 - Player roll and choice requests resume without revealing private mechanics.
 - Every eligible hostile acts according to the combat cursor; down, moved, and
   non-hostile actors do not.
-- Narration uses recorded public outcomes and cannot call tools.
+- Narration uses recorded public outcomes and cannot call tools; the only
+  bound tools are the read-only knowledge tools inside `decide`.
 - Expected refusals are typed results; integrity and infrastructure failures are
   errors.
 - The turn API supports openings, actions, requests, resumes, and narration.

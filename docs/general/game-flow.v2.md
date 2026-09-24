@@ -14,8 +14,9 @@ separate graph nodes.
 ## Design goals
 
 1. The graph, never the model, orders mechanics.
-2. Each graph visit performs at most one model call, one player pause or one
-   deterministic operation with side effects.
+2. Each graph visit performs at most one model decision, one player pause or
+   one deterministic operation with side effects. A decision may consult
+   read-only tools within a fixed budget before it is returned.
 3. Database state is authoritative for lasting world facts and history. Graph
    state is authoritative for the active turn or combat sequence.
 4. A player pause or ordinary process restart resumes the same checkpointed
@@ -88,6 +89,24 @@ only the evidence it needs. Model output may nominate candidates and propose
 actions; it never writes object state, selects a graph destination or supplies
 an operation ID.
 
+#### Read-only tools inside `decide`
+
+Two knowledge reads are bound to the decision model as ordinary tools:
+`lookup_rule` (SRD retrieval) and `recall_history` (anchored transcript
+recall). They are the only tools any model in the graph can call, and they
+are the one exception to "one model call per visit": a strategy that binds
+them runs a small tool loop inside the node function, at most three tool calls
+per decision, then returns its structured `DecisionResult`. The loop is code
+inside `decide`, not a graph node or edge, so the topology and the router are
+unchanged.
+
+The exception is safe because both tools are pure reads with no side effects,
+no dice and no player request. Every mutating or randomising mechanic remains
+an `Operation` chosen by deterministic code. `narrate` never receives these or
+any other tools. Which strategies bind them is part of each strategy's
+definition; reading a player move and interpreting evidence are the expected
+ones.
+
 ### `execute` — one deterministic operation
 
 `execute` receives one `Operation` and dispatches it through an operation
@@ -98,9 +117,8 @@ One visit executes one operation. For example, an attack roll, resolving the
 attack and applying damage are three separate visits. This leaves a checkpoint
 between effects and keeps an unresolved hit visible as an obligation.
 
-Operations include reads and bookkeeping as well as game mechanics:
+Operations include bookkeeping as well as game mechanics:
 
-- rules lookup and transcript recall;
 - reference binding and action reservation;
 - roll or question request creation;
 - player and monster rolls;
@@ -277,8 +295,8 @@ from four sources:
 1. authoritative world facts in `SituationProjection`;
 2. the current turn's action, effects and results from the explicit cursors;
 3. a bounded recent transcript window loaded from playthrough events;
-4. older narration returned by `recall_history` when the current move depends
-   on a person, promise, place or event outside that window.
+4. older narration returned by the `recall_history` tool when the current
+   move depends on a person, promise, place or event outside that window.
 
 The complete transcript remains stored and queryable. It should not be sent to
 the model on every call: an unbounded message list duplicates the event stream,
@@ -286,13 +304,13 @@ spends an increasing number of tokens and mixes provider control messages with
 player-visible history. The decision and narration nodes render ordinary model
 messages from the projection for that call only.
 
-`recall_history` is an operation in the normal loop. It uses matching narration
-as the semantic anchor, then returns the surrounding player-visible events from
-the same turn so the model also sees the relevant player action, roll or answer.
-A decision may request that evidence and then make the original decision.
-Recent transcript events cover local dialogue; anchored recall supplies
-long-term narrative memory; object and run records supply durable mechanical
-memory.
+`recall_history` is a read-only tool available to decision strategies. It uses
+matching narration as the semantic anchor, then returns the surrounding
+player-visible events from the same turn so the model also sees the relevant
+player action, roll or answer. A decision may call it and then make the
+original decision within the same visit. Recent transcript events cover local
+dialogue; anchored recall supplies long-term narrative memory; object and run
+records supply durable mechanical memory.
 
 ### `ActionCursor`
 
@@ -415,7 +433,8 @@ Each handler defines:
 - the allowed evidence projection;
 - deterministic validation of candidate IDs, DC provenance and supported
   actions;
-- a bounded retry policy for invalid structured output.
+- a bounded retry policy for invalid structured output;
+- whether it binds the read-only `lookup_rule` and `recall_history` tools.
 
 Reference resolution remains code-first: zero matches is unsupported, one
 match binds directly, and several matches create a reference-judgment request.
@@ -428,8 +447,6 @@ Use one dispatcher with typed handlers:
 
 ```python
 OPERATION_HANDLERS = {
-    OperationKind.LOOKUP_RULE: lookup_rule,
-    OperationKind.RECALL_HISTORY: recall_history,
     OperationKind.REQUEST_ROLL: request_roll,
     OperationKind.ROLL_PLAYER: roll_player,
     OperationKind.REQUEST_CHOICE: request_choice,
@@ -469,7 +486,9 @@ are serial.
 
 1. `advance` selects a request operation with fixed purpose, actor, formula
    context, consumer and object bindings.
-2. `execute` stores one unresolved request in graph state and returns its ID.
+2. `execute` appends the player-visible request event (`roll_requested` or
+   `question`) through the playthrough service, then stores one unresolved
+   request in graph state and returns its ID.
 3. `advance` observes the checkpointed request and produces `PlayerWait`.
 4. `await_player` interrupts with its public projection.
 
@@ -480,8 +499,20 @@ are serial.
 2. `await_player` returns `ResumeResult`; it performs no mechanic.
 3. `advance` validates the response against graph state, refreshes durable
    state and checks current preconditions.
-4. `execute` records the player roll or accepts the choice in normal flow.
+4. `execute` records the player roll or accepts the choice in normal flow,
+   appending the answering `roll` or `player_action` event.
 5. `advance` continues the stored action plan in the same turn.
+
+### Waiting state in the transcript
+
+A player request is two append-only transcript rows: the request event written
+before the pause and the answering event written after it. Rows are never
+updated. The checkpoint's `AwaitingRef` drives control flow; the events read
+derives `awaiting` (`none`, `roll:<id>`, `answer:<id>`) from an unanswered
+request row in the open turn, and may expose a derived per-request status,
+open or done with the answering event ID, for the client. Because the same
+operation writes the row and the checkpoint, the two views cannot disagree,
+and a reload finds the same buttons waiting without reading the checkpointer.
 
 The client never supplies a formula, die result, DC, object ID or arbitrary
 continuation. Choice keys map to object IDs in the private checkpointed request.
@@ -613,7 +644,8 @@ The v2 structure is established when:
   `await_player` and `narrate`;
 - all routing originates in `advance` and depends only on `NextEffect`;
 - model calls use structured, kind-specific decisions or evidence-constrained
-  narration without bound mutation tools;
+  narration; the only bound tools are the two read-only knowledge tools inside
+  `decide`;
 - every deterministic effect is a typed operation executed one at a time;
 - player waits resume the same request, action and turn;
 - `advance` prevents closure with a pending hit, input request or owed combat

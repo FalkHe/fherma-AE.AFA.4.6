@@ -258,9 +258,7 @@ Expected:
 
 ~~~text
 advance
-→ decide(read move: rules evidence required)
-→ execute(lookup rule)
-→ decide(interpret evidence)
+→ decide(read move: calls the lookup_rule tool, interprets the passages)
 → narrate(rules answer)
 → execute(record beat)
 → execute(close turn)
@@ -284,9 +282,7 @@ Expected:
 
 ~~~text
 advance
-→ decide(read move: older history required)
-→ execute(recall history)
-→ decide(interpret recalled evidence)
+→ decide(read move: calls the recall_history tool, interprets the evidence)
 → narrate(answer beat)
 → execute(record beat)
 → execute(close turn)
