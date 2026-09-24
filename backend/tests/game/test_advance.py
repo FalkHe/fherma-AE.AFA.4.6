@@ -2,10 +2,6 @@
 scheduler priority order (AC1, AC2, AC3, AC5), plus `resume_operation` and the
 guard path."""
 
-from dataclasses import replace
-
-import pytest
-
 from app.modules.game.agent.advance import (
     eligible_hostiles,
     guard_refusal,
@@ -119,7 +115,11 @@ def test_pending_hit_takes_priority_over_everything_else():
     effect = select_next_effect(state, situation)
 
     assert isinstance(effect, Operation)
-    assert effect.kind in (OperationKind.REQUEST_ROLL, OperationKind.ROLL_ACTOR, OperationKind.APPLY_DAMAGE)
+    assert effect.kind in (
+        OperationKind.REQUEST_ROLL,
+        OperationKind.ROLL_ACTOR,
+        OperationKind.APPLY_DAMAGE,
+    )
     assert effect.kind != OperationKind.CLOSE_TURN
 
 
@@ -385,7 +385,21 @@ def test_closure_closes_the_turn_once_every_obligation_is_clear():
 
 def test_closed_turn_reports_turn_complete_open():
     situation = _situation()
-    state = _state(turn=_turn(status="closed"))
+    state = _state(
+        turn=_turn(status="closed"),
+        move=Move(intent="talk", refs={}),
+        action=ActionCursor(
+            action_id="a1",
+            actor_id="hero-1",
+            kind="talk",
+            plan=(),
+            step_index=0,
+            status="complete",
+            roll_id=None,
+            roll_consumed=False,
+        ),
+        narrative=NarrativeCursor(beat_id="beat-1", draft=None, event_id="event-1"),
+    )
 
     effect = validate_turn_close(state, situation)
 

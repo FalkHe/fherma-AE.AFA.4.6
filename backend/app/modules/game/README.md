@@ -132,6 +132,34 @@ or writes an event.
   failure re-prompts under the same `decision_id` up to `RETRY_BUDGET` (2)
   times before `DecisionInvalid` escapes to the caller. Unused by the live
   graph yet.
+- `agent/effects.py` — sprint 011/07, WI1: `NextEffect`, the new flow's
+  real next-step union (`DecisionRequest | Operation | PlayerWait |
+  BeatRequest | TurnComplete`, the first and third re-exported from
+  `decisions.py`/`narration.py` unchanged), plus `PlayerWait`,
+  `TurnComplete`, `ResumeResult` and `add_usage()`. `flow_state.NextEffect`
+  keeps its untyped placeholder to avoid a circular import; this module is
+  the one with the real shape. Unused by the live graph yet.
+- `agent/advance.py` — sprint 011/07, WI1: `select_next_effect()`, the new
+  flow's pure scheduler (`docs/general/game-flow.v2.md`, "Scheduler
+  priority") — no model call, no dice, no database write, no `interrupt()`.
+  Evaluates `advance_terminal` (hero down/run over → `FINISH_RUN`, ending
+  beat, then `TurnComplete`), `advance_hit` (a `pending_hit_id` permits
+  only its own damage roll and `APPLY_DAMAGE`), `advance_request` (a
+  checkpointed unanswered request → `PlayerWait`), `advance_action` (the
+  current `ActionCursor`'s next plan step, a guard refusal straight to
+  `RECORD_BEAT`, or a `READ_MOVE` decision for a fresh move), `advance_combat`
+  (`eligible_hostiles()` by cursor order, `SETTLE_INITIATIVE` or the next
+  hostile's `MONSTER_ACTION`), `advance_reactions`, `advance_narration` and
+  `validate_turn_close` in that order, the first non-`None` result winning.
+  Also builds the deterministic `player_roll_plan()`/`attack_plan()`/
+  `complete_action_plan()` plans decisions turn into `ActionCursor.plan`s,
+  and `resume_operation()`, which turns a checkpointed `ResumeResult` into
+  its consuming `ROLL_PLAYER`/`ACCEPT_CHOICE` operation or rejects a stale
+  `request_id`. `guard_state()` is the one piece of state the caller
+  (`agent/flow_nodes.py`) must apply itself, since `advance.py` never
+  mutates state: it puts the canned guard refusal into
+  `state["narrative"].draft` before the scheduler's `RECORD_BEAT`
+  operation runs. Unused by the live graph yet.
 
 ## Surface
 
