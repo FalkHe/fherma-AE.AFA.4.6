@@ -13,33 +13,12 @@ created: 2026-09-24
 | 3 | backend-python | The world and lifecycle handlers in the same registry (I2) | one representative handler dispatches and returns its typed result with the same operation id; an action whose roll is already consumed cannot apply it twice | WI1, WI2's registry file |
 
 ## Interfaces
-- I1 `backend/app/modules/game/agent/flow_state.py` (frozen dataclasses, str enum, one TypedDict; old `agent/state.py` untouched):
+- I1 `backend/app/modules/game/agent/flow_state.py` (frozen dataclasses, str enum, one TypedDict; old `agent/state.py` untouched). Types and fields exactly as listed in `research.md → Interfaces`: `OperationKind` (23 members), `TurnFrame`, `Move`, `OperationSpec`, `ActionCursor` (with `roll_id`, `roll_consumed`), `CombatCursor`, `AwaitingRef` (public payload plus private `consumer`, `consumer_payload`), `ReactionSpec`, `NarrativeCursor`, `Usage`, `ExecutionError`, `Operation`, `OperationResult`, `GameFlowState`, `StateDelta`; `NextEffect = Any` placeholder until sprint 07. Plus:
   ```python
-  class OperationKind(str, Enum):  # value = lower name; exactly these 23
-      RECORD_BEAT COMPLETE_ACTION CLOSE_TURN FINISH_RUN
-      REQUEST_ROLL ROLL_PLAYER REQUEST_CHOICE ACCEPT_CHOICE
-      ROLL_ACTOR PASSIVE_CHECK RESOLVE_CHECK RESOLVE_SAVE SETTLE_INITIATIVE
-      INTERACT TAKE_ITEM DROP_ITEM GIVE_ITEM USE_EXIT ENTER_NEXT_ADVENTURE SET_HOSTILITY LEAVE_SCENE
-      RESOLVE_ATTACK APPLY_DAMAGE
-  TurnFrame(run_id, hero_id, turn_id, input_kind: Literal["opening","action","roll","choice","retry"], text: str | None, status: Literal["open","closing","closed","terminal"], round_admitted: bool)
-  Move(intent: str, refs: Mapping[str, str])                      # role -> object id
-  OperationSpec(kind: OperationKind, payload: Mapping[str, Any])
-  ActionCursor(action_id, actor_id, kind: str, plan: tuple[OperationSpec, ...], step_index: int, status: Literal["planned","reserved","complete","skipped"], roll_id: str | None, roll_consumed: bool)
-  CombatCursor(scene_id, order: tuple[str, ...], index: int, round: int, round_admitted: bool, winning_side: Literal["hero","hostile"])
-  AwaitingRef(request_id, kind: Literal["roll","choice"], actor_id, public: Mapping[str, Any], consumer: OperationKind, consumer_payload: Mapping[str, Any])
-  ReactionSpec(reaction_id, kind: str, payload: Mapping[str, Any])
-  NarrativeCursor(beat_id: str | None, draft: str | None, event_id: str | None)
-  Usage(prompt_tokens: int, completion_tokens: int, cost: Decimal | None)
-  ExecutionError(code: str, message: str, operation_id: str | None)
-  Operation(operation_id, kind: OperationKind, payload: Mapping[str, Any])
-  OperationResult(operation_id, status: Literal["ok","refused","error"], reason: str | None, event_ids: tuple[str, ...], value: Mapping[str, Any])
-  NextEffect = Any   # placeholder; sprint 07 owns it
-  class GameFlowState(TypedDict): turn: TurnFrame; move: Move | None; action: ActionCursor | None; combat: CombatCursor | None; awaiting: AwaitingRef | None; pending_hit_id: str | None; reactions: list[ReactionSpec]; narrative: NarrativeCursor; effect: NextEffect | None; result: OperationResult | None; usage: Usage | None; error: ExecutionError | None
-  StateDelta = dict[str, Any]
-  def close_turn_state(state) -> StateDelta      # clears awaiting, move, action, result, reactions, narrative, effect, error; keeps combat
-  def end_combat_state(state) -> StateDelta      # combat=None
+  def close_turn_state(state) -> StateDelta   # clears awaiting, move, action, result, reactions, narrative, effect, error; keeps combat
+  def end_combat_state(state) -> StateDelta   # combat=None
   ```
-  Ids from `core/ids.generate_id()`. Serializer: langgraph `JsonPlusSerializer` round-trips frozen dataclasses and str enums (verified).
+  Ids from `core/ids.generate_id()`; langgraph `JsonPlusSerializer` round-trips frozen dataclasses and str enums (verified).
 - I2 `backend/app/modules/game/agent/operations.py`:
   ```python
   OperationContext(db: AsyncSession, user_id, run_id, hero_id, situation: Situation)   # frozen dataclass
@@ -52,6 +31,9 @@ created: 2026-09-24
 
 ## Acceptance tests (qa)
 No qa agent (owner: reduce testing); WI tests cover AC1–AC5.
+
+## Notes
+- Type field lists live in research.md to keep this plan within its cap.
 
 ## Order
 WI1 first. Then parallel: WI2 (creates the registry file), WI3 (adds entries).
