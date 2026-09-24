@@ -17,3 +17,4 @@ The new flow now has its referee. One rule looks at the saved turn and a fresh p
 Brief: docs/intents/011-game-flow/sprints/07-scheduler-and-nodes/brief.md
 
 ## Verdict
+Round 1: approve — one referee rule picks exactly the next thing that must happen for any saved turn: ending the run for a downed hero first, always finishing an unresolved hit's damage, pausing for the player and rejecting a stale answer, giving each able enemy one go per round, and refusing to close a turn while anything is still owed; a message trying to override the Dungeon Master is refused in his voice without asking the model.
