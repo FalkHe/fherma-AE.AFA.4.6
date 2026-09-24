@@ -15,6 +15,9 @@ trail, not a description of the current state.
 | [general/backend-stack.md](general/backend-stack.md) | Python stack, conventions and tooling |
 | [general/frontend-stack.md](general/frontend-stack.md) | TypeScript stack, conventions and tooling |
 | [general/requirement-map.md](general/requirement-map.md) | How the project satisfies the graded brief in `135.md` |
+| [general/game-flow.md](general/game-flow.md) | The target game loop, station by station: opening, exploration, checks, combat rounds; every action with its dependencies; what the graph enforces and where the code still falls short |
+| [general/game-flow.v2.md](general/game-flow.v2.md) | The implementation structure for that loop: five LangGraph nodes, typed effects and cursors, scheduling priority, registries, recovery and delivery sequence |
+| [general/game-flow.v2.examples.md](general/game-flow.v2.examples.md) | Common five-node flow scenarios: conversation, checks, movement, items, fixtures, rules, recall, ambiguity, combat and terminal outcomes |
 
 ## Modules
 
