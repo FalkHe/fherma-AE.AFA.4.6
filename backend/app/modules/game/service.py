@@ -120,8 +120,10 @@ async def run_turn(
 
     In order:
     1. `state["awaiting"].kind == "roll"` -> kind `roll`. Resumed with
-       `Command(resume={})` -- the server rolls, never a caller-sent
-       number.
+       `Command(resume={"acknowledged": True})` -- the server rolls, never
+       a caller-sent number; the payload must be non-empty (← round 2
+       finding: an empty dict is read as a resume-by-interrupt-id map by
+       langgraph 1.2.11, not a value, so it never resumes at all).
     2. `state["awaiting"].kind == "choice"` -> kind `answer`. `text` must
        equal one of the checkpointed public `options`, or may be anything
        when `options` is empty; otherwise `ActionNotAvailableError` (no
@@ -175,7 +177,14 @@ async def run_turn(
         if awaiting is not None and awaiting.kind == "roll":
             kind = "roll"
             turn_id = await _resolved_turn_id()
-            await agent.ainvoke(Command(resume={}), config=config)
+            # ← round 2 finding: `Command(resume={})` -- an *empty* dict --
+            # is read by langgraph 1.2.11 as a resume-by-interrupt-id map,
+            # not a value for the one pending interrupt, so it never
+            # actually resumes (200 returned, no event written, the thread
+            # stays at `next=('await_player',)`). A non-empty acknowledgement
+            # is required; `{"acknowledged": True}` matches what
+            # `advance.resume_operation`/the scenario tests already send.
+            await agent.ainvoke(Command(resume={"acknowledged": True}), config=config)
         elif awaiting is not None:
             kind = "answer"
             options = awaiting.public.get("options") or []

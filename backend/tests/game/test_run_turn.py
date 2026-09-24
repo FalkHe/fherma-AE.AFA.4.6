@@ -5,6 +5,14 @@ kind hands the compiled graph. The graph itself is monkeypatched wholesale
 suite scripts directly -- so this file proves the *wiring*, never the
 graph's own behaviour (that is `agent/flow_nodes.py`'s and the sprint's
 `test_scenarios_database.py`'s job).
+
+One exception (sprint 011/08 round 2, defect ← finding): a real
+compiled graph, real `InMemorySaver` and `ScriptedChatModel`, driven
+through `run_turn` itself twice -- the action that pauses for a roll,
+then the roll press exactly as the frontend sends it (`text=None`) --
+since the wiring-only fakes above cannot catch a resume payload
+langgraph itself refuses to treat as a value (an empty `dict`, read as a
+resume-by-interrupt-id map instead).
 """
 
 import asyncio
@@ -13,13 +21,25 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
+from sqlalchemy import text as sql_text
 
+from app.core.checkpointer import service as checkpointer_service
+from app.core.ids import generate_id
 from app.modules.game import service as game_service
 from app.modules.game.agent import flow_nodes
+from app.modules.game.agent.decisions import MoveAssessmentOut, ReadMoveOut
 from app.modules.game.agent.flow_state import AwaitingRef, TurnFrame
 from app.modules.game.errors import ActionNotAvailableError
 from app.modules.playthrough import service as playthrough_service
+from tests.game.fakes import ScriptedChatModel
+
+# `_stub_common` (autouse below) monkeypatches `flow_nodes.set_runtime` to
+# a no-op for every test in this file; the one real-graph test restores it
+# from this reference, captured before any test can shadow it.
+_REAL_SET_RUNTIME = flow_nodes.set_runtime
 
 USER_ID = "user-1"
 RUN_ID = "run-1"
@@ -184,7 +204,7 @@ def test_roll_answer_resumes_with_an_empty_payload_and_writes_no_row_itself(monk
         assert outcome.turn_id == "open-turn-1"
         [resume] = agent.ainvoke_calls
         assert isinstance(resume, Command)
-        assert resume.resume == {}
+        assert resume.resume == {"acknowledged": True}
 
     asyncio.run(_run())
 
@@ -419,10 +439,110 @@ def test_a_new_flow_awaiting_takes_precedence_over_any_legacy_check(monkeypatch)
         assert outcome.kind == "roll"
         [resume] = agent.ainvoke_calls
         assert isinstance(resume, Command)
-        assert resume.resume == {}
+        assert resume.resume == {"acknowledged": True}
         # `get_awaiting` is consulted once, only to populate the returned
         # outcome -- never to decide the turn's kind, since `turn` was
         # already present in the checkpoint.
         assert get_awaiting_calls == [RUN_ID]
+
+    asyncio.run(_run())
+
+
+_CAMPAIGN_ID = "greenhollow"
+_TO_THORNWAY = "to-thornway"
+
+
+async def _insert_user(session, user_id: str, *, username: str) -> None:
+    await session.execute(
+        sql_text("INSERT INTO users (id, username, password_hash) VALUES (:id, :username, 'x')"),
+        {"id": user_id, "username": username},
+    )
+
+
+async def _setup_run(db, *, username: str) -> tuple[str, str, str]:
+    """Same path `test_scenarios_database.py`'s own `_setup_run` walks --
+    duplicated rather than imported, since that module's helpers are
+    private to its own suite."""
+    owner_id = generate_id()
+    await _insert_user(db, owner_id, username=username)
+    await db.commit()
+    run = await playthrough_service.start_campaign_run(
+        db, user_id=owner_id, campaign_id=_CAMPAIGN_ID
+    )
+    character = await playthrough_service.create_character(db, user_id=owner_id, run_id=run.id)
+    await playthrough_service.enter_adventure(db, user_id=owner_id, run_id=run.id)
+    return owner_id, run.id, character.id
+
+
+@pytest.mark.database
+def test_run_turn_resumes_a_paused_roll_and_writes_it(playthrough_db, monkeypatch):
+    """← sprint 011/08 round 2, defect: `Command(resume={})` -- an empty
+    dict -- is read by langgraph 1.2.11 as a resume-by-interrupt-id map,
+    not a value for the one pending interrupt, so it never actually
+    resumed: the turn returned 200, wrote no event, and the thread stayed
+    at `next=('await_player',)`. Drives a real pause-for-a-roll turn
+    through `run_turn` itself twice, over a real compiled graph and a real
+    `InMemorySaver`: the action that triggers the check, then the roll
+    press exactly as the frontend sends it (`text=None`,
+    `useTakeTurn.roll`)."""
+
+    async def _run():
+        db = playthrough_db
+        owner_id, run_id, hero_id = await _setup_run(db, username="run-turn-roll-flow")
+        await playthrough_service.use_exit(
+            db, user_id=owner_id, actor_id=hero_id, exit_id=_TO_THORNWAY
+        )
+
+        saver = InMemorySaver(serde=checkpointer_service.checkpoint_serde())
+
+        @asynccontextmanager
+        async def fake_checkpointer():
+            yield saver
+
+        monkeypatch.setattr(checkpointer_service, "checkpointer", fake_checkpointer)
+        monkeypatch.setattr(flow_nodes, "set_runtime", _REAL_SET_RUNTIME)
+
+        model = ScriptedChatModel(
+            [
+                AIMessage(content="Rosalind crouches over the low thorn."),
+                ReadMoveOut(intent="search", refs={}, proposed=None),
+                MoveAssessmentOut(
+                    applies=True,
+                    dc=5,
+                    dc_source="authored",
+                    consequence_ids=[],
+                    secret_index=0,
+                    fixture_id=None,
+                    check_action=None,
+                ),
+                "The widened cut confirms something heavy has passed this way more than once.",
+            ]
+        )
+        monkeypatch.setattr(game_service, "chat_model", lambda: model)
+
+        search_text = "I search the wool-marked narrow cut at ankle height for signs of passage."
+        outcome = await game_service.run_turn(db, user_id=owner_id, run_id=run_id, text=search_text)
+        assert outcome.kind == "action"
+        assert outcome.awaiting.startswith("roll:")
+
+        # The roll button itself: `text: null`.
+        outcome2 = await game_service.run_turn(db, user_id=owner_id, run_id=run_id, text=None)
+        assert outcome2.kind == "roll"
+        assert outcome2.awaiting == "none"
+
+        rows = (
+            await db.execute(
+                sql_text(
+                    "SELECT id, type, payload FROM events WHERE campaign_run_id = :run_id "
+                    "ORDER BY id"
+                ),
+                {"run_id": run_id},
+            )
+        ).all()
+        roll_requested = [row for row in rows if row.type == "roll_requested"]
+        rolls = [row for row in rows if row.type == "roll"]
+        assert len(roll_requested) == 1
+        assert len(rolls) == 1
+        assert rolls[0].payload["requestId"] == roll_requested[0].id
 
     asyncio.run(_run())
