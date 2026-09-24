@@ -21,3 +21,4 @@ The settled fight order is not yet shown to the player; only the two rolls appea
 Brief: docs/intents/011-game-flow/sprints/02-honest-combat-mechanics/brief.md
 
 ## Verdict
+Round 1: changes requested — the player is no longer asked to roll their own initiative, the game rolls both sides silently where only the enemies' roll should be automatic; the detailed game rules documentation still says the player's click decides the heroes' roll and says nothing about doubled critical damage or the fallen hero's refusals.

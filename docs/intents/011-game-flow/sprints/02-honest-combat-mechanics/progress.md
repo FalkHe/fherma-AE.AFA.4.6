@@ -27,3 +27,4 @@ Status: `open | running | done | failed`
 - Show the settled initiative order and a "down" marker to the player once the party rail exists (intent 010 sprint 11).
 
 ## Verify
+Round 1: changes-requested — AC1 (hero-side initiative no longer requested from the player), docs/modules/playthrough.md stale on initiative, criticals and down state.
