@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ids import generate_id
 from app.modules.playthrough import dice as playthrough_dice
 from app.modules.playthrough import service
-from app.modules.playthrough.errors import CampaignRunNotFoundError, ObjectNotReachableError
+from app.modules.playthrough.errors import CampaignRunNotFoundError
 
 CAMPAIGN_ID = "greenhollow"
 KNIFE_TEMPLATE = "shepherds-knife"
@@ -291,10 +291,10 @@ def test_a_refused_take_leaves_no_item_moved_entry(playthrough_db):
         # `bent-horseshoe` stands at `village-green`, three scenes away.
         horseshoe_id = await _object_id(playthrough_db, run_id=run.id, template_id="bent-horseshoe")
 
-        with pytest.raises(ObjectNotReachableError):
-            await service.take(
-                playthrough_db, user_id=user_id, actor_id=character.id, item_id=horseshoe_id
-            )
+        result = await service.take(
+            playthrough_db, user_id=user_id, actor_id=character.id, item_id=horseshoe_id
+        )
+        assert result.status == "refused"
 
         visible = await _player_events(playthrough_db, run.id, type_="item_moved")
         assert visible == []
@@ -393,7 +393,7 @@ def test_interact_appends_one_way_opened_entry_on_a_successful_check(playthrough
             face=11,
         )
 
-        success = await service.interact(
+        result = await service.interact(
             playthrough_db,
             user_id=user_id,
             actor_id=character.id,
@@ -401,7 +401,8 @@ def test_interact_appends_one_way_opened_entry_on_a_successful_check(playthrough
             action=LIFT_ACTION,
             roll_id=roll_event.id,
         )
-        assert success is True
+        assert result.status == "ok"
+        assert result.facts["success"] is True
 
         visible = await _player_events(playthrough_db, run.id, type_="way_opened")
         assert len(visible) == 1
@@ -433,7 +434,7 @@ def test_interact_appends_no_way_opened_entry_when_the_check_fails(playthrough_d
             face=1,
         )
 
-        success = await service.interact(
+        result = await service.interact(
             playthrough_db,
             user_id=user_id,
             actor_id=character.id,
@@ -441,7 +442,8 @@ def test_interact_appends_no_way_opened_entry_when_the_check_fails(playthrough_d
             action=LIFT_ACTION,
             roll_id=roll_event.id,
         )
-        assert success is False
+        assert result.status == "ok"
+        assert result.facts["success"] is False
 
         visible = await _player_events(playthrough_db, run.id, type_="way_opened")
         assert visible == []

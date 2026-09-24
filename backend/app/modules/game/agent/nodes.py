@@ -386,15 +386,13 @@ def make_record_action() -> Node:
                 if isinstance(last_human.content, str)
                 else str(last_human.content)
             )
-            await playthrough_service.append_event(
+            await playthrough_service.record_player_action(
                 ctx.db,
+                user_id=ctx.user_id,
                 run_id=ctx.run_id,
-                type="player_action",
-                visibility="player",
-                payload={"text": text},
+                text=text,
                 turn_id=ctx.turn_id,
             )
-            await ctx.db.commit()
         return {}
 
     return record_action
@@ -511,24 +509,14 @@ def make_record_narration() -> Node:
                 else (last_ai.content if isinstance(last_ai.content, str) else str(last_ai.content))
             )
             if text:
-                await playthrough_service.append_event(
+                await playthrough_service.record_narration(
                     ctx.db,
+                    user_id=ctx.user_id,
                     run_id=ctx.run_id,
-                    type="narration",
-                    visibility="player",
-                    payload={"text": text},
+                    text=text,
                     turn_id=ctx.turn_id,
                     usage=_turn_usage(state["messages"]),
                 )
-                await ctx.db.commit()
-
-                run = await playthrough_service.get_campaign_run(
-                    ctx.db, user_id=ctx.user_id, run_id=ctx.run_id
-                )
-                if run.status == "ready":
-                    await playthrough_service.activate_campaign_run(
-                        ctx.db, user_id=ctx.user_id, run_id=ctx.run_id
-                    )
         return {}
 
     return record_narration

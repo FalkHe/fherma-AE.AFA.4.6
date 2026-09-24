@@ -50,7 +50,6 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.errors import ErrorCode
 from app.core.ids import generate_id
 from app.modules.playthrough import service as playthrough_service
 
@@ -150,7 +149,7 @@ def test_ac2_an_ordinary_exit_moves_the_actor_or_is_refused_and_recorded(playthr
         result = await playthrough_service.use_exit(
             playthrough_db, user_id=owner_id, actor_id=character.id, exit_id=TO_THORNWAY
         )
-        assert result is None
+        assert result.status == "ok"
 
         after_move = await _actor_position(playthrough_db, character.id)
         assert after_move.scene_id == THORNWAY_SCENE
@@ -186,11 +185,10 @@ def test_ac2_an_ordinary_exit_moves_the_actor_or_is_refused_and_recorded(playthr
             playthrough_db, user_id=owner_id, run_id=run.id
         )
 
-        with pytest.raises(Exception) as exc_info:
-            await playthrough_service.use_exit(
-                playthrough_db, user_id=owner_id, actor_id=character.id, exit_id=TO_THORNWAY
-            )
-        assert exc_info.value.code == ErrorCode.EXIT_NOT_AVAILABLE
+        refusal = await playthrough_service.use_exit(
+            playthrough_db, user_id=owner_id, actor_id=character.id, exit_id=TO_THORNWAY
+        )
+        assert refusal.status == "refused"
 
         # Everything below is read from a **second** connection -- never
         # `playthrough_db`, the session `use_exit` just raised on. A row
@@ -284,7 +282,7 @@ def test_ac3_the_ending_exit_completes_the_adventure_and_finishes_the_game(playt
         result = await playthrough_service.use_exit(
             playthrough_db, user_id=owner_id, actor_id=character.id, exit_id=LEAVE_THE_HOLLOW
         )
-        assert result is None
+        assert result.status == "ok"
 
         # The adventure run completed: its status and the time it
         # finished.

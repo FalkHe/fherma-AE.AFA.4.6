@@ -1,14 +1,13 @@
 """WI1 (sprint 08b): items moving between the floor, a pack and a
-container -- `take`, `drop`, `give` -- plus the `use_item` seam that
-refuses everything (AC2, AC4, AC5).
+container -- `take`, `drop`, `give` (AC2, AC4, AC5). `use_item` is
+retired (sprint 011/03).
 
 qa's own `test_acceptance_inventory_moves.py` drives the black-box happy
 path and refusals against the sprint's interface contracts; this file
 covers the reachability rule each mechanic weighs on its own row (an item
 in another scene, one carried by another creature, an actor standing
-nowhere, AC5's widening onto a non-creature container), the gate order
-shared with `interact`/08a's one-action rule, and `use_item`'s
-unconditional refusal.
+nowhere, AC5's widening onto a non-creature container) and the gate order
+shared with `interact`.
 
 `@pytest.mark.database`, against the shared scratch-database fixture
 (`playthrough_db`) and the real shipped `greenhollow/v1` content, walking
@@ -27,15 +26,9 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.errors import ErrorCode
 from app.core.ids import generate_id
 from app.modules.playthrough import service
-from app.modules.playthrough.errors import (
-    AlreadyActedError,
-    GameObjectNotFoundError,
-    ItemNotConsumableError,
-    ObjectNotReachableError,
-)
+from app.modules.playthrough.errors import GameObjectNotFoundError
 
 CAMPAIGN_ID = "greenhollow"
 
@@ -167,7 +160,7 @@ def test_take_sets_owner_and_clears_position_for_an_item_in_the_actors_scene(pla
             item_id=horseshoe_id,
             turn_id=turn_id,
         )
-        assert result is None
+        assert result.status == "ok"
 
         row = await _object_row(playthrough_db, horseshoe_id)
         assert row.owner_object_id == character.id
@@ -190,11 +183,10 @@ def test_take_refuses_an_item_in_another_scene(playthrough_db):
         horseshoe_id = await _object_id(playthrough_db, run_id=run.id, template_id="bent-horseshoe")
         before = await _object_row(playthrough_db, horseshoe_id)
 
-        with pytest.raises(ObjectNotReachableError) as excinfo:
-            await service.take(
-                playthrough_db, user_id=user_id, actor_id=character.id, item_id=horseshoe_id
-            )
-        assert excinfo.value.code == ErrorCode.OBJECT_NOT_REACHABLE
+        result = await service.take(
+            playthrough_db, user_id=user_id, actor_id=character.id, item_id=horseshoe_id
+        )
+        assert result.status == "refused"
 
         after = await _object_row(playthrough_db, horseshoe_id)
         assert after == before
@@ -216,11 +208,10 @@ def test_take_refuses_an_item_held_by_another_creature(playthrough_db):
         )
         cleaver_id = await _object_id(playthrough_db, run_id=run.id, template_id="notched-cleaver")
 
-        with pytest.raises(ObjectNotReachableError) as excinfo:
-            await service.take(
-                playthrough_db, user_id=user_id, actor_id=character.id, item_id=cleaver_id
-            )
-        assert excinfo.value.code == ErrorCode.OBJECT_NOT_REACHABLE
+        result = await service.take(
+            playthrough_db, user_id=user_id, actor_id=character.id, item_id=cleaver_id
+        )
+        assert result.status == "refused"
 
         row = await _object_row(playthrough_db, cleaver_id)
         assert row.owner_object_id != character.id
@@ -271,10 +262,10 @@ def test_take_refuses_when_the_actor_has_no_current_scene(playthrough_db):
         horseshoe_id = await _object_id(playthrough_db, run_id=run.id, template_id="bent-horseshoe")
         assert character.scene_id is None
 
-        with pytest.raises(ObjectNotReachableError):
-            await service.take(
-                playthrough_db, user_id=user_id, actor_id=character.id, item_id=horseshoe_id
-            )
+        result = await service.take(
+            playthrough_db, user_id=user_id, actor_id=character.id, item_id=horseshoe_id
+        )
+        assert result.status == "refused"
 
         row = await _object_row(playthrough_db, horseshoe_id)
         assert row.owner_object_id is None
@@ -299,96 +290,6 @@ def test_take_raises_not_found_for_an_item_on_a_foreign_run(playthrough_db):
             await service.take(
                 playthrough_db, user_id=user_id_a, actor_id=character_a.id, item_id=horseshoe_b
             )
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
-def test_take_then_give_in_the_same_turn_is_refused_as_already_acted(playthrough_db):
-    """`take` and `give` both spend the turn's action -- proves the
-    one-action gate 08a built is applied here, unchanged."""
-
-    async def _scenario():
-        user_id, run, character = await _reach_village_green(
-            playthrough_db, username="take-give-one-turn"
-        )
-        horseshoe_id = await _object_id(playthrough_db, run_id=run.id, template_id="bent-horseshoe")
-        mira_id = await _object_id(playthrough_db, run_id=run.id, template_id="mira")
-        turn_id = generate_id()
-
-        await service.take(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            item_id=horseshoe_id,
-            turn_id=turn_id,
-        )
-
-        with pytest.raises(AlreadyActedError) as excinfo:
-            await service.give(
-                playthrough_db,
-                user_id=user_id,
-                from_id=character.id,
-                to_id=mira_id,
-                item_id=horseshoe_id,
-                turn_id=turn_id,
-            )
-        assert excinfo.value.code == ErrorCode.ALREADY_ACTED
-
-        row = await _object_row(playthrough_db, horseshoe_id)
-        assert row.owner_object_id == character.id  # the refused give moved nothing
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
-def test_take_refuses_a_second_take_in_the_same_turn(playthrough_db):
-    """`take`'s own gate, not just a later mechanic's: a second reachable
-    item in the same turn is refused by `take` itself."""
-
-    async def _scenario():
-        user_id, run, character = await _reach_lair_hollow(
-            playthrough_db, username="take-second-take"
-        )
-        fleece_rows = (
-            (
-                await playthrough_db.execute(
-                    text(
-                        "SELECT id FROM objects WHERE campaign_run_id = :run_id "
-                        "AND template_id = 'stolen-fleece' ORDER BY id"
-                    ),
-                    {"run_id": run.id},
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert len(fleece_rows) == 2
-        first_fleece, second_fleece = fleece_rows
-        turn_id = generate_id()
-
-        await service.take(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            item_id=first_fleece,
-            turn_id=turn_id,
-        )
-
-        with pytest.raises(AlreadyActedError) as excinfo:
-            await service.take(
-                playthrough_db,
-                user_id=user_id,
-                actor_id=character.id,
-                item_id=second_fleece,
-                turn_id=turn_id,
-            )
-        assert excinfo.value.code == ErrorCode.ALREADY_ACTED
-
-        row = await _object_row(playthrough_db, second_fleece)
-        # Still owned by `wool-sack`, its original container -- the refused
-        # take never touched it (stolen-fleece is carried, never `None`).
-        assert row.owner_object_id != character.id
 
     asyncio.run(_scenario())
 
@@ -421,7 +322,7 @@ def test_give_reowns_the_item_between_two_creatures_in_one_scene(playthrough_db)
             item_id=horseshoe_id,
             turn_id=generate_id(),
         )
-        assert result is None
+        assert result.status == "ok"
 
         row = await _object_row(playthrough_db, horseshoe_id)
         assert row.owner_object_id == mira_id
@@ -464,16 +365,15 @@ def test_give_refuses_when_the_receiver_is_in_another_scene(playthrough_db):
             playthrough_db, user_id=user_id, actor_id=character.id, exit_id="to-lair-maw"
         )
 
-        with pytest.raises(ObjectNotReachableError) as excinfo:
-            await service.give(
-                playthrough_db,
-                user_id=user_id,
-                from_id=character.id,
-                to_id=mira_id,
-                item_id=horseshoe_id,
-                turn_id=generate_id(),
-            )
-        assert excinfo.value.code == ErrorCode.OBJECT_NOT_REACHABLE
+        result = await service.give(
+            playthrough_db,
+            user_id=user_id,
+            from_id=character.id,
+            to_id=mira_id,
+            item_id=horseshoe_id,
+            turn_id=generate_id(),
+        )
+        assert result.status == "refused"
 
         row = await _object_row(playthrough_db, horseshoe_id)
         assert row.owner_object_id == character.id
@@ -499,15 +399,15 @@ def test_give_refuses_when_the_giver_does_not_carry_the_item(playthrough_db):
         horseshoe_id = await _object_id(playthrough_db, run_id=run.id, template_id="bent-horseshoe")
         mira_id = await _object_id(playthrough_db, run_id=run.id, template_id="mira")
 
-        with pytest.raises(ObjectNotReachableError):
-            await service.give(
-                playthrough_db,
-                user_id=user_id,
-                from_id=character.id,
-                to_id=mira_id,
-                item_id=horseshoe_id,
-                turn_id=generate_id(),
-            )
+        result = await service.give(
+            playthrough_db,
+            user_id=user_id,
+            from_id=character.id,
+            to_id=mira_id,
+            item_id=horseshoe_id,
+            turn_id=generate_id(),
+        )
+        assert result.status == "refused"
 
         row = await _object_row(playthrough_db, horseshoe_id)
         assert row.owner_object_id is None
@@ -532,15 +432,15 @@ def test_give_refuses_when_the_receiver_is_not_a_creature(playthrough_db):
             turn_id=generate_id(),
         )
 
-        with pytest.raises(ObjectNotReachableError):
-            await service.give(
-                playthrough_db,
-                user_id=user_id,
-                from_id=character.id,
-                to_id=wool_sack_id,
-                item_id=fleece_id,
-                turn_id=generate_id(),
-            )
+        result = await service.give(
+            playthrough_db,
+            user_id=user_id,
+            from_id=character.id,
+            to_id=wool_sack_id,
+            item_id=fleece_id,
+            turn_id=generate_id(),
+        )
+        assert result.status == "refused"
 
         row = await _object_row(playthrough_db, fleece_id)
         assert row.owner_object_id == character.id
@@ -566,8 +466,7 @@ def test_take_then_drop_in_the_same_turn_succeeds_because_dropping_is_free(playt
             turn_id=turn_id,
         )
 
-        # If `drop` spent the turn's action too, this would raise
-        # `AlreadyActedError` instead of succeeding.
+        # `drop` spends no action -- it is free either way (I2).
         result = await service.drop(
             playthrough_db,
             user_id=user_id,
@@ -575,7 +474,7 @@ def test_take_then_drop_in_the_same_turn_succeeds_because_dropping_is_free(playt
             item_id=fleece_id,
             turn_id=turn_id,
         )
-        assert result is None
+        assert result.status == "ok"
 
         row = await _object_row(playthrough_db, fleece_id)
         assert row.owner_object_id is None
@@ -598,11 +497,10 @@ def test_drop_refuses_an_item_not_carried_by_the_actor(playthrough_db):
         )
         cleaver_id = await _object_id(playthrough_db, run_id=run.id, template_id="notched-cleaver")
 
-        with pytest.raises(ObjectNotReachableError) as excinfo:
-            await service.drop(
-                playthrough_db, user_id=user_id, actor_id=character.id, item_id=cleaver_id
-            )
-        assert excinfo.value.code == ErrorCode.OBJECT_NOT_REACHABLE
+        result = await service.drop(
+            playthrough_db, user_id=user_id, actor_id=character.id, item_id=cleaver_id
+        )
+        assert result.status == "refused"
 
         row = await _object_row(playthrough_db, cleaver_id)
         assert row.owner_object_id != character.id
@@ -610,74 +508,5 @@ def test_drop_refuses_an_item_not_carried_by_the_actor(playthrough_db):
         async with _second_connection() as reader:
             refused = await _tool_calls(reader, run.id, result="refused", name="drop")
             assert len(refused) == 1
-
-    asyncio.run(_scenario())
-
-
-# --- use_item -----------------------------------------------------------
-
-
-@pytest.mark.database
-def test_use_item_refuses_every_item_as_not_consumable(playthrough_db):
-    async def _scenario():
-        user_id, run, character = await _reach_village_green(
-            playthrough_db, username="use-item-refused"
-        )
-        knife_id = await _owned_object_id(
-            playthrough_db, owner_id=character.id, template_id="shepherds-knife"
-        )
-
-        with pytest.raises(ItemNotConsumableError) as excinfo:
-            await service.use_item(
-                playthrough_db, user_id=user_id, actor_id=character.id, item_id=knife_id
-            )
-        assert excinfo.value.code == ErrorCode.ITEM_NOT_CONSUMABLE
-
-        row = await _object_row(playthrough_db, knife_id)
-        assert row.owner_object_id == character.id  # untouched
-
-        async with _second_connection() as reader:
-            refused = await _tool_calls(reader, run.id, result="refused", name="use_item")
-            assert len(refused) == 1
-            assert refused[0]["args"] == {"actorId": character.id, "itemId": knife_id}
-
-        ok_calls = await _tool_calls(playthrough_db, run.id, result="ok", name="use_item")
-        assert ok_calls == []
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
-def test_use_item_checks_already_acted_before_the_consumable_refusal(playthrough_db):
-    async def _scenario():
-        user_id, run, character = await _reach_village_green(
-            playthrough_db, username="use-item-already-acted"
-        )
-        horseshoe_id = await _object_id(playthrough_db, run_id=run.id, template_id="bent-horseshoe")
-        knife_id = await _owned_object_id(
-            playthrough_db, owner_id=character.id, template_id="shepherds-knife"
-        )
-        turn_id = generate_id()
-
-        await service.take(
-            playthrough_db,
-            user_id=user_id,
-            actor_id=character.id,
-            item_id=horseshoe_id,
-            turn_id=turn_id,
-        )
-
-        with pytest.raises(AlreadyActedError) as excinfo:
-            await service.use_item(
-                playthrough_db,
-                user_id=user_id,
-                actor_id=character.id,
-                item_id=knife_id,
-                turn_id=turn_id,
-            )
-        assert excinfo.value.code == ErrorCode.ALREADY_ACTED
-
-        refused = await _tool_calls(playthrough_db, run.id, result="refused", name="use_item")
-        assert len(refused) == 1
 
     asyncio.run(_scenario())

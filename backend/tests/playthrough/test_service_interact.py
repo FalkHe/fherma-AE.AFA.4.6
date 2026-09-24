@@ -33,10 +33,8 @@ from app.core.ids import generate_id
 from app.modules.playthrough import dice as playthrough_dice
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import (
-    ActionNotAvailableError,
     GameObjectNotFoundError,
     RollNotUsableError,
-    RollRequiredError,
 )
 
 CAMPAIGN_ID = "greenhollow"
@@ -199,7 +197,7 @@ def test_interact_passes_on_an_ability_check_roll_meeting_the_dc_and_touches_no_
             face=11,
         )
 
-        success = await service.interact(
+        result = await service.interact(
             playthrough_db,
             user_id=user_id,
             actor_id=character.id,
@@ -207,7 +205,8 @@ def test_interact_passes_on_an_ability_check_roll_meeting_the_dc_and_touches_no_
             action=LIFT_ACTION,
             roll_id=roll_event.id,
         )
-        assert success is True
+        assert result.status == "ok"
+        assert result.facts["success"] is True
 
         ok_calls = await _tool_calls(playthrough_db, run.id, result="ok")
         assert len(ok_calls) == 1
@@ -227,8 +226,14 @@ def test_interact_passes_on_an_ability_check_roll_meeting_the_dc_and_touches_no_
             "success": True,
         }
 
+        # `success` writes `state["fixture_outcomes"]` whole, not a bare
+        # `touches no objects` row (sprint 011/03, WI1, AC1); everything
+        # else about the row is untouched.
         after = await _object_row(playthrough_db, fixture_id)
-        assert after == before
+        assert after.owner_object_id == before.owner_object_id
+        assert after.adventure_run_id == before.adventure_run_id
+        assert after.scene_id == before.scene_id
+        assert after.state["fixture_outcomes"][LIFT_ACTION]["turnId"] is None
 
     asyncio.run(_scenario())
 
@@ -250,7 +255,7 @@ def test_interact_records_a_failed_check_as_ok_not_a_refusal(playthrough_db):
             face=1,
         )
 
-        success = await service.interact(
+        result = await service.interact(
             playthrough_db,
             user_id=user_id,
             actor_id=character.id,
@@ -258,7 +263,8 @@ def test_interact_records_a_failed_check_as_ok_not_a_refusal(playthrough_db):
             action=LIFT_ACTION,
             roll_id=roll_event.id,
         )
-        assert success is False
+        assert result.status == "ok"
+        assert result.facts["success"] is False
 
         ok_calls = await _tool_calls(playthrough_db, run.id, result="ok")
         assert len(ok_calls) == 1
@@ -288,14 +294,15 @@ def test_interact_passes_with_no_roll_when_the_actor_carries_a_bypassing_item(pl
             )
         ).scalar_one()
 
-        success = await service.interact(
+        result = await service.interact(
             playthrough_db,
             user_id=user_id,
             actor_id=character.id,
             object_id=fixture_id,
             action=CUT_ACTION,
         )
-        assert success is True
+        assert result.status == "ok"
+        assert result.facts["success"] is True
 
         ok_calls = await _tool_calls(playthrough_db, run.id, result="ok")
         assert len(ok_calls) == 1
@@ -326,15 +333,15 @@ def test_interact_refuses_a_missing_roll_when_nothing_bypasses_it(playthrough_db
 
         # `LIFT_ACTION` authors no `bypassed_by` at all, so no carried item
         # could ever satisfy it.
-        with pytest.raises(RollRequiredError) as excinfo:
-            await service.interact(
-                playthrough_db,
-                user_id=user_id,
-                actor_id=character.id,
-                object_id=fixture_id,
-                action=LIFT_ACTION,
-            )
-        assert excinfo.value.code == ErrorCode.ROLL_REQUIRED
+        result = await service.interact(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            object_id=fixture_id,
+            action=LIFT_ACTION,
+        )
+        assert result.status == "refused"
+        assert result.reason is not None
 
         after = await _object_row(playthrough_db, fixture_id)
         assert after == before
@@ -364,15 +371,14 @@ def test_interact_refuses_an_unknown_action(playthrough_db):
             playthrough_db, username="interact-unknown-action"
         )
 
-        with pytest.raises(ActionNotAvailableError) as excinfo:
-            await service.interact(
-                playthrough_db,
-                user_id=user_id,
-                actor_id=character.id,
-                object_id=fixture_id,
-                action="Push the screen over with a shoulder",
-            )
-        assert excinfo.value.code == ErrorCode.ACTION_NOT_AVAILABLE
+        result = await service.interact(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            object_id=fixture_id,
+            action="Push the screen over with a shoulder",
+        )
+        assert result.status == "refused"
 
         async with _second_connection() as reader:
             refused = await _tool_calls(reader, run.id, result="refused")
@@ -389,15 +395,14 @@ def test_interact_refuses_an_object_that_is_not_a_fixture(playthrough_db):
             playthrough_db, username="interact-not-a-fixture"
         )
 
-        with pytest.raises(ActionNotAvailableError) as excinfo:
-            await service.interact(
-                playthrough_db,
-                user_id=user_id,
-                actor_id=character.id,
-                object_id=character.id,  # a creature, not a fixture
-                action=LIFT_ACTION,
-            )
-        assert excinfo.value.code == ErrorCode.ACTION_NOT_AVAILABLE
+        result = await service.interact(
+            playthrough_db,
+            user_id=user_id,
+            actor_id=character.id,
+            object_id=character.id,  # a creature, not a fixture
+            action=LIFT_ACTION,
+        )
+        assert result.status == "refused"
 
         async with _second_connection() as reader:
             refused = await _tool_calls(reader, run.id, result="refused")
@@ -467,15 +472,13 @@ def test_interact_refuses_a_roll_already_spent_by_an_earlier_ok_interact(playthr
             action=LIFT_ACTION,
             roll_id=roll_event.id,
         )
-        assert first is True
+        assert first.status == "ok"
+        assert first.facts["success"] is True
 
-        # A second attempt by the character itself, in this same
-        # (untagged) turn, is refused by the one-action rule (WI2, AC3)
-        # before the roll is even looked at -- so the roll-already-spent
-        # refusal this test is about is exercised through a different
-        # actor in the same run reusing the very same roll id instead;
-        # `_consume_roll` gates on the run and the turn, never on who is
-        # attempting to spend it.
+        # A second attempt, through a different actor in the same run
+        # reusing the very same roll id, exercises the roll-already-spent
+        # refusal this test is about: `_consume_roll` gates on the run
+        # and the turn, never on who is attempting to spend it.
         goblin_id = (
             await playthrough_db.execute(
                 text(

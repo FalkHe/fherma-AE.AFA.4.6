@@ -4,9 +4,10 @@ pack and a container"
 
 Black-box throughout, against the sprint's own interface contracts
 (`plan.md -> Interfaces`), never against `app.modules.playthrough.service`'s
-new `take`/`drop`/`give`/`use_item` or `.errors`' new codes -- those are
+new `take`/`drop`/`give` or `.errors`' new codes -- those are
 this sprint's own work items, written in parallel, and this file never
-imports or reads them. Everything else driven here (`start_campaign_run`,
+imports or reads them. `use_item` is retired (sprint 011/03), its own AC4
+test deleted, not ported. Everything else driven here (`start_campaign_run`,
 `create_character`, `enter_adventure`, `use_exit`) is earlier sprints',
 already merged, used exactly as their own acceptance suites use it
 (`test_acceptance_exits_and_endings.py`, `test_acceptance_interact_and_
@@ -33,19 +34,16 @@ rather than promoted, per the "a helper is promoted only once a *second
 module* calls it" rule not applying across test files each owned by a
 different sprint).
 
-Every scenario mints its own `turn_id` per real action -- `take`, `give`
-and `use_item` each spend a creature's action for the turn (08a's rule,
-reused unchanged), so a scenario doing two of them needs two turns. `drop`
-spends nothing: AC2 below takes then drops inside a single turn on
-purpose, since that only succeeds if `drop` really is free -- if it spent
-the turn's action instead, the `drop` right after `take` would itself
-raise `ALREADY_ACTED`.
+Every scenario mints its own `turn_id` per real action, though nothing
+below turns on it any more: the one-action-per-turn rule is retired
+(sprint 011/03, ← research) -- `take`, `give` and `drop` may all be
+called freely within a turn.
 
 No `pytest-asyncio` in this suite (`AGENTS.md` gotchas): every async call
 in a scenario is wrapped in a single `asyncio.run(...)`.
 
 Written against the sprint's interface contracts, not against `take`/
-`drop`/`give`/`use_item` or `.errors` themselves -- this suite is red until
+`drop`/`give` or `.errors` themselves -- this suite is red until
 they land, and green once they do.
 """
 
@@ -57,7 +55,6 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.errors import ErrorCode
 from app.core.ids import generate_id
 from app.modules.playthrough import service as playthrough_service
 
@@ -171,24 +168,6 @@ async def _object_position(session, object_id: str) -> tuple:
     return (row.owner_object_id, row.adventure_run_id, row.scene_id)
 
 
-async def _objects_snapshot(session, run_id: str) -> list[tuple]:
-    """Every `objects` row belonging to `run_id`, every column a mover
-    could plausibly write -- not just the one item a scenario names -- so
-    "nothing moves" is checked against the whole world, not one row picked
-    in advance."""
-    rows = (
-        await session.execute(
-            text(
-                "SELECT id, kind, template_id, name, member_id, owner_object_id, "
-                "adventure_run_id, scene_id, current_hp, max_hp, armour_class, "
-                "is_alive, state FROM objects WHERE campaign_run_id = :run_id ORDER BY id"
-            ),
-            {"run_id": run_id},
-        )
-    ).all()
-    return [tuple(row) for row in rows]
-
-
 async def _enter_village_green(playthrough_db, *, username: str):
     """Shared opening for every scenario below: a fresh user, campaign run
     and character, dropped into `village-green`. Returns `(owner_id, run,
@@ -250,7 +229,7 @@ def test_ac2_take_drop_and_give_move_the_item_and_refuse_across_scenes_or_anothe
             item_id=horseshoe_id,
             turn_id=take_drop_turn,
         )
-        assert take_result is None
+        assert take_result.status == "ok"
         assert await _object_position(playthrough_db, horseshoe_id) == (character.id, None, None)
 
         take_calls = await _dm_tool_calls(playthrough_db, run.id, result="ok", name="take")
@@ -265,7 +244,7 @@ def test_ac2_take_drop_and_give_move_the_item_and_refuse_across_scenes_or_anothe
             item_id=horseshoe_id,
             turn_id=take_drop_turn,
         )
-        assert drop_result is None
+        assert drop_result.status == "ok"
         after_drop = await _object_position(playthrough_db, horseshoe_id)
         assert after_drop[0] is None
         assert after_drop[2] == ENTRY_SCENE
@@ -282,15 +261,14 @@ def test_ac2_take_drop_and_give_move_the_item_and_refuse_across_scenes_or_anothe
         # containers only, never for pickpocketing a creature.
         pickpocket_turn = generate_id()
         before_knife = await _object_position(playthrough_db, mira_knife_id)
-        with pytest.raises(Exception) as held_by_other:
-            await playthrough_service.take(
-                playthrough_db,
-                user_id=owner_id,
-                actor_id=character.id,
-                item_id=mira_knife_id,
-                turn_id=pickpocket_turn,
-            )
-        assert held_by_other.value.code == ErrorCode.OBJECT_NOT_REACHABLE
+        held_by_other = await playthrough_service.take(
+            playthrough_db,
+            user_id=owner_id,
+            actor_id=character.id,
+            item_id=mira_knife_id,
+            turn_id=pickpocket_turn,
+        )
+        assert held_by_other.status == "refused"
         assert await _object_position(playthrough_db, mira_knife_id) == before_knife
 
         async with _second_connection() as reader:
@@ -321,7 +299,7 @@ def test_ac2_take_drop_and_give_move_the_item_and_refuse_across_scenes_or_anothe
             item_id=horseshoe_id,
             turn_id=give_turn,
         )
-        assert give_result is None
+        assert give_result.status == "ok"
         assert await _object_position(playthrough_db, horseshoe_id) == (mira_id, None, None)
 
         give_calls = await _dm_tool_calls(playthrough_db, run.id, result="ok", name="give")
@@ -341,16 +319,15 @@ def test_ac2_take_drop_and_give_move_the_item_and_refuse_across_scenes_or_anothe
 
         cross_scene_turn = generate_id()
         before_actor_knife = await _object_position(playthrough_db, actor_knife_id)
-        with pytest.raises(Exception) as cross_scene:
-            await playthrough_service.give(
-                playthrough_db,
-                user_id=owner_id,
-                from_id=character.id,
-                to_id=mira_id,
-                item_id=actor_knife_id,
-                turn_id=cross_scene_turn,
-            )
-        assert cross_scene.value.code == ErrorCode.OBJECT_NOT_REACHABLE
+        cross_scene = await playthrough_service.give(
+            playthrough_db,
+            user_id=owner_id,
+            from_id=character.id,
+            to_id=mira_id,
+            item_id=actor_knife_id,
+            turn_id=cross_scene_turn,
+        )
+        assert cross_scene.status == "refused"
         assert await _object_position(playthrough_db, actor_knife_id) == before_actor_knife
 
         async with _second_connection() as reader:
@@ -394,7 +371,7 @@ def test_ac5_a_container_in_the_scene_is_looted_but_a_creatures_own_hands_are_no
             item_id=fleece_id,
             turn_id=loot_turn,
         )
-        assert loot_result is None
+        assert loot_result.status == "ok"
         assert await _object_position(playthrough_db, fleece_id) == (character.id, None, None)
 
         loot_calls = await _dm_tool_calls(playthrough_db, run.id, result="ok", name="take")
@@ -405,62 +382,19 @@ def test_ac5_a_container_in_the_scene_is_looted_but_a_creatures_own_hands_are_no
         # scene, is a creature's hands, not a container -- still refused.
         pickpocket_turn = generate_id()
         before_cleaver = await _object_position(playthrough_db, cleaver_id)
-        with pytest.raises(Exception) as pickpocket:
-            await playthrough_service.take(
-                playthrough_db,
-                user_id=owner_id,
-                actor_id=character.id,
-                item_id=cleaver_id,
-                turn_id=pickpocket_turn,
-            )
-        assert pickpocket.value.code == ErrorCode.OBJECT_NOT_REACHABLE
+        pickpocket = await playthrough_service.take(
+            playthrough_db,
+            user_id=owner_id,
+            actor_id=character.id,
+            item_id=cleaver_id,
+            turn_id=pickpocket_turn,
+        )
+        assert pickpocket.status == "refused"
         assert await _object_position(playthrough_db, cleaver_id) == before_cleaver
 
         async with _second_connection() as reader:
             refused = await _dm_tool_calls(reader, run.id, result="refused", name="take")
             assert len(refused) == 1
             assert refused[0]["args"] == {"actorId": str(character.id), "itemId": str(cleaver_id)}
-
-    asyncio.run(_scenario())
-
-
-@pytest.mark.database
-def test_ac4_use_item_refuses_every_template_as_not_consumable_and_nothing_moves(playthrough_db):
-    # <- AC4
-    async def _scenario():
-        owner_id, run, character = await _enter_village_green(playthrough_db, username="ac4-owner")
-
-        horseshoe_id = await _object_id_by_template(playthrough_db, run.id, HORSESHOE_TEMPLATE)
-        (actor_knife_id,) = await _carried_object_ids(
-            playthrough_db, owner_id=character.id, template_id=KNIFE_TEMPLATE
-        )
-
-        # Two different templates, one carried and one not -- "whatever the
-        # item" is genuinely whatever, not one item this suite happens to
-        # have picked.
-        for item_id in (actor_knife_id, horseshoe_id):
-            turn_id = generate_id()
-            before = await _objects_snapshot(playthrough_db, run.id)
-            with pytest.raises(Exception) as not_consumable:
-                await playthrough_service.use_item(
-                    playthrough_db,
-                    user_id=owner_id,
-                    actor_id=character.id,
-                    item_id=item_id,
-                    turn_id=turn_id,
-                )
-            assert not_consumable.value.code == ErrorCode.ITEM_NOT_CONSUMABLE
-            after = await _objects_snapshot(playthrough_db, run.id)
-            assert after == before
-
-        async with _second_connection() as reader:
-            refused = await _dm_tool_calls(reader, run.id, result="refused", name="use_item")
-            assert len(refused) == 2
-            assert {c["args"].get("itemId") for c in refused} == {
-                str(actor_knife_id),
-                str(horseshoe_id),
-            }
-            for call in refused:
-                assert call["args"].get("actorId") == str(character.id)
 
     asyncio.run(_scenario())
