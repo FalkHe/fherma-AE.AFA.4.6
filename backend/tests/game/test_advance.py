@@ -782,3 +782,37 @@ def test_apply_decision_ambiguous_reference_offers_human_readable_labels():
         "Goblin Raider (2)": "goblin-2",
         "Goblin Raider (3)": "goblin-3",
     }
+
+
+def test_hero_down_with_player_text_closes_on_the_ending_never_an_attempt():
+    """← live bug: the closing beat after `FINISH_RUN` carried neither the
+    ending event nor the outcome, so the narrator -- given only the
+    player's own unresolved "I stab at the goblin once more" -- narrated
+    the fallen hero as still fighting. `FINISH_RUN` itself must also be
+    the very first effect, before any move/attempt is ever read."""
+    situation = _situation(hero=_hero(down=True))
+    state = _state(move=None, action=None)
+
+    finish_effect = select_next_effect(state, situation)
+    assert isinstance(finish_effect, Operation)
+    assert finish_effect.kind == OperationKind.FINISH_RUN
+
+    # The turn is now terminal and `FINISH_RUN`'s own result is the last
+    # thing that happened -- exactly `flow_nodes.advance()`'s own shape
+    # after `execute()` runs it.
+    finished_turn = replace(state["turn"], status="terminal")
+    finish_result = OperationResult(
+        operation_id=finish_effect.operation_id,
+        status="ok",
+        reason=None,
+        event_ids=("ending-event-1", "finish-tool-call-1"),
+        value={"outcome": "defeat"},
+    )
+    state = _state(move=None, action=None, turn=finished_turn, result=finish_result)
+
+    closing_effect = select_next_effect(state, situation)
+
+    assert isinstance(closing_effect, BeatRequest)
+    assert closing_effect.kind == "closing"
+    assert closing_effect.payload == {"outcome": "defeat"}
+    assert closing_effect.allowed_evidence_ids == ("ending-event-1", "finish-tool-call-1")

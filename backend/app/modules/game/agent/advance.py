@@ -704,6 +704,24 @@ def eligible_hostiles(situation: Situation, combat: CombatCursor | None) -> tupl
     )
 
 
+def _finish_run_evidence(state: GameFlowState) -> tuple[tuple[str, ...], dict[str, Any]]:
+    """The `FINISH_RUN` operation's own recorded evidence -- its ending
+    `system` event plus its `outcome` fact -- read straight off
+    `state["result"]`, the one operation `advance_terminal` itself always
+    runs immediately before ever requesting the closing beat (← live bug:
+    the closing `BeatRequest` used to carry neither at all, `payload={}`
+    and `allowed_evidence_ids=()`, so the narrator had nothing telling it
+    the run had just ended and hallucinated the player's own last,
+    unresolved action as still under way instead). Guarded on `"outcome"`
+    surviving in `result.value` rather than trusted unconditionally, since
+    a resumed/retried turn could in principle reach here with a stale
+    `state["result"]` left over from something else."""
+    result = state["result"]
+    if isinstance(result, OperationResult) and "outcome" in result.value:
+        return result.event_ids, {"outcome": result.value["outcome"]}
+    return (), {}
+
+
 def advance_terminal(state: GameFlowState, situation: Situation) -> NextEffect | None:
     hero_down = situation.hero.down or not situation.hero.is_alive
     turn = state["turn"]
@@ -719,7 +737,10 @@ def advance_terminal(state: GameFlowState, situation: Situation) -> NextEffect |
     if narrative.draft is not None:
         return Operation(operation_id=_new_id(), kind=OperationKind.RECORD_BEAT, payload={})
     if narrative.event_id is None:
-        return BeatRequest(beat_id=_new_id(), kind="closing", allowed_evidence_ids=(), payload={})
+        evidence_ids, payload = _finish_run_evidence(state)
+        return BeatRequest(
+            beat_id=_new_id(), kind="closing", allowed_evidence_ids=evidence_ids, payload=payload
+        )
     return TurnComplete(status="terminal")
 
 

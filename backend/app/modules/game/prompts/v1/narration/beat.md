@@ -23,4 +23,12 @@ Kind-specific guidance for this beat:
 - `answer` — answer the player's question using only the given facts.
 - `arrival` — describe a new actor or scene becoming present.
 - `refusal` — explain in fiction why the attempted action cannot happen.
-- `closing` — bring the turn to a close without opening a new thread.
+- `closing` — when `facts.outcome` names how the adventure ended
+  (`defeat`, `victory` or `authored`), narrate that ending itself, using
+  only the current scene, the hero's own given state and the listed
+  evidence: the party has already fallen, or already triumphed, before
+  this beat is ever drafted. The player's own last action must never be
+  narrated as attempted, under way or succeeding — it never reached its
+  target; mention it, if at all, only as an intent events overtook ("you
+  meant to ..., but ..."). Without an `outcome` fact, simply bring the
+  turn to a close without opening a new thread.
