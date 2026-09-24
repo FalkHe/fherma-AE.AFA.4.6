@@ -106,6 +106,33 @@ or writes an event.
   overrides that default. `app game graph [-o <path>] [-f <png|mermaid>]`
   inspects or exports the agent's graph visualization.
 
+- `agent/narration.py` — sprint 011/06, WI2: `narrate()`, the new flow's
+  separate unbound narration call over `Situation.public()` only (never
+  the private `Situation`) plus the accepted player action text and the
+  recorded events named by `BeatRequest.allowed_evidence_ids` — no
+  `bind_tools`, no database write. Returns a `BeatDraft`; `draft_state()`
+  puts it in `state["narrative"]` and it stays there until the
+  `RECORD_BEAT` operation (`agent/operations_world.py`) reports `ok`, at
+  which point `recorded_state()` clears the draft and sets `event_id`.
+  Prompt: `prompts/v1/narration/beat.md`, resolved as
+  `game/narration/beat`. Unused by the live graph yet.
+- `agent/decisions.py` — sprint 011/06, WI1: `decide()`, one call per
+  `DecisionKind` (`read_move`, `interpret_evidence`, `judge_reference`,
+  `assess_move`, `monster_action`, `world_reaction`) against its own
+  `prompts/v1/decision/*.md` prompt and its own evidence view of
+  `Situation` (public for most kinds, the private view for `assess_move`
+  and `world_reaction`, which need authored DCs and hidden intent).
+  `read_move` and `interpret_evidence` bind exactly `lookup_rule` and
+  `recall_history` — fresh closures over the call's own `DecisionContext`,
+  never the live graph's `agent/tools.py` — through a plain, ungraphed
+  loop capped at `MAX_TOOL_CALLS` (3) total tool calls before the model is
+  asked for its structured answer. Every proposed operation kind is
+  checked against the strategy's own `allowed_operations`, and every
+  named id/attack/choice against `operations.validate_refs`; either
+  failure re-prompts under the same `decision_id` up to `RETRY_BUDGET` (2)
+  times before `DecisionInvalid` escapes to the caller. Unused by the live
+  graph yet.
+
 ## Surface
 
 - `POST /api/v1/game/runs/{runId}/turn` (sprint 010/03) — the network call
