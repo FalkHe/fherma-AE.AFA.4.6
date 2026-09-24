@@ -26,5 +26,11 @@ Lifting the thorn screen leaves the way open after a reload, and no code outside
 - Fixture state is a flag plus the authored outcome kept on the object; hostility is a field on the creature; both live in existing state storage, so no migration.
 - Dropping the duplicate-action guard makes the old flow slightly more permissive until sprint 08 replaces it.
 
+## Pre-implementation cleanup
+- Delete tests whose contract is intentionally removed here: one action per turn, rolls or hits spent once, and the always-refusing `use_item` service/tool.
+- Rewrite retained mechanic tests to expect typed `ok`/`refused` results instead of exceptions; keep exceptions only for ownership, identity, lifecycle and infrastructure failures.
+- Keep direct roll and hit validation tests for run, turn, kind and target binding; only historical event-scan assertions are obsolete.
+- Do not add compatibility shims for the old graph or its tool contracts solely to keep superseded tests green.
+
 ## Out of scope
 Graph state, handlers, decisions.
