@@ -1196,3 +1196,30 @@ player-visible `system` event carrying the ending prose and
 the only record of *why* a run ended, ever. Calling it on an already-
 finished run is refused typed, not an error: `use_exit`'s own last-
 adventure branch and a later retry can both legitimately reach it twice.
+
+## 24. The situation: one shot of the caller's current moment
+
+`get_situation` (`situation.py`, sprint 011/04) is a read-only projection,
+anchored on the caller's own hero exactly the way `get_table` (§8) is
+anchored — never on whichever `adventure_runs` row happens to read
+`active`. It answers the hero's current scene's authored truth,
+consequences, pressure and hidden secrets; every actor present with a
+`role` **derived fresh, never stored** (member -> `hero`; an explicit
+`state["hostile"]` flag decides outright when set; otherwise a creature
+with no attacks is `neutral`, and an armed one defaults to `hostile` — an
+adventure's own monsters, goblins included, rarely spell "hostile" out in
+their disposition prose, so silence reads as danger, not safety — unless
+that disposition names actual friendliness (`friendly`, `ally`, `allied`,
+`helpful`, protective of the party), which reads as `ally` instead — §23's
+`hostile` flag feeds this, it is never read back off it; `ActorView.hostile`
+is exactly `role == "hostile"`); every fixture with its full authored
+checks and its recorded `fixture_outcomes` (§16); loose items; exits, each
+with its authored `condition` prose; and the run's last twenty
+player-visible events, oldest first. Unlike `get_table`, a missing hero, a
+hero with no adventure, or a scene/adventure id the pinned content no
+longer answers each raise `SituationError` — there is no reading a
+situation with a hole in it. `Situation.public()` strips `secrets`,
+`npc_intent` and every fixture's authored checks (ability, skill, DC,
+unachieved success prose) for a player-facing caller; a fixture's own
+`outcomes` survive, since a recorded outcome is already fact the player
+has seen happen.

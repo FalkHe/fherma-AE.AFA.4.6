@@ -29,12 +29,14 @@ from app.modules.content.schemas import (
     AbilityName,
     CreatureTemplate,
     FixtureCheck,
+    FixtureTemplate,
     LoadedCampaign,
     ObjectTemplate,
     Secret,
     SeedCharacter,
 )
 from app.modules.playthrough import dice
+from app.modules.playthrough import situation as situation_types
 from app.modules.playthrough.errors import (
     AdventureActiveError,
     AdventureExhaustedError,
@@ -53,6 +55,7 @@ from app.modules.playthrough.errors import (
     RollNotUsableError,
     RollRequestNotFoundError,
     RunArchivedError,
+    SituationError,
 )
 from app.modules.playthrough.models import (
     EMBEDDING_WIDTH,
@@ -670,6 +673,287 @@ async def get_table(db: AsyncSession, *, user_id: str, run_id: str) -> TableRead
         adventure=adventure,
         scene=scene,
         heroes=heroes,
+    )
+
+
+def _creature_template_attacks_and_disposition(
+    creature: GameObject, *, campaign_id: str, version: str
+) -> tuple[str | None, tuple[situation_types.AttackView, ...]]:
+    """A scene creature's authored `disposition` and full `Attack`s, read
+    off its own template -- `None`/`()` for a template-less object (a
+    player character, whose own attacks live on carried items, never
+    here). Unlike `_creature_attack_names`, never swallows: a broken
+    template is a broken `Situation` (intent §2.5), not a display gap."""
+    if creature.template_id is None:
+        return None, ()
+    template = content_service.load_object_template(campaign_id, version, creature.template_id)
+    if not isinstance(template, CreatureTemplate):
+        return None, ()
+    attacks = tuple(
+        situation_types.AttackView(name=attack.name, to_hit=attack.to_hit, damage=attack.damage)
+        for attack in template.stat_block.attacks
+    )
+    return template.disposition, attacks
+
+
+async def _actor_view(
+    creature: GameObject,
+    *,
+    is_hero: bool,
+    campaign_id: str,
+    version: str,
+    inventory: Sequence[GameObject],
+) -> situation_types.ActorView:
+    disposition, attacks = (
+        (None, ())
+        if is_hero
+        else _creature_template_attacks_and_disposition(
+            creature, campaign_id=campaign_id, version=version
+        )
+    )
+    state_hostile = creature.state.get("hostile")
+    role = situation_types.derive_role(
+        is_hero=is_hero, state_hostile=state_hostile, disposition=disposition, attacks=attacks
+    )
+    return situation_types.ActorView(
+        id=creature.id,
+        name=creature.name,
+        role=role,
+        kind=creature.kind,
+        current_hp=creature.current_hp,
+        max_hp=creature.max_hp,
+        armour_class=creature.armour_class,
+        is_alive=creature.is_alive,
+        down=is_down(creature),
+        disposition=disposition,
+        hostile=role == "hostile",
+        attacks=attacks,
+        inventory=tuple(situation_types.ItemView(id=item.id, name=item.name) for item in inventory),
+    )
+
+
+async def get_situation(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    run_id: str,
+    recent_limit: int = situation_types.RECENT_WINDOW,
+) -> situation_types.Situation:
+    """The one-shot projection of the caller's current moment (sprint
+    011/04, WI1, I1): the scene's authored truth, its present actors with
+    roles derived fresh (never stored), its fixtures and their recorded
+    outcomes, its exits, its hidden facts, and the run's last
+    `recent_limit` player-visible events, oldest first.
+
+    Gated exactly like `get_table` (`_require_member` then `_get_run`),
+    then anchored on the **caller's own** hero exactly the way `get_table`
+    is (← research) -- never on whichever `adventure_runs` row happens to
+    read `active`. Unlike `get_table`, a missing hero, adventure, scene or
+    piece of pinned content each raise `SituationError` rather than
+    degrading a field to `None`: there is no partial `Situation` (intent
+    §2.5).
+    """
+    member = await _require_member(db, run_id=run_id, user_id=user_id)
+    run = await _get_run(db, run_id)
+
+    loaded = _load_pinned(run)
+    if loaded is None:
+        raise SituationError(run_id, reason="pinned content unavailable")
+
+    hero_stmt = select(GameObject).where(
+        GameObject.member_id == member.id, GameObject.kind == "creature"
+    )
+    hero_result = await db.execute(hero_stmt)
+    hero = hero_result.scalar_one_or_none()
+    if hero is None:
+        raise SituationError(run_id, reason="caller has no hero")
+    if hero.adventure_run_id is None or hero.scene_id is None:
+        raise SituationError(run_id, reason="hero has entered no adventure")
+
+    adventure_run = await db.get(AdventureRun, hero.adventure_run_id)
+    if adventure_run is None:
+        raise SituationError(run_id, reason="hero's adventure run no longer exists")
+
+    adventure_content = loaded.adventures.get(adventure_run.adventure_id)
+    if adventure_content is None:
+        raise SituationError(
+            run_id, reason=f"adventure not in pinned content: {adventure_run.adventure_id}"
+        )
+
+    scene_content = loaded.scenes.get(hero.scene_id)
+    if scene_content is None:
+        raise SituationError(run_id, reason=f"scene not in pinned content: {hero.scene_id}")
+
+    campaign_id = run.campaign_id
+    version = run.content_version
+
+    items_stmt = select(GameObject).where(
+        GameObject.owner_object_id.in_(
+            select(GameObject.id).where(
+                GameObject.campaign_run_id == run_id,
+                GameObject.scene_id == hero.scene_id,
+                GameObject.kind == "creature",
+            )
+        )
+    )
+    items_result = await db.execute(items_stmt)
+    items_by_owner: dict[str, list[GameObject]] = {}
+    for item in items_result.scalars().all():
+        items_by_owner.setdefault(item.owner_object_id, []).append(item)
+
+    hero_view = await _actor_view(
+        hero,
+        is_hero=True,
+        campaign_id=campaign_id,
+        version=version,
+        inventory=items_by_owner.get(hero.id, []),
+    )
+
+    other_creatures_stmt = (
+        select(GameObject)
+        .where(
+            GameObject.campaign_run_id == run_id,
+            GameObject.scene_id == hero.scene_id,
+            GameObject.kind == "creature",
+            GameObject.owner_object_id.is_(None),
+            GameObject.id != hero.id,
+        )
+        .order_by(GameObject.id)
+    )
+    other_creatures_result = await db.execute(other_creatures_stmt)
+    actors = tuple(
+        [
+            await _actor_view(
+                creature,
+                is_hero=False,
+                campaign_id=campaign_id,
+                version=version,
+                inventory=items_by_owner.get(creature.id, []),
+            )
+            for creature in other_creatures_result.scalars().all()
+        ]
+    )
+
+    fixtures_stmt = (
+        select(GameObject)
+        .where(
+            GameObject.campaign_run_id == run_id,
+            GameObject.scene_id == hero.scene_id,
+            GameObject.kind == "fixture",
+            GameObject.owner_object_id.is_(None),
+        )
+        .order_by(GameObject.id)
+    )
+    fixtures_result = await db.execute(fixtures_stmt)
+    fixtures = []
+    for fixture in fixtures_result.scalars().all():
+        checks: tuple[situation_types.FixtureCheckView, ...] = ()
+        description = fixture.name
+        if fixture.template_id is not None:
+            template = content_service.load_object_template(
+                campaign_id, version, fixture.template_id
+            )
+            if isinstance(template, FixtureTemplate):
+                description = template.description
+                checks = tuple(
+                    situation_types.FixtureCheckView(
+                        action=check.action,
+                        ability=check.ability,
+                        skill=check.skill,
+                        dc=check.dc,
+                        success=check.success,
+                    )
+                    for check in template.checks
+                )
+        outcomes = {
+            action: entry["success"]
+            for action, entry in fixture.state.get("fixture_outcomes", {}).items()
+        }
+        fixtures.append(
+            situation_types.FixtureView(
+                id=fixture.id,
+                name=fixture.name,
+                description=description,
+                checks=checks,
+                outcomes=outcomes,
+            )
+        )
+
+    loose_items_stmt = (
+        select(GameObject)
+        .where(
+            GameObject.campaign_run_id == run_id,
+            GameObject.scene_id == hero.scene_id,
+            GameObject.kind == "item",
+            GameObject.owner_object_id.is_(None),
+        )
+        .order_by(GameObject.id)
+    )
+    loose_items_result = await db.execute(loose_items_stmt)
+    loose_items = tuple(
+        situation_types.ItemView(id=item.id, name=item.name)
+        for item in loose_items_result.scalars().all()
+    )
+
+    exits = tuple(
+        situation_types.ExitView(
+            id=exit_.id,
+            kind=exit_.kind,
+            to=exit_.to,
+            description=exit_.description,
+            condition=exit_.condition,
+        )
+        for exit_ in scene_content.exits
+    )
+
+    secrets = tuple(
+        situation_types.SecretView(
+            fact=secret.fact,
+            ability=secret.ability,
+            skill=secret.skill,
+            dc=secret.dc,
+            discovered_by=secret.discovered_by,
+        )
+        for secret in scene_content.hidden
+    )
+
+    recent_stmt = (
+        select(Event)
+        .where(Event.campaign_run_id == run_id, Event.visibility == "player")
+        .order_by(Event.id.desc())
+        .limit(recent_limit)
+    )
+    recent_result = await db.execute(recent_stmt)
+    recent = tuple(
+        situation_types.RecentEvent(
+            id=event.id,
+            turn_id=event.turn_id,
+            type=event.type,
+            payload=event.payload,
+            created_at=event.created_at,
+        )
+        for event in reversed(recent_result.scalars().all())
+    )
+
+    return situation_types.Situation(
+        run_id=run.id,
+        hero_id=hero.id,
+        adventure_run_id=adventure_run.id,
+        scene_id=hero.scene_id,
+        campaign_title=loaded.campaign.title,
+        adventure_title=adventure_content.title,
+        scene_title=scene_content.title,
+        truth=tuple(scene_content.truth),
+        consequences=tuple(scene_content.consequences),
+        pressure=scene_content.pressure,
+        npc_intent=scene_content.npc_intent,
+        secrets=secrets,
+        hero=hero_view,
+        actors=actors,
+        fixtures=tuple(fixtures),
+        loose_items=loose_items,
+        exits=exits,
+        recent=recent,
     )
 
 
@@ -3831,3 +4115,83 @@ async def recall(db: AsyncSession, *, run_id: str, query: str, k: int = 5) -> li
         NarrationRead(id=event_id, created_at=created_at, text=payload.get("text", ""))
         for event_id, created_at, payload in rows
     ]
+
+
+async def recall_history(
+    db: AsyncSession, *, user_id: str, run_id: str, query: str, limit: int = 3
+) -> list[situation_types.RecalledTurn]:
+    """Semantic narration matches, each expanded to the turn it belongs to
+    (sprint 011/04, WI2, I2, intent §2.4).
+
+    Membership-gated, unlike `recall` itself (`_require_member` first --
+    every run-scoped read opens with it, ← research). Anchors come from
+    `recall` unchanged, closest first, so this function's own ordering
+    follows the anchors' rank rather than re-deriving it. `recall` itself
+    returns `NarrationRead` (`id, createdAt, text`) with no `turn_id`, so
+    one extra query reads each anchor's own `turn_id` back by id before
+    any turn can be expanded.
+
+    One extra query per *distinct* `turn_id` among the anchors -- never
+    once per anchor -- selecting every `visibility='player'` event of that
+    turn, ordered by `id` (the same visibility filter and ordering
+    `list_events` applies to a whole transcript). An anchor whose own
+    event has no `turn_id` never joins a shared query: it yields a
+    `RecalledTurn` holding only its own narration row, since there is no
+    turn to expand into.
+    """
+    await _require_member(db, run_id=run_id, user_id=user_id)
+
+    anchors = await recall(db, run_id=run_id, query=query, k=limit)
+    if not anchors:
+        return []
+
+    anchor_ids = [anchor.id for anchor in anchors]
+    turn_by_anchor_id = dict(
+        (await db.execute(select(Event.id, Event.turn_id).where(Event.id.in_(anchor_ids)))).all()
+    )
+
+    turn_ids = sorted({turn_id for turn_id in turn_by_anchor_id.values() if turn_id is not None})
+    events_by_turn: dict[str, list[situation_types.RecentEvent]] = {}
+    if turn_ids:
+        stmt = (
+            select(Event.id, Event.turn_id, Event.type, Event.payload, Event.created_at)
+            .where(
+                Event.campaign_run_id == run_id,
+                Event.turn_id.in_(turn_ids),
+                Event.visibility == "player",
+            )
+            .order_by(Event.id)
+        )
+        result = await db.execute(stmt)
+        for event_id, turn_id, event_type, payload, created_at in result.all():
+            events_by_turn.setdefault(turn_id, []).append(
+                situation_types.RecentEvent(
+                    id=event_id,
+                    turn_id=turn_id,
+                    type=event_type,
+                    payload=payload,
+                    created_at=created_at,
+                )
+            )
+
+    recalled_turns = []
+    for anchor in anchors:
+        anchor_turn_id = turn_by_anchor_id.get(anchor.id)
+        if anchor_turn_id is None:
+            events = (
+                situation_types.RecentEvent(
+                    id=anchor.id,
+                    turn_id=None,
+                    type="narration",
+                    payload={"text": anchor.text},
+                    created_at=anchor.created_at,
+                ),
+            )
+        else:
+            events = tuple(events_by_turn.get(anchor_turn_id, ()))
+        recalled_turns.append(
+            situation_types.RecalledTurn(
+                turn_id=anchor_turn_id, anchor_event_id=anchor.id, events=events
+            )
+        )
+    return recalled_turns

@@ -2,6 +2,16 @@
 
 Owns a player's playthrough of a campaign and who may act in it.
 
+`situation.py` (sprint 011/04, WI1) holds the frozen-dataclass projection
+`service.get_situation` assembles: the caller's current scene, its actors
+with roles derived fresh, its fixtures/exits/secrets and a bounded tail of
+recent transcript, plus `Situation.public()` for a player-safe view — no
+route yet, no Pydantic, consumed in-process only.
+
+`service.recall_history` (sprint 011/04, WI2) expands each of `recall`'s
+semantic narration matches into its own turn's player-visible events
+(`situation.RecalledTurn`), reusing `recall` unchanged as the anchor read.
+
 ## Owns
 
 - The `campaign_runs` table (`models.py`): one playthrough per row —

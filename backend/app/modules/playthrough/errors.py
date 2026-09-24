@@ -273,3 +273,19 @@ class InvalidEventPayloadError(PlaythroughError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+class SituationError(PlaythroughError):
+    """`get_situation` (sprint 011/04, WI1) has nothing to project: the
+    caller has no hero, the hero has entered no adventure, or the hero's
+    own scene no longer names a scene the pinned content carries. Raised
+    rather than answering a partial `Situation` (intent §2.5) -- there is
+    no reading a situation with a hole in it.
+    """
+
+    code = ErrorCode.NOT_FOUND
+
+    def __init__(self, run_id: str, *, reason: str) -> None:
+        self.run_id = run_id
+        self.reason = reason
+        super().__init__(f"no situation to project for run {run_id}: {reason}")
