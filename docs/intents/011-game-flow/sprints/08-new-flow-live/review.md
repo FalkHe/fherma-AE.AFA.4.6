@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-24
 updated: 2026-09-24
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/79
 ---
 # Review: Sprint 08 — The new game flow goes live
 
