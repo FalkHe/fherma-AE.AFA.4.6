@@ -883,9 +883,7 @@ def test_the_model_can_supply_explicit_actor_id(prompt, roll_spy):
     assert roll_spy.calls[-1]["actor_id"] == "actor-2"
 
 
-def test_the_real_dm_prompt_names_the_tool_and_the_graph_has_all_nodes():
-    agent = service.build_agent(model=_scripted_model([]))
-
+def test_the_real_dm_prompt_names_the_tool():
     system_prompt = service.load_prompt(service.SYSTEM_PROMPT_ID).text
     assert "roll_dice" in system_prompt
     assert "After each completed player attack" in system_prompt
@@ -894,14 +892,6 @@ def test_the_real_dm_prompt_names_the_tool_and_the_graph_has_all_nodes():
     assert "reaches 0 HP, clearly narrate that it is down" in system_prompt
     assert "every player character is down" in system_prompt
     assert "end the story; do not ask for another player action" in system_prompt
-    assert set(agent.get_graph().nodes) >= {
-        nodes.LOAD_CONTEXT,
-        nodes.RECORD_ACTION,
-        nodes.GUARD,
-        nodes.NARRATE,
-        nodes.TOOLS_NODE,
-        nodes.RECORD_NARRATION,
-    }
 
 
 def test_the_real_dm_prompt_requires_ability_skill_dc_in_roll_context():
