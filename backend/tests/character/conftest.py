@@ -109,6 +109,7 @@ def run_overview(monkeypatch, signed_in):
                         appearance="Weathered and grim.",
                         backstory="A soldier of the border watch.",
                         items=[],
+                        down=False,
                     )
                     if has_character
                     else None,

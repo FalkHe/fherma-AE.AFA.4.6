@@ -33,6 +33,7 @@ const CHARACTER = {
   },
   backstory: "",
   items: [],
+  down: false,
 };
 
 const READY_MEMBER = { userId: "u1", username: "thorin", role: "owner", ready: true, character: CHARACTER };

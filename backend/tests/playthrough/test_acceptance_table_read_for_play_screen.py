@@ -84,6 +84,7 @@ def _hero() -> SimpleNamespace:
         appearance="Barely three feet of him, all elbows and grin.",
         backstory="Raised in the kitchens of a river inn.",
         items=[],
+        down=False,
     )
 
 
@@ -189,6 +190,7 @@ def test_ac2_each_seated_hero_carries_its_full_sheet(client, monkeypatch, sessio
         "appearance",
         "backstory",
         "items",
+        "down",
     }
     assert hero["name"] == "Rosalind Thorn"
     assert hero["race"] == "Halfling"

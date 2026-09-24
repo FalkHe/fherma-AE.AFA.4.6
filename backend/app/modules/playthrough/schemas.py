@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -85,8 +86,11 @@ class CharacterRead(CamelModel):
     card facts -- ← research Decision 5; WI1 sprint 010/05 widens this to
     the one hero shape shared by every read that already returns one --
     the run overview, the `POST …/character` route and intent 009's
-    character card): no full state, no keys, no ownership, and no
-    `isAlive`/`down` (← D7 keeps conditions off the card). `race`/
+    character card): no full state, no keys, no ownership, and no `isAlive`
+    (← D7 keeps conditions off the card). `down` is the one exception
+    (sprint 011/02, WI3, I3, intent §1.5): a downed hero must read as
+    downed everywhere a read names it, the card included -- hp still reads
+    0, `down` is additive. `race`/
     `characterClass`/`level`/`appearance`/`abilities`/`backstory` are read
     off the object's `state` column (`CharacterState`), never stored as
     columns of their own -- `backstory` is `CharacterState.background`
@@ -106,6 +110,7 @@ class CharacterRead(CamelModel):
     appearance: str
     backstory: str
     items: list[Item]
+    down: bool
 
 
 class CampaignRunMemberRead(CamelModel):
@@ -500,3 +505,50 @@ EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     "way_opened": WayOpenedPayload,
     "rule_looked_up": RuleLookedUpPayload,
 }
+
+
+@dataclass(frozen=True)
+class InitiativeResult:
+    """`settle_initiative`'s own return (WI1, AC1/AC2) -- internal, never a
+    wire shape: the two sides' totals and roll event ids, which side won
+    (hero side on a tie), and one stable actor order, winning side first
+    then the other, each side keeping its own given id order."""
+
+    hero_total: int
+    hostile_total: int
+    hero_roll_id: str
+    hostile_roll_id: str
+    winning_side: Literal["hero", "hostile"]
+    order: list[str]
+
+
+@dataclass(frozen=True)
+class AttackResult:
+    """`attack`'s own return (WI2, I2) -- internal, never a wire shape:
+    replaces the old bare outcome string with the hit's own event id, so a
+    caller no longer has to guess it by scanning the transcript for the
+    newest `tool_call`. `hit_id` is the `attack` `tool_call` event's own
+    id, set on `hit`/`critical`, `None` on a `miss` -- there is nothing for
+    `damage` to consume when nothing landed. A natural 20 is always
+    `critical`, regardless of what `total` would otherwise say against
+    `armour_class`."""
+
+    status: Literal["hit", "miss", "critical"]
+    hit_id: str | None
+    total: int
+    natural: int
+    armour_class: int
+
+
+@dataclass(frozen=True)
+class DamageResult:
+    """`damage`'s own return (WI2, I2) -- internal, never a wire shape:
+    replaces the old bare `int` applied. `is_alive`/`down` mirror the
+    target's own state after the hit lands, `down` always present and
+    `False` for anything that is not a character."""
+
+    applied: int
+    current_hp: int
+    max_hp: int
+    is_alive: bool
+    down: bool

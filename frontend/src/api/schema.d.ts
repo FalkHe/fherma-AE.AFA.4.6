@@ -269,6 +269,22 @@ export interface paths {
          *
          *     Settings are read through `get_settings()` inside the handler, not at
          *     import time, so a test can pin them small (I3).
+         *
+         *     The generator below never touches `db`: FastAPI tears the
+         *     request-scoped session down the moment this handler returns, before
+         *     the streaming body ever runs, so a poll against it raises
+         *     `sqlalchemy.exc.MissingGreenlet`. Each poll instead opens its own
+         *     short-lived session from the process-wide sessionmaker seam
+         *     (`app.core.db.get_sessionmaker()`, the same one the CLI commands use
+         *     for their own request-less sessions), used and closed within that one
+         *     poll.
+         *
+         *     `user_id` is read off `auth.user` once, before that first call: `db`
+         *     rolls back at the end of every `latest_event_id` (service.py), which
+         *     expires every attribute `auth.user` -- an ORM object loaded through
+         *     this same session -- ever loaded, and a later `auth.user.id` would
+         *     itself trigger a lazy-load `MissingGreenlet` the same way a poll
+         *     against `db` did.
          */
         get: operations["stream_campaign_run_api_v1_playthrough_campaign__run_id__stream_get"];
         put?: never;
@@ -614,8 +630,11 @@ export interface components {
          *     card facts -- ← research Decision 5; WI1 sprint 010/05 widens this to
          *     the one hero shape shared by every read that already returns one --
          *     the run overview, the `POST …/character` route and intent 009's
-         *     character card): no full state, no keys, no ownership, and no
-         *     `isAlive`/`down` (← D7 keeps conditions off the card). `race`/
+         *     character card): no full state, no keys, no ownership, and no `isAlive`
+         *     (← D7 keeps conditions off the card). `down` is the one exception
+         *     (sprint 011/02, WI3, I3, intent §1.5): a downed hero must read as
+         *     downed everywhere a read names it, the card included -- hp still reads
+         *     0, `down` is additive. `race`/
          *     `characterClass`/`level`/`appearance`/`abilities`/`backstory` are read
          *     off the object's `state` column (`CharacterState`), never stored as
          *     columns of their own -- `backstory` is `CharacterState.background`
@@ -647,6 +666,8 @@ export interface components {
             backstory: string;
             /** Items */
             items: components["schemas"]["Item"][];
+            /** Down */
+            down: boolean;
         };
         /**
          * CreationReply
@@ -773,9 +794,10 @@ export interface components {
          * SheetSoFar
          * @description The draft as it stands, on the wire (sprint 009-05, WI1): every
          *     field nullable, filled in only as the conversation settles it.
-         *     `maxHp`, `armourClass`, `speed`, `skills` and `equipment` only ever
-         *     come from a successful `service.build_sheet` -- everything else is
-         *     read straight off the draft (← research Decision 3).
+         *     Derived fields come from `service.build_sheet` when it can build a
+         *     provisional sheet; chosen skills and gear still show when scores need
+         *     correction. Unchosen gear stays off the preview until defaults are
+         *     explicitly taken.
          */
         SheetSoFar: {
             /** Name */

@@ -110,6 +110,19 @@ def _signed_d20(modifier: int) -> str:
     return "1d20" if modifier == 0 else f"1d20{modifier:+d}"
 
 
+def _double_dice(formula: str) -> str:
+    """A critical hit's own transform (WI2, ← D per intent §1.4): doubles a
+    `damage` formula's dice count only, leaving any flat modifier
+    untouched -- `1d8+3` becomes `2d8+3`, never `1d8+6` or `2d8+6`."""
+    match = _EXPRESSION_RE.match(formula.strip())
+    if match is None:
+        raise InvalidDiceExpressionError(formula)
+    count = int(match["count"])
+    sides = match["sides"]
+    modifier = match["modifier"] or ""
+    return f"{count * 2}d{sides}{modifier}"
+
+
 def _actor_abilities(actor: GameObject, *, campaign_id: str, version: str) -> Abilities:
     """A character (`template_id is None`) keeps its six scores in its own
     `state["abilities"]`; a template-born creature has none of its own --
@@ -206,7 +219,10 @@ def derive_formula(
       `item`'s own carried-row state when given (sprint 009-02, WI2,
       AC5), otherwise `context["item_id"]`'s template when given,
       otherwise the actor's own stat block; `context["attack"]` names
-      which one when there is more than one to choose from.
+      which one when there is more than one to choose from. A `damage`
+      roll with a truthy `context["critical"]` doubles the attack's own
+      dice count only, leaving any flat modifier untouched (`1d8+3` ->
+      `2d8+3`, intent §1.4).
     - `ability_check` / `saving_throw` -- the modifier of the ability
       named in `context["ability"]`; missing or unrecognised names raise
       `ValueError` naming the six valid abilities, rather than a bare
@@ -236,7 +252,11 @@ def derive_formula(
             item=item,
         )
         attack = _select_attack(attacks, context.get("attack"))
-        return _signed_d20(attack.to_hit) if kind == "attack" else attack.damage
+        if kind == "attack":
+            return _signed_d20(attack.to_hit)
+        if context.get("critical"):
+            return _double_dice(attack.damage)
+        return attack.damage
 
     if kind in ("ability_check", "saving_throw"):
         ability = context.get("ability")

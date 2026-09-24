@@ -356,7 +356,7 @@ def test_damage_appends_one_hp_changed_entry_with_before_after_and_flags(playthr
             hit_id=hit_id,
             turn_id=turn_id,
         )
-        assert applied == 7
+        assert applied.applied == 7
 
         visible = await _player_events(playthrough_db, run.id, type_="hp_changed")
         assert len(visible) == 1
@@ -531,7 +531,7 @@ def test_a_successful_attack_leaves_no_visible_entry(playthrough_db):
             roll_id=attack_roll.id,
             turn_id=turn_id,
         )
-        assert outcome == "hit"
+        assert outcome.status == "hit"
 
         after = await _all_visible_event_count(playthrough_db, run.id)
         assert after == before
