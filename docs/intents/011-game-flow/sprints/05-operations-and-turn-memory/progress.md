@@ -9,9 +9,9 @@ stage: draft
 
 | WI | Status | Note |
 |---|---|---|
-| 1 | running | |
-| 2 | open | after WI1 |
-| 3 | open | after WI1 |
+| 1 | done | flow_state.py, serializer round-trip and clearers tested |
+| 2 | running | |
+| 3 | running | |
 
 Status: `open | running | done | failed`
 

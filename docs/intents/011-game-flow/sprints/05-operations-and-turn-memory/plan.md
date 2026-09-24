@@ -33,7 +33,7 @@ created: 2026-09-24
 No qa agent (owner: reduce testing); WI tests cover AC1–AC5.
 
 ## Notes
-- Type field lists live in research.md to keep this plan within its cap.
+- Type field lists live in research.md.
 
 ## Order
-WI1 first. Then parallel: WI2 (creates the registry file), WI3 (adds entries).
+WI1 first. Then parallel: WI2 (registry, dispatcher, own handlers), WI3 (handlers in `operations_world.py`, merged by WI2).
