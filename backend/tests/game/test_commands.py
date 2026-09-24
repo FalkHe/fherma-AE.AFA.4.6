@@ -11,11 +11,12 @@ logic, never the graph; the seam for the hero lookup is
 `playthrough_service.get_member_character` (module attribute, per this
 sprint's dependency), never a name import.
 
-The replay test (AC2) is the exception: it runs the real agent end to end
-across two separate `play` invocations sharing one `InMemorySaver`
-checkpointer, the same way `tests/game/test_service.py`'s CLI tests do, to
-prove the checkpointer thread -- not any new resume code -- is what makes
-the second invocation find the first one's pending question.
+The replay test (AC2) is the exception (sprint 011/08, WI2): it monkeypatches
+`game_service.run_turn` and `playthrough_service.list_events` across two
+separate `play` invocations to prove `_play_session` renders whatever
+`awaiting` says and rejoins where it left off -- the real graph's own
+checkpointed replay is `test_scenarios_database.py`'s job, not this CLI
+wiring test's.
 """
 
 import asyncio
@@ -25,16 +26,11 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
-from langgraph.checkpoint.memory import InMemorySaver
 from typer.testing import CliRunner
 
 from app.cli import cli
-from app.core.checkpointer import service as checkpointer_service
 from app.modules.game import commands
 from app.modules.game import service as game_service
-from app.modules.game.agent import nodes, tools
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import CharacterNotFoundError
 from app.modules.users import service as users_service
@@ -292,98 +288,6 @@ def test_turn_output_prefixes_narration_and_tool_results(monkeypatch):
 # --- quit and rejoin (AC2) ------------------------------------------------
 
 
-class _ToolAwareFakeModel(GenericFakeChatModel):
-    def bind_tools(self, tools, **kwargs):
-        return self
-
-
-def test_a_session_quit_while_the_dm_waits_for_an_answer_still_has_it_waiting_on_replay(
-    monkeypatch,
-):
-    saver = InMemorySaver()
-
-    @asynccontextmanager
-    async def fake_checkpointer():
-        yield saver
-
-    monkeypatch.setattr(checkpointer_service, "checkpointer", fake_checkpointer)
-    monkeypatch.setattr(
-        game_service, "load_prompt", lambda prompt_id, version=None: _Prompt("Be the DM.")
-    )
-    monkeypatch.setattr(
-        nodes.playthrough_service, "record_player_action", _noop_record_player_action
-    )
-    monkeypatch.setattr(nodes.playthrough_service, "record_narration", _noop_record_narration)
-    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
-
-    ask_call = AIMessage(
-        content="",
-        tool_calls=[
-            {
-                "id": "call-ask-1",
-                "name": "ask_player",
-                "args": {"text": "Do you sneak or run?", "options": ["Sneak", "Run"]},
-            }
-        ],
-    )
-
-    async def fake_ask_player(db, *, user_id, run_id, text, options, turn_id=None):
-        return _Event(id="q-event-1", type="question", payload={"text": text, "options": options})
-
-    monkeypatch.setattr(tools.playthrough_service, "ask_player", fake_ask_player)
-
-    first_model = _ToolAwareFakeModel(messages=iter([ask_call]))
-    monkeypatch.setattr(game_service, "chat_model", lambda: first_model)
-
-    first_result = _invoke(
-        [
-            "game",
-            "play",
-            "--user",
-            USER_ID,
-            "--run-id",
-            RUN_ID,
-            "--actor",
-            "actor-1",
-        ],
-        input="I approach the goblins.\n",
-    )
-    # No answer supplied: input stream ends while the DM is waiting, quitting
-    # the session with the question still pending.
-    assert first_result.exit_code == 0, first_result.output
-    assert "Do you sneak or run?" in first_result.stdout
-
-    second_model = _ToolAwareFakeModel(
-        messages=iter([AIMessage(content="You choose to sneak quietly.")])
-    )
-    monkeypatch.setattr(game_service, "chat_model", lambda: second_model)
-
-    second_result = _invoke(
-        [
-            "game",
-            "play",
-            "--user",
-            USER_ID,
-            "--run-id",
-            RUN_ID,
-            "--actor",
-            "actor-1",
-        ],
-        input="1\n",
-    )
-
-    assert second_result.exit_code == 0, second_result.output
-    # The same question is still waiting -- rejoining the run alone (same
-    # thread id) surfaces it again without a fresh player message.
-    assert "Do you sneak or run?" in second_result.stdout
-    assert "You choose to sneak quietly." in second_result.stdout
-
-
-@dataclass
-class _Prompt:
-    text: str
-
-
 @dataclass
 class _Event:
     id: str
@@ -399,8 +303,11 @@ class _Event:
     created_at: Any = None
 
 
-async def _noop_record_player_action(db, **kwargs):
-    return _Event(id="event-1", type="player_action", payload={"text": kwargs.get("text", "")})
+@dataclass
+class _Outcome:
+    turn_id: str
+    kind: str
+    awaiting: str
 
 
 async def _noop_record_narration(db, **kwargs):
@@ -628,3 +535,71 @@ def test_actions_verbose_includes_pending_interrupts(monkeypatch):
     assert result.exit_code == 0, result.output
     assert '"checkpoint": "cp-9"' in result.stdout
     assert '"type": "question"' in result.stdout
+
+
+def test_a_session_quit_while_the_dm_waits_for_an_answer_still_has_it_waiting_on_replay(
+    monkeypatch,
+):
+    question_event = _Event(
+        id="q-event-1",
+        type="question",
+        payload={"text": "Do you sneak or run?", "options": ["Sneak", "Run"]},
+    )
+
+    async def fake_get_member_character(db, *, user_id, run_id):
+        return _Character(id="actor-1")
+
+    monkeypatch.setattr(playthrough_service, "get_member_character", fake_get_member_character)
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+
+    # First invocation: the run's own turn engine leaves the question
+    # pending -- no answer is supplied before the input stream ends, quitting
+    # the session with it still waiting.
+    async def fake_run_turn_first(db, *, user_id, run_id, text):
+        return _Outcome(turn_id="turn-1", kind="action", awaiting="answer:q-event-1")
+
+    async def fake_list_events_first(db, *, user_id, run_id, after=None):
+        return [question_event]
+
+    monkeypatch.setattr(game_service, "run_turn", fake_run_turn_first)
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events_first)
+
+    first_result = _invoke(
+        ["game", "play", "--user", USER_ID, "--run-id", RUN_ID],
+        input="I approach the goblins.\n",
+    )
+    assert first_result.exit_code == 0, first_result.output
+    assert "Do you sneak or run?" in first_result.stdout
+
+    # Second invocation, same run: rejoining alone (no fresh player message
+    # is sent for the opening call) surfaces the same still-pending question.
+    async def fake_run_turn_second(db, *, user_id, run_id, text):
+        if text is None:
+            return _Outcome(turn_id="turn-1", kind="action", awaiting="answer:q-event-1")
+        return _Outcome(turn_id="turn-1", kind="answer", awaiting="none")
+
+    calls = []
+
+    async def fake_list_events_second(db, *, user_id, run_id, after=None):
+        calls.append(after)
+        if len(calls) == 1:
+            return [question_event]
+        return [
+            _Event(
+                id="n-event-1",
+                type="narration",
+                payload={"text": "You choose to sneak quietly."},
+            )
+        ]
+
+    monkeypatch.setattr(game_service, "run_turn", fake_run_turn_second)
+    monkeypatch.setattr(playthrough_service, "list_events", fake_list_events_second)
+
+    second_result = _invoke(
+        ["game", "play", "--user", USER_ID, "--run-id", RUN_ID],
+        input="1\n",
+    )
+
+    assert second_result.exit_code == 0, second_result.output
+    assert "Do you sneak or run?" in second_result.stdout
+    assert "You choose to sneak quietly." in second_result.stdout

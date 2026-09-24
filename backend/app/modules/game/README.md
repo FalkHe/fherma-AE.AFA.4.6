@@ -8,17 +8,24 @@ or writes an event.
 
 ## Owns
 
-- `service.py` — the public surface: `build_agent()` compiles the graph over
-  the core chat model and the resolved system prompt; `turn()` runs one
-  player message on a thread and returns the reply plus the rolls made.
-  `run_turn(db, *, user_id, run_id, text)` (sprint 010/03) is the one entry
-  point the HTTP route calls: it decides which of five kinds
-  (`action`/`answer`/`roll`/`retry`/`opening`) a turn is from the run's own
-  thread state and transcript, never from what the caller claims, and
-  returns a `TurnOutcome(turn_id, kind, awaiting)`. The `opening` leg
+- `service.py` — the public surface: `build_agent()` compiles the new
+  five-node flow (`agent/graph.py`'s `build_graph()`) over the core chat
+  model. `run_turn(db, *, user_id, run_id, text)` (sprint 010/03, rewired
+  onto the new flow in sprint 011/08) is the one entry point the HTTP
+  route *and* the CLI `play` command call: it decides which of five kinds
+  (`action`/`answer`/`roll`/`retry`/`opening`) a turn is from the run's
+  own checkpointed `state["awaiting"]` (an `AwaitingRef`, kind `"roll"` or
+  `"choice"`) and `snapshot.next` alone, never from what the caller
+  claims, and returns a `TurnOutcome(turn_id, kind, awaiting)`. A `roll`
+  resumes with `Command(resume={})`; an `answer` resumes with
+  `Command(resume=text)` after checking `text` against the checkpointed
+  public `options`; neither writes its own row — the flow's own
+  `roll_player`/`accept_choice` operations do that once the resumed graph
+  reaches them. `run_turn` calls `flow_nodes.set_runtime(FlowRuntime(db,
+  user_id, model))` once per turn before invoking. The `opening` leg
   (sprint 010/11 round 4, Fault A — ← finding) first checks `get_awaiting`
-  itself: no real interrupt is pending and nothing is queued to retry, so
-  a non-`"none"` answer there names a stale or dangling request, never the
+  itself: no `awaiting` is pending and nothing is queued to retry, so a
+  non-`"none"` answer there names a stale or dangling request, never the
   player's own — `{text: null}` against it now raises
   `ActionNotAvailableError` rather than silently writing a DM-led filler
   turn.
@@ -246,15 +253,21 @@ or writes an event.
   the search actually matched and `ctx.run_id` is set; the entry carries
   the best match's `heading_path`, never the rules text and never the
   model's own query.
-- `run_turn`'s own building blocks are `thread_state()` (the checkpoint's
-  pending interrupt, if any, plus whether a next step is queued at all —
-  `ThreadState`) and `retry()` (`invoke(None)`, resuming a broken turn from
-  its last saved step without repeating it); `playthrough_service.
-  open_turn_id` supplies the id a resumed leg reuses instead of minting a
-  new one — or, when it answers `None` (the leg that broke wrote no event
-  at all, e.g. an opening turn that crashed before its first narration),
-  `run_turn` mints one on the spot so the resumed leg, and the
-  `TurnOutcome` it returns, always carry a real turn id.
+- `thread_state()` reads the checkpoint back without invoking the graph —
+  `awaiting` straight off `state["awaiting"]`, `pending` off whether a next
+  step is queued at all (`ThreadState`); a retry resumes with
+  `agent.ainvoke(None, ...)` inline in `run_turn` rather than a separate
+  helper. A resume's turn id comes from the checkpointed
+  `state["turn"].turn_id`; `playthrough_service.open_turn_id` is the
+  fallback when that key is missing (an empty snapshot), and `run_turn`
+  mints a fresh id only for a brand-new `action`/`opening` turn.
+- `game/commands.py`'s `play` command (sprint 011/08, WI2) drives the same
+  `run_turn` the HTTP route calls, one call per turn, and renders whatever
+  it just wrote by reading the transcript back
+  (`playthrough_service.list_events(after=<cursor>)`) rather than a graph
+  return value — narration and rolls through `_print_turn_result`,
+  a pending `question`/`roll_requested` row as the same prompts the old
+  session printed.
 - `agent/nodes.py`'s `_build_game_context` renders the current scene's own
   creatures id first — `id <id>: <name> (<player|monster|npc>), HP …, AC
   …, alive|down, attacks: …` (sprint 010/10, ← finding: several
