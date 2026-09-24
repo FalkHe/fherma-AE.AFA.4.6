@@ -440,14 +440,22 @@ def test_ac5_the_authored_difficulty_floor_matches_the_srd_table():
     # A difficulty below 5 is refused for both authored shapes that carry
     # one.
     with pytest.raises(ValidationError):
-        content_schemas.FixtureCheck(action="pick the lock", dc=4, success="It opens.")
+        content_schemas.FixtureCheck(
+            action="pick the lock", ability="wisdom", dc=4, success="It opens."
+        )
     with pytest.raises(ValidationError):
-        content_schemas.Secret(fact="A hidden latch", dc=4, discovered_by="a search")
+        content_schemas.Secret(
+            fact="A hidden latch", ability="wisdom", dc=4, discovered_by="a search"
+        )
 
     # One at 5 (the SRD's own floor) or above is accepted.
-    check = content_schemas.FixtureCheck(action="pick the lock", dc=5, success="It opens.")
+    check = content_schemas.FixtureCheck(
+        action="pick the lock", ability="wisdom", dc=5, success="It opens."
+    )
     assert check.dc == 5
-    secret = content_schemas.Secret(fact="A hidden latch", dc=5, discovered_by="a search")
+    secret = content_schemas.Secret(
+        fact="A hidden latch", ability="wisdom", dc=5, discovered_by="a search"
+    )
     assert secret.dc == 5
 
     # Nothing shipped breaks: the real, authored Greenhollow campaign and

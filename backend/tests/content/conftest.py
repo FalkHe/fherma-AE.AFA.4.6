@@ -98,11 +98,13 @@ FIXTURE_TEMPLATE: dict = {
     "checks": [
         {
             "action": "Force the swollen door with a shoulder",
+            "ability": "strength",
             "dc": 14,
             "success": "The door gives way and the passage beyond stands open.",
         },
         {
             "action": "Turn the lock with a key that still fits it",
+            "ability": "dexterity",
             "dc": 8,
             "success": "The lock turns without a sound and the door swings open.",
             "bypassed_by": ["rusty-key"],
@@ -132,6 +134,8 @@ SCENE_APPROACH: dict = {
     "hidden": [
         {
             "fact": "Fresh bootprints lead into the mill and none lead out.",
+            "ability": "wisdom",
+            "skill": "Perception",
             "dc": 12,
             "discovered_by": "a Wisdom (Perception) check on the mud, or searching the bank",
         }

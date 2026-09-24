@@ -76,6 +76,7 @@ def test_fixture_check_explicit_empty_bypassed_by_equals_absent_key_c3():
 def test_bypassed_by_is_a_list_in_declared_order_c3a():
     check = schemas.FixtureCheck(
         action="Cut the lashings",
+        ability="strength",
         dc=10,
         success="It opens.",
         bypassed_by=["shepherds-knife", "notched-cleaver"],
@@ -83,7 +84,11 @@ def test_bypassed_by_is_a_list_in_declared_order_c3a():
     assert check.bypassed_by == ["shepherds-knife", "notched-cleaver"]
 
     single = schemas.FixtureCheck(
-        action="Cut the lashings", dc=10, success="It opens.", bypassed_by=["shepherds-knife"]
+        action="Cut the lashings",
+        ability="strength",
+        dc=10,
+        success="It opens.",
+        bypassed_by=["shepherds-knife"],
     )
     assert single.bypassed_by == ["shepherds-knife"]
 
@@ -99,7 +104,11 @@ def test_bypassed_by_is_a_list_in_declared_order_c3a():
 def test_bypassed_by_rejects_non_list_and_non_id_forms_c3a(bypassed_by):
     with pytest.raises(ValidationError):
         schemas.FixtureCheck(
-            action="Cut the lashings", dc=10, success="It opens.", bypassed_by=bypassed_by
+            action="Cut the lashings",
+            ability="strength",
+            dc=10,
+            success="It opens.",
+            bypassed_by=bypassed_by,
         )
 
 
@@ -167,13 +176,20 @@ def test_fixture_template_rejects_missing_checks_key_c6():
 @pytest.mark.parametrize("bad_dc", [4, 31])
 def test_fixture_check_dc_out_of_bounds_rejected_c7(bad_dc):
     with pytest.raises(ValidationError):
-        schemas.FixtureCheck(action="do it", dc=bad_dc, success="it happens")
+        schemas.FixtureCheck(action="do it", ability="strength", dc=bad_dc, success="it happens")
 
 
 @pytest.mark.parametrize("good_dc", [5, 30])
 def test_fixture_check_dc_bounds_accepted_c7(good_dc):
-    check = schemas.FixtureCheck(action="do it", dc=good_dc, success="it happens")
+    check = schemas.FixtureCheck(
+        action="do it", ability="strength", dc=good_dc, success="it happens"
+    )
     assert check.dc == good_dc
+
+
+def test_fixture_check_missing_ability_rejected_ac1():
+    with pytest.raises(ValidationError):
+        schemas.FixtureCheck(action="do it", dc=10, success="it happens")
 
 
 # --- AC5: the SRD's difficulty floor -- FixtureCheck.dc and Secret.dc ----------
@@ -182,13 +198,20 @@ def test_fixture_check_dc_bounds_accepted_c7(good_dc):
 @pytest.mark.parametrize("bad_dc", [4, 31])
 def test_secret_dc_out_of_bounds_rejected_ac5(bad_dc):
     with pytest.raises(ValidationError):
-        schemas.Secret(fact="A hidden latch", dc=bad_dc, discovered_by="a search")
+        schemas.Secret(fact="A hidden latch", ability="wisdom", dc=bad_dc, discovered_by="a search")
 
 
 @pytest.mark.parametrize("good_dc", [5, 30])
 def test_secret_dc_bounds_accepted_ac5(good_dc):
-    secret = schemas.Secret(fact="A hidden latch", dc=good_dc, discovered_by="a search")
+    secret = schemas.Secret(
+        fact="A hidden latch", ability="wisdom", dc=good_dc, discovered_by="a search"
+    )
     assert secret.dc == good_dc
+
+
+def test_secret_missing_ability_rejected_ac1():
+    with pytest.raises(ValidationError):
+        schemas.Secret(fact="A hidden latch", dc=10, discovered_by="a search")
 
 
 # --- 8: Carried is not recursive -----------------------------------------------

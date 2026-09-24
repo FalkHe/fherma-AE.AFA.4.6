@@ -20,7 +20,7 @@ from typer.testing import CliRunner
 
 from app.cli import cli
 from app.modules.content.commands import content_app
-from tests.content.conftest import build_version_dir, campaign
+from tests.content.conftest import build_version_dir, campaign, fixture_template
 
 runner = CliRunner()
 
@@ -45,6 +45,22 @@ def test_one_broken_version_exits_1_and_reports_every_error_entry_c45(content_ro
     stderr_lines = result.stderr.splitlines()
     assert stderr_lines  # at least one problem line
     assert all(line.startswith("hollow-reach/v1: ") for line in stderr_lines)
+
+
+def test_fixture_check_missing_ability_fails_validation_ac1(content_root):
+    check_without_ability = dict(fixture_template()["checks"][0])
+    check_without_ability.pop("ability", None)
+    broken_fixture = fixture_template(checks=[check_without_ability])
+    creature_template, item_template = campaign()["object_templates"][:2]
+    build_version_dir(
+        content_root,
+        campaign=campaign(object_templates=[creature_template, item_template, broken_fixture]),
+    )
+
+    result = runner.invoke(content_app, [])
+
+    assert result.exit_code == 1
+    assert "hollow-reach/v1: ok" not in result.stdout
 
 
 def test_one_valid_and_one_broken_version_c46(content_root):

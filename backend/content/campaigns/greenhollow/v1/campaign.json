@@ -159,11 +159,13 @@
       "checks": [
         {
           "action": "Lift the lashed brush aside a branch at a time, without letting it scrape on the stone",
+          "ability": "dexterity",
           "dc": 13,
           "success": "A gap wide enough to pass through opens at the edge of the screen, and the goblins on the rocks above hear nothing."
         },
         {
           "action": "Cut through the lashings that hold the screen together",
+          "ability": "strength",
           "dc": 10,
           "success": "The screen sags open and the cave mouth stands clear; anything watching the entrance sees it happen.",
           "bypassed_by": ["shepherds-knife", "notched-cleaver"]
@@ -178,11 +180,13 @@
       "checks": [
         {
           "action": "Work the knotted neck of the sack loose by hand",
+          "ability": "dexterity",
           "dc": 8,
           "success": "The sack opens without a sound and the fleeces inside can be lifted out one at a time."
         },
         {
           "action": "Split the sack open with a heavy blade",
+          "ability": "strength",
           "dc": 12,
           "success": "The sack bursts and the fleeces spill across the floor of the hollow, in full hearing of anything still alive down there.",
           "bypassed_by": ["notched-cleaver"]
