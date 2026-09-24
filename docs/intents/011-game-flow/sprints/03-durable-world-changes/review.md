@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-24
 updated: 2026-09-24
-url: –
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/74
 ---
 # Review: Sprint 03 — Lasting world changes owned by the rules layer
 
