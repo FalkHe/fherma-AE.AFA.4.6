@@ -167,6 +167,7 @@ class GameFlowState(TypedDict):
     action: ActionCursor | None
     combat: CombatCursor | None
     awaiting: AwaitingRef | None
+    resume: Any | None  # effects.ResumeResult | None (sprint 011/07, WI2)
     pending_hit_id: str | None
     reactions: list[ReactionSpec]
     narrative: NarrativeCursor
@@ -184,6 +185,7 @@ def close_turn_state(state: GameFlowState) -> StateDelta:
     `turn` are left for the caller to set explicitly."""
     return {
         "awaiting": None,
+        "resume": None,
         "move": None,
         "action": None,
         "pending_hit_id": None,

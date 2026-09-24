@@ -160,6 +160,21 @@ or writes an event.
   mutates state: it puts the canned guard refusal into
   `state["narrative"].draft` before the scheduler's `RECORD_BEAT`
   operation runs. Unused by the live graph yet.
+- `agent/flow_nodes.py` — sprint 011/07, WI2/WI3: the new flow's five plain
+  async node functions (`advance`, `decide`, `execute`, `await_player`,
+  `narrate`) and `route_after_advance()`, matching `docs/general/
+  game-flow.v2.md`'s five node contracts — not yet composed into a graph
+  (sprint 08 does that). Dependencies (`db`, `user_id`, `model`) come from
+  a module-level `FlowRuntime` set by `set_runtime()`. `advance` reconciles
+  a checkpointed `resume` (via `advance.resume_operation()`) into the
+  consuming operation or rejects it, applies a guard refusal's canned text
+  (`advance.guard_state()`), then stores one `select_next_effect()` result.
+  `decide`/`narrate` accumulate usage through `effects.add_usage()`; a
+  `decisions.DecisionInvalid` becomes `state["error"]` rather than an
+  exception. `await_player` calls `interrupt()` first and writes nothing
+  before it. `GameFlowState` gained a `resume` key (cleared by
+  `close_turn_state()`) for the checkpointed response `await_player`
+  stores and `advance` consumes. Unused by the live graph yet.
 
 ## Surface
 
