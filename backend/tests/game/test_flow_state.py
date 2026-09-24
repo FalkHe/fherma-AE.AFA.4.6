@@ -1,8 +1,6 @@
 """Sprint 011/05, WI1 -- flow_state round-trips through the checkpointer's
 own serializer and the two pure clearers do exactly what they promise."""
 
-from dataclasses import replace
-
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from app.modules.game.agent.flow_state import (
@@ -75,12 +73,10 @@ def test_state_round_trips_through_the_checkpoint_serializer():
     type_, blob = serde.dumps_typed(state)
     restored: GameFlowState = serde.loads_typed((type_, blob))
 
-    # msgpack has no tuple type; every sequence round-trips as a list, so
-    # `order` is normalised back before comparing the rest field-by-field.
-    restored_combat = replace(restored["combat"], order=tuple(restored["combat"].order))
-
     assert restored["awaiting"] == state["awaiting"]
-    assert restored_combat == state["combat"]
+    assert restored["combat"] == state["combat"]
+    assert isinstance(restored["combat"].order, tuple)
+    assert restored == state
 
 
 def test_close_turn_state_clears_turn_local_keys_and_keeps_combat():
@@ -91,7 +87,9 @@ def test_close_turn_state_clears_turn_local_keys_and_keeps_combat():
     assert delta["awaiting"] is None
     assert delta["move"] is None
     assert delta["action"] is None
+    assert delta["pending_hit_id"] is None
     assert delta["result"] is None
+    assert delta["usage"] is None
     assert delta["effect"] is None
     assert delta["error"] is None
     assert delta["reactions"] == []

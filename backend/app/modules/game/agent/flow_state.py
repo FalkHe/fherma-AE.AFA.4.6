@@ -73,6 +73,11 @@ class ActionCursor:
     roll_id: str | None
     roll_consumed: bool
 
+    def __post_init__(self) -> None:
+        # See `CombatCursor.__post_init__`: msgpack restores `plan` as a
+        # list, normalised back here once.
+        object.__setattr__(self, "plan", tuple(self.plan))
+
 
 @dataclass(frozen=True)
 class CombatCursor:
@@ -82,6 +87,12 @@ class CombatCursor:
     round: int
     round_admitted: bool
     winning_side: Literal["hero", "hostile"]
+
+    def __post_init__(self) -> None:
+        # The checkpoint serializer has no tuple type -- msgpack restores
+        # `order` as a list -- so it is normalised back here, once, rather
+        # than at every call site that reads a restored `CombatCursor`.
+        object.__setattr__(self, "order", tuple(self.order))
 
 
 @dataclass(frozen=True)
@@ -137,6 +148,10 @@ class OperationResult:
     event_ids: tuple[str, ...]
     value: Mapping[str, Any]
 
+    def __post_init__(self) -> None:
+        # See `CombatCursor.__post_init__`.
+        object.__setattr__(self, "event_ids", tuple(self.event_ids))
+
 
 # Sprint 07 owns the shape of the graph's next-step effect; this is a
 # forward-reference placeholder only, never resolved here.
@@ -168,7 +183,9 @@ def close_turn_state(state: GameFlowState) -> StateDelta:
         "awaiting": None,
         "move": None,
         "action": None,
+        "pending_hit_id": None,
         "result": None,
+        "usage": None,
         "effect": None,
         "error": None,
         "reactions": [],
