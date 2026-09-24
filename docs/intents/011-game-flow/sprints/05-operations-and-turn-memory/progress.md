@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-24
 updated: 2026-09-24
-stage: draft
+stage: done
 ---
 # Progress: Sprint 05
 
@@ -27,3 +27,4 @@ Status: `open | running | done | failed`
 
 ## Verify
 Round 1: changes-requested — AC1 (turn close left pending_hit_id set), AC3 (give-item from_id/to_id not validated).
+Round 2: approve, no failed criteria.

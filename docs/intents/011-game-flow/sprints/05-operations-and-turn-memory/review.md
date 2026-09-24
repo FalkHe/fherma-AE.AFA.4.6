@@ -19,3 +19,4 @@ Brief: docs/intents/011-game-flow/sprints/05-operations-and-turn-memory/brief.md
 
 ## Verdict
 Round 1: changes requested — closing a turn does not forget an unresolved wound, so a hit never turned into damage carries into the next turn; handing an item from one creature to another is the one action that does not first check both creatures are in the scene.
+Round 2: approve — closing a turn now forgets an unresolved wound along with the rest of the turn's memory, handing an item refuses a giver or receiver that is not in the scene before anything happens, and the fight order restores exactly as saved; an interrupted roll request and an active fight survive a restart, every action has one handler, stale names are refused before any change, a spent roll cannot be applied twice, and play is unchanged until the new flow is switched on.
