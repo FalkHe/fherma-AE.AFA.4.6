@@ -150,6 +150,13 @@ or writes an event.
   since the last `HumanMessage` (the boundary an interrupt survives) and
   passes the total as that turn's narration `usage=`; `playthrough.service`
   stores it and sums it back up per run.
+- Sprint 011/03, WI3: this module holds no save of its own — `record_action`
+  and `record_narration` (`agent/nodes.py`) and `run_turn`'s own answer leg
+  (`service.py`) call `playthrough_service.record_player_action` /
+  `record_answer` / `record_narration`, each owning its own transaction
+  (including the `ready -> active` activation, now inside
+  `record_narration`); no `commit`, `db.add` or `append_event` remains in
+  `game/`.
 - `lookup_rule` writes a player-visible `rule_looked_up` entry
   (`playthrough_service.record_rule_lookup`, sprint 010/04, I3) only when
   the search actually matched and `ctx.run_id` is set; the entry carries

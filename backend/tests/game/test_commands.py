@@ -308,9 +308,10 @@ def test_a_session_quit_while_the_dm_waits_for_an_answer_still_has_it_waiting_on
     monkeypatch.setattr(
         game_service, "load_prompt", lambda prompt_id, version=None: _Prompt("Be the DM.")
     )
-    monkeypatch.setattr(nodes.playthrough_service, "append_event", _noop_append_event)
-    monkeypatch.setattr(nodes.playthrough_service, "get_campaign_run", _noop_get_campaign_run)
-    monkeypatch.setattr(nodes.playthrough_service, "activate_campaign_run", _noop_get_campaign_run)
+    monkeypatch.setattr(
+        nodes.playthrough_service, "record_player_action", _noop_record_player_action
+    )
+    monkeypatch.setattr(nodes.playthrough_service, "record_narration", _noop_record_narration)
     monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
 
     ask_call = AIMessage(
@@ -389,17 +390,9 @@ class _Event:
     campaign_run_id: str = RUN_ID
 
 
-async def _noop_append_event(db, **kwargs):
-    return _Event(
-        id="event-1",
-        type=kwargs.get("type", "narration"),
-        payload=kwargs.get("payload", {}),
-    )
+async def _noop_record_player_action(db, **kwargs):
+    return _Event(id="event-1", type="player_action", payload={"text": kwargs.get("text", "")})
 
 
-class _Run:
-    status = "active"
-
-
-async def _noop_get_campaign_run(db, **kwargs):
-    return _Run()
+async def _noop_record_narration(db, **kwargs):
+    return _Event(id="event-2", type="narration", payload={"text": kwargs.get("text", "")})
