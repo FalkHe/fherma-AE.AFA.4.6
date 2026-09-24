@@ -361,7 +361,16 @@ def reconcile_step(state: GameFlowState) -> dict[str, Any]:
     action's current plan step and it reported `"ok"`, advances past it.
     An off-plan operation (`ROLL_PLAYER`, `ACCEPT_CHOICE`, a hit's own
     damage detour) never matches the step's own kind, so it never moves
-    the cursor."""
+    the cursor.
+
+    ← live bug (run 01M36TZ745VSMGZP36YCT491CE): a model-proposed step
+    that `execute_operation` refused (a missing/stale reference) used to
+    match neither branch below, so `advance_action` kept re-issuing the
+    very same refused step forever -- the turn could never close. A
+    refused step now marks the action `"complete"` outright, same as a
+    plain narrative move, so `advance_narration` drafts an ordinary
+    outcome/answer beat over it and the turn ends cleanly instead of
+    looping."""
     action = state["action"]
     effect = state["effect"]
     result = state["result"]
@@ -371,7 +380,11 @@ def reconcile_step(state: GameFlowState) -> dict[str, Any]:
         return {}
     if action.step_index >= len(action.plan):
         return {}
-    if action.plan[action.step_index].kind != effect.kind or result.status != "ok":
+    if action.plan[action.step_index].kind != effect.kind:
+        return {}
+    if result.status == "refused":
+        return {"action": replace(action, status="complete")}
+    if result.status != "ok":
         return {}
     return {"action": replace(action, step_index=action.step_index + 1)}
 

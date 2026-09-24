@@ -8,6 +8,7 @@ from app.modules.game.agent.advance import (
     apply_decision,
     eligible_hostiles,
     guard_refusal,
+    reconcile_step,
     resume_operation,
     select_next_effect,
     validate_turn_close,
@@ -680,6 +681,48 @@ def test_resumed_resolve_check_success_reaches_an_outcome_beat_citing_the_fact()
     assert isinstance(effect, BeatRequest)
     assert effect.kind == "outcome"
     assert effect.payload["discovered"] == "a wool-marked narrow cut"
+
+
+def test_reconcile_step_refused_falls_back_to_an_answer_beat_instead_of_looping():
+    """← live bug, run 01M36TZ745VSMGZP36YCT491CE: a model-proposed plan
+    step (`interact` with no `object_id`) that `execute_operation` now
+    refuses instead of `KeyError`-ing used to match neither of
+    `reconcile_step`'s own branches, so `advance_action` kept re-issuing
+    the same refused step forever. A refused step must instead complete
+    the action so the turn closes on an ordinary answer/outcome beat."""
+    from app.modules.game.agent.flow_state import OperationSpec
+
+    plan = (OperationSpec(kind=OperationKind.INTERACT, payload={"actor_id": "hero-1"}),)
+    action = ActionCursor(
+        action_id="action-1",
+        actor_id="hero-1",
+        kind="interact",
+        plan=plan,
+        step_index=0,
+        status="planned",
+        roll_id=None,
+        roll_consumed=False,
+    )
+    effect = Operation(operation_id="op-1", kind=OperationKind.INTERACT, payload={})
+    result = OperationResult(
+        operation_id="op-1",
+        status="refused",
+        reason="missing_key:object_id",
+        event_ids=(),
+        value={},
+    )
+    state = _state(
+        move=Move(intent="interact", refs={}), action=action, effect=effect, result=result
+    )
+
+    delta = reconcile_step(state)
+
+    assert delta == {"action": replace(action, status="complete")}
+
+    situation = _situation()
+    state.update(delta)
+    next_effect = select_next_effect(state, situation)
+    assert isinstance(next_effect, BeatRequest)
 
 
 def replace_step_index(action: ActionCursor, step_index: int) -> ActionCursor:

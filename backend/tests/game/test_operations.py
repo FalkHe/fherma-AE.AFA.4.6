@@ -1,7 +1,15 @@
 """Sprint 011/05, WI2 -- the combined operation registry is complete and
-`execute_operation` refuses a stale reference before any service call."""
+`execute_operation` refuses a stale reference before any service call.
+
+Sprint 08 round 1 defect A adds `REQUIRED_KEYS` coverage: a payload missing
+a key its own handler reads unconditionally (← live bug, run
+01M36TZ745VSMGZP36YCT491CE: `interact` with no `object_id` reached
+`_interact` and raised `KeyError`) is refused before dispatch, never
+raised."""
 
 import asyncio
+
+import pytest
 
 from app.modules.game.agent.flow_state import (
     NarrativeCursor,
@@ -11,6 +19,7 @@ from app.modules.game.agent.flow_state import (
 )
 from app.modules.game.agent.operations import (
     OPERATION_HANDLERS,
+    REQUIRED_KEYS,
     OperationContext,
     execute_operation,
 )
@@ -24,6 +33,11 @@ def test_every_operation_kind_has_exactly_one_handler_and_no_extras():
 
     assert registered == all_kinds
     assert len(OPERATION_HANDLERS) == len(OperationKind)
+
+
+@pytest.mark.parametrize("kind", list(OperationKind))
+def test_every_operation_kind_has_a_required_keys_entry(kind):
+    assert kind in REQUIRED_KEYS
 
 
 def _turn_frame() -> TurnFrame:
@@ -119,6 +133,38 @@ def test_execute_operation_refuses_a_stale_actor_reference_without_a_service_cal
 
     assert result.status == "refused"
     assert result.reason == "stale_reference"
+    assert delta == {}
+    assert called is False
+
+
+def test_execute_operation_refuses_interact_missing_object_id_without_a_service_call(
+    monkeypatch,
+):
+    """← live bug, run 01M36TZ745VSMGZP36YCT491CE: the model proposed an
+    `interact` naming only `actor_id`/`action`, no `object_id`. Previously
+    this reached `playthrough_service.interact` and raised `KeyError`;
+    now it is refused before any service call."""
+    called = False
+
+    async def fake_interact(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(playthrough_service, "interact", fake_interact)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.INTERACT,
+        payload={"actor_id": "hero-1", "action": "ask about the shepherd"},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "refused"
+    assert result.reason == "missing_key:object_id"
     assert delta == {}
     assert called is False
 

@@ -61,6 +61,52 @@ def _refused(op: Operation, reason: str) -> OperationResult:
     )
 
 
+REQUIRED_KEYS: dict[OperationKind, tuple[str, ...]] = {
+    # ← live bug (run 01M36TZ745VSMGZP36YCT491CE): the model proposed an
+    # `interact` with no `object_id`; `validate_refs` only checks a key
+    # when present, so the payload reached `_interact`
+    # (`operations_world.py`) and raised `KeyError` inside the execute
+    # node. Every key a handler below reads with `payload[...]` (never
+    # `.get`) is named here -- `execute_operation` refuses a payload
+    # missing one before any handler ever runs, so a handler can no
+    # longer `KeyError` on a model-shaped payload.
+    OperationKind.RECORD_BEAT: (),
+    OperationKind.COMPLETE_ACTION: (),
+    OperationKind.CLOSE_TURN: (),
+    OperationKind.FINISH_RUN: ("outcome",),
+    OperationKind.REQUEST_ROLL: ("actor_id", "ability", "consumer"),
+    OperationKind.ROLL_PLAYER: (),
+    OperationKind.REQUEST_CHOICE: ("text", "options", "consumer"),
+    OperationKind.ACCEPT_CHOICE: ("text",),
+    OperationKind.ROLL_ACTOR: ("actor_id", "kind"),
+    OperationKind.PASSIVE_CHECK: ("actor_id", "ability", "dc"),
+    OperationKind.RESOLVE_CHECK: ("dc",),
+    OperationKind.RESOLVE_SAVE: ("dc",),
+    OperationKind.SETTLE_INITIATIVE: ("hero_ids", "hostile_ids", "scene_id"),
+    OperationKind.INTERACT: ("actor_id", "object_id", "action"),
+    OperationKind.TAKE_ITEM: ("actor_id", "item_id"),
+    OperationKind.DROP_ITEM: ("actor_id", "item_id"),
+    OperationKind.GIVE_ITEM: ("from_id", "to_id", "item_id"),
+    OperationKind.USE_EXIT: ("actor_id", "exit_id"),
+    OperationKind.ENTER_NEXT_ADVENTURE: (),
+    OperationKind.SET_HOSTILITY: ("actor_id", "hostile"),
+    OperationKind.LEAVE_SCENE: ("actor_id",),
+    OperationKind.RESOLVE_ATTACK: ("actor_id", "target_id", "roll_id"),
+    OperationKind.APPLY_DAMAGE: ("target_id", "roll_id"),
+}
+
+
+def missing_required_key(op: Operation) -> str | None:
+    """The first key `REQUIRED_KEYS[op.kind]` names that `op.payload` does
+    not carry, or `None`. Checked by `execute_operation` before
+    `validate_refs`/dispatch -- a payload missing a key its own handler
+    reads unconditionally must never reach that handler."""
+    for key in REQUIRED_KEYS.get(op.kind, ()):
+        if key not in op.payload:
+            return key
+    return None
+
+
 def validate_refs(situation: Situation, op: Operation) -> str | None:
     """Checks every object id an operation's payload names against
     `situation`'s own present actors, fixtures, loose items, exits and
@@ -433,6 +479,10 @@ async def execute_operation(
     `OPERATION_HANDLERS`. An `op.kind` with no handler (should not happen
     once every `OperationKind` is registered) is an `"error"`, not a
     refusal: it is this module's own bug, not a bad reference."""
+    missing = missing_required_key(op)
+    if missing is not None:
+        return _refused(op, f"missing_key:{missing}"), {}
+
     reason = validate_refs(ctx.situation, op)
     if reason is not None:
         return _refused(op, reason), {}
