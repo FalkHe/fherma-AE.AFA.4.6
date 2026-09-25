@@ -36,7 +36,7 @@ from app.modules.game.agent.flow_state import (
     TurnFrame,
     Usage,
 )
-from app.modules.playthrough.situation import ActorView, SecretView, Situation
+from app.modules.playthrough.situation import ActorView, ExitView, SecretView, Situation
 
 
 def _turn(**overrides) -> TurnFrame:
@@ -93,7 +93,7 @@ def _hero(*, down=False, is_alive=True) -> ActorView:
     return _actor("hero-1", role="hero", down=down, is_alive=is_alive)
 
 
-def _situation(*, hero=None, actors=(), secrets=(), fixtures=()) -> Situation:
+def _situation(*, hero=None, actors=(), secrets=(), fixtures=(), exits=()) -> Situation:
     hero = hero or _hero()
     return Situation(
         run_id="run-1",
@@ -112,7 +112,7 @@ def _situation(*, hero=None, actors=(), secrets=(), fixtures=()) -> Situation:
         actors=(hero, *actors),
         fixtures=fixtures,
         loose_items=(),
-        exits=(),
+        exits=exits,
         recent=(),
     )
 
@@ -460,6 +460,72 @@ def test_apply_decision_defaults_a_read_move_operation_to_the_hero_actor():
     action = delta["action"]
     assert action.plan[0].kind == OperationKind.USE_EXIT
     assert action.plan[0].payload == {"exit_id": "e1", "actor_id": "hero-1"}
+
+
+def test_apply_decision_turns_narration_only_movement_into_the_authored_exit():
+    situation = _situation(
+        exits=(ExitView("to-next", "scene", "next", "the next scene", None),)
+    )
+    state = _state(move=None)
+    state["turn"] = replace(state["turn"], text="I follow the path into the next scene.")
+    result = DecisionResult(
+        decision_id="d-movement",
+        kind=DecisionKind.READ_MOVE,
+        value=ReadMoveDecision(intent="travel", refs={}, proposed=None),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    assert delta["action"].plan[0].kind is OperationKind.USE_EXIT
+    assert delta["action"].plan[0].payload == {"actor_id": "hero-1", "exit_id": "to-next"}
+
+
+def test_apply_decision_does_not_treat_approaching_an_npc_as_scene_movement():
+    situation = _situation(
+        exits=(ExitView("to-next", "scene", "next", "the next scene", None),)
+    )
+    state = _state(move=None)
+    state["turn"] = replace(state["turn"], text="I approach Mira and ask what happened.")
+    result = DecisionResult(
+        decision_id="d-talk",
+        kind=DecisionKind.READ_MOVE,
+        value=ReadMoveDecision(intent="talk", refs={}, proposed=None),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    assert delta["action"].plan == ()
+
+
+def test_apply_decision_defensively_refuses_request_roll_without_consumer():
+    situation = _situation()
+    state = _state(move=None)
+    result = DecisionResult(
+        decision_id="d-roll-missing-consumer",
+        kind=DecisionKind.READ_MOVE,
+        value=ReadMoveDecision(
+            intent="search",
+            refs={},
+            proposed=(
+                OperationSpec(
+                    kind=OperationKind.REQUEST_ROLL,
+                    payload={"ability": "wisdom"},
+                ),
+            ),
+        ),
+        usage=Usage(prompt_tokens=0, completion_tokens=0, cost=None),
+    )
+
+    delta = apply_decision(state, situation, result)
+
+    assert delta["action"].plan[0].kind == OperationKind.REQUEST_ROLL
+    assert delta["action"].plan[0].payload == {
+        "ability": "wisdom",
+        "actor_id": "hero-1",
+    }
+    assert delta["action"].plan[1].kind == OperationKind.COMPLETE_ACTION
 
 
 def test_apply_decision_keeps_an_actor_id_the_model_already_named():

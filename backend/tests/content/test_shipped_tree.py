@@ -34,7 +34,7 @@ ITEM_IDS = [
 ]
 FIXTURE_IDS = ["thorn-screen", "wool-sack"]
 
-SEED_INVENTORY = ["shepherds-knife", "wooden-shield", "hooded-lantern", "coil-of-twine", "rations"]
+SEED_INVENTORY = ["wooden-shield", "hooded-lantern", "coil-of-twine", "rations"]
 
 runner = CliRunner()
 
@@ -149,8 +149,8 @@ def test_loaded_campaign_exercises_every_pinned_mechanism_c27a():
 
     # both bypass chains are playable: at least one listed item is placed or
     # carried somewhere in the tree. shepherds-knife also ships in the seed
-    # inventory now (sprint 005/01), but it is still carried by Mira here, so
-    # this reasoning over scene placements/carries is unaffected.
+    # it is still carried by Mira here, so this reasoning over scene
+    # placements/carries is unaffected.
     all_carried_or_placed_item_ids = {
         p.template
         for scene in scenes.values()
