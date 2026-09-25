@@ -31,7 +31,7 @@
         {
           "id": "to-thornway",
           "to": "thornway",
-          "description": "The cart track that runs from the green to the treeline, the same way the missing flock was last driven.",
+          "description": "Use this exit to follow the cart track from the green to the Thornway treeline, the same way the missing flock was last driven.",
           "condition": null
         }
       ]
@@ -62,7 +62,7 @@
         {
           "id": "to-lair-maw",
           "to": "lair-maw",
-          "description": "The narrow cut, climbing towards a rocky outcrop where the thorn finally gives way to bare stone.",
+          "description": "Use this exit to follow the wool-marked narrow cut towards the rocky outcrop where the thorn finally gives way to bare stone.",
           "condition": "the player has followed the wool-marked trail rather than the open drove road"
         }
       ]
@@ -97,7 +97,7 @@
         {
           "id": "to-lair-hollow",
           "to": "lair-hollow",
-          "description": "A downward scramble over loose scree into the dark of the cave.",
+          "description": "Use this exit to descend the loose scree into the dark of the cave.",
           "condition": null
         }
       ]
@@ -133,7 +133,7 @@
         {
           "id": "leave-the-hollow",
           "kind": "adventure_end",
-          "description": "The scramble back up the scree slope and out past the thornbrush screen, leaving the Thornway lair behind for good.",
+          "description": "Use this exit to climb back up the scree slope and leave the Thornway lair behind for good.",
           "condition": null
         }
       ]

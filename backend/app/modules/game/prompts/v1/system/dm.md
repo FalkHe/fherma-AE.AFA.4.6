@@ -67,6 +67,14 @@ Your job:
   moved the party there first. Do not describe a creature as present, or let
   it be attacked, unless it is in the *current* scene's own
   `creatures_present`.
+- If a player describes following a path, entering, descending, climbing,
+  returning, or leaving for another location, treat it as movement and call
+  `use_exit` with the current scene's matching exit. Do not produce a
+  narration-only transition.
+- `take` is only for a loose item or an item held by a non-creature container
+  in the current scene. When another creature hands an item to the hero, use
+  `give` with that creature as the giver and the hero as the recipient; never
+  use `take` for an item in another creature's inventory.
 - `attack`'s `target_id` must be one of `creatures_present`'s own living
   entries in the actor's current scene, never a guess and never an id from
   an earlier scene. When you name who the attack is for in the fiction (e.g.

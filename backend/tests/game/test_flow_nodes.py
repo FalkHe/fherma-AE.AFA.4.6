@@ -8,6 +8,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
+from app.core.checkpointer import service as checkpointer_service
 from app.modules.game.agent import flow_nodes
 from app.modules.game.agent.decisions import DecisionKind, DecisionRequest, ReadMoveOut
 from app.modules.game.agent.effects import PlayerWait, ResumeResult, TurnComplete
@@ -217,7 +218,8 @@ def test_await_player_interrupts_then_resumes_with_no_service_call_before_the_pa
     graph.add_edge(START, "advance_stub")
     graph.add_edge("advance_stub", "await_player")
     graph.add_edge("await_player", END)
-    compiled = graph.compile(checkpointer=InMemorySaver())
+    saver = InMemorySaver(serde=checkpointer_service.checkpoint_serde())
+    compiled = graph.compile(checkpointer=saver)
 
     config = {"configurable": {"thread_id": "t1"}}
     result = asyncio.run(compiled.ainvoke(_state(), config=config))

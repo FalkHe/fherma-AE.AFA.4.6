@@ -38,7 +38,7 @@ from app.modules.srd.errors import SrdCorpusEmptyError
 
 from . import model_call
 from .flow_state import GameFlowState, Operation, OperationKind, OperationSpec, ReactionSpec, Usage
-from .operations import validate_refs
+from .operations import missing_required_key, validate_refs
 
 MAX_TOOL_CALLS = 3
 RETRY_BUDGET = 2
@@ -98,6 +98,9 @@ class MoveAssessment:
     dc: int | None
     dc_source: Literal["authored", "rules"] | None
     consequence_ids: tuple[str, ...]
+    secret_index: int | None
+    fixture_id: str | None
+    check_action: str | None
 
 
 @dataclass(frozen=True)
@@ -152,6 +155,9 @@ class MoveAssessmentOut(BaseModel):
     dc: int | None = None
     dc_source: Literal["authored", "rules"] | None = None
     consequence_ids: list[str] = []
+    secret_index: int | None = None
+    fixture_id: str | None = None
+    check_action: str | None = None
 
 
 class MonsterActionOut(BaseModel):
@@ -229,6 +235,9 @@ def _build_move_assessment(parsed: MoveAssessmentOut, situation: Situation) -> M
         dc=parsed.dc,
         dc_source=parsed.dc_source,
         consequence_ids=tuple(parsed.consequence_ids),
+        secret_index=parsed.secret_index,
+        fixture_id=parsed.fixture_id,
+        check_action=parsed.check_action,
     )
 
 
@@ -258,7 +267,6 @@ DECISION_HANDLERS: dict[DecisionKind, Strategy] = {
                 OperationKind.REQUEST_ROLL,
                 OperationKind.REQUEST_CHOICE,
                 OperationKind.SET_HOSTILITY,
-                OperationKind.LEAVE_SCENE,
                 OperationKind.ENTER_NEXT_ADVENTURE,
             }
         ),
@@ -413,6 +421,17 @@ def _validate(
                 synthetic = Operation(
                     operation_id="proposed", kind=operation_kind, payload=op.payload
                 )
+                missing = missing_required_key(synthetic)
+                if missing is not None:
+                    return f"missing_key:{missing}"
+                if operation_kind is OperationKind.TAKE_ITEM:
+                    item_id = op.payload.get("item_id")
+                    if any(
+                        item.id == item_id
+                        for actor in situation.actors
+                        for item in actor.inventory
+                    ):
+                        return "item_held_by_creature_use_give"
                 reason = validate_refs(situation, synthetic)
                 if reason is not None:
                     return reason
@@ -437,6 +456,29 @@ def _validate(
                 operation_id="proposed", kind=OperationKind.INTERACT, payload={"choice": chosen_id}
             )
             return validate_refs(situation, synthetic)
+        return None
+
+    if kind is DecisionKind.ASSESS_MOVE:
+        # The model may only point at an authored entry already present in
+        # `evidence`, never invent one -- `dc_source="rules"` is left
+        # structurally valid (the caller treats it as "does not apply"
+        # rather than retrying the model for an index it was never asked
+        # to pick, ← brief "may be refused for now").
+        if parsed.applies and parsed.dc_source == "authored":  # type: ignore[attr-defined]
+            secret_index = parsed.secret_index  # type: ignore[attr-defined]
+            fixture_id = parsed.fixture_id  # type: ignore[attr-defined]
+            check_action = parsed.check_action  # type: ignore[attr-defined]
+            if secret_index is not None:
+                if not (0 <= secret_index < len(situation.secrets)):
+                    return "unknown_secret"
+            elif fixture_id is not None:
+                fixture = next((f for f in situation.fixtures if f.id == fixture_id), None)
+                if fixture is None:
+                    return "stale_reference"
+                if not any(check.action == check_action for check in fixture.checks):
+                    return "unknown_fixture_check"
+            else:
+                return "no_authored_entry_chosen"
         return None
 
     if kind is DecisionKind.WORLD_REACTION:
@@ -474,6 +516,7 @@ async def decide(
             "evidence": evidence,
             "request": dict(request.payload),
             "evidence_ids": list(request.evidence_ids),
+            "allowed_operations": sorted(op.value for op in strategy.allowed_operations),
         }
         if reason is not None:
             human_content["previous_error"] = reason

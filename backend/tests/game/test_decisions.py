@@ -9,6 +9,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from app.modules.game.agent.decisions import (
+    DECISION_HANDLERS,
     DecisionContext,
     DecisionInvalid,
     DecisionKind,
@@ -17,7 +18,7 @@ from app.modules.game.agent.decisions import (
     ReadMoveOut,
     decide,
 )
-from app.modules.game.agent.flow_state import NarrativeCursor, TurnFrame
+from app.modules.game.agent.flow_state import NarrativeCursor, OperationKind, TurnFrame
 from app.modules.playthrough.situation import ActorView, AttackView, Situation
 from app.modules.srd import service as srd_service
 from tests.game.fakes import ScriptedChatModel
@@ -122,6 +123,13 @@ def _ctx(model: ScriptedChatModel) -> DecisionContext:
     )
 
 
+def test_read_move_must_use_an_authored_exit_for_player_movement():
+    allowed = DECISION_HANDLERS[DecisionKind.READ_MOVE].allowed_operations
+
+    assert OperationKind.USE_EXIT in allowed
+    assert OperationKind.LEAVE_SCENE not in allowed
+
+
 def test_read_move_rejects_a_disallowed_operation_kind_and_raises_after_budget():
     """AC1: an operation kind outside the strategy's allowed set is a
     validation failure, re-prompted under the same `decision_id`, and the
@@ -145,6 +153,39 @@ def test_read_move_rejects_a_disallowed_operation_kind_and_raises_after_budget()
     )
 
     with pytest.raises(DecisionInvalid):
+        asyncio.run(decide(ctx, request, _state()))
+
+    assert model.script == []
+
+
+def test_read_move_rejects_a_request_roll_without_its_consumer():
+    """A player-roll request is incomplete without the operation that will
+    consume the resumed roll; reject it during decision validation so plan
+    expansion cannot raise KeyError later."""
+    bad = ReadMoveOut(
+        intent="search the trail",
+        refs={},
+        proposed=[
+            {
+                "kind": "request_roll",
+                "payload": {"actor_id": "hero-1", "ability": "wisdom"},
+            },
+        ],
+    )
+    script = []
+    for _ in range(3):
+        script.append(AIMessage(content="no tools needed"))
+        script.append(bad)
+    model = ScriptedChatModel(script)
+    ctx = _ctx(model)
+    request = DecisionRequest(
+        decision_id="d-roll-missing-consumer",
+        kind=DecisionKind.READ_MOVE,
+        evidence_ids=(),
+        payload={"text": "search the trail"},
+    )
+
+    with pytest.raises(DecisionInvalid, match="missing_key:consumer"):
         asyncio.run(decide(ctx, request, _state()))
 
     assert model.script == []

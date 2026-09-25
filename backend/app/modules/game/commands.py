@@ -1,6 +1,11 @@
 """Interactive CLI session against a real run. Reply on stdout, rolls on stderr.
-Maintains a persistent thread_id across turns within the session backed by the
-checkpointer.
+
+Sprint 011/08, WI2: `_play_session` drives the new flow through
+`game_service.run_turn` alone -- it never touches the compiled graph or a
+checkpointer directly, exactly like the HTTP route. `run_turn` writes every
+event; this module only reads them back (`playthrough_service.list_events`)
+to render what just happened and to know what to prompt for next
+(`TurnOutcome.awaiting`).
 """
 
 import asyncio
@@ -18,7 +23,6 @@ from app.core.db import get_sessionmaker
 from app.core.ids import generate_id
 from app.core.llm.errors import LlmError
 from app.modules.game import service as game_service
-from app.modules.game.agent.state import DmContext
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.errors import PlaythroughError
 from app.modules.playthrough.models import Event
@@ -26,55 +30,11 @@ from app.modules.users import service as users_service
 
 game_app = typer.Typer()
 
-
-async def _run_turn(
-    agent,
-    *,
-    user_id: str,
-    actor_id: str | None,
-    run_id: str | None,
-    thread_id: str,
-    text: str,
-) -> game_service.TurnResult:
-    sessionmaker = get_sessionmaker()
-    async with sessionmaker() as db:
-        context = DmContext(
-            db=db,
-            user_id=user_id,
-            actor_id=actor_id,
-            run_id=run_id,
-            turn_id=generate_id(),
-        )
-        return await game_service.turn(
-            agent, thread_id=thread_id, context=context, player_text=text
-        )
-
-
-async def _resume_turn(
-    agent,
-    *,
-    user_id: str,
-    actor_id: str | None,
-    run_id: str | None,
-    thread_id: str,
-    resume_value: Any,
-) -> game_service.TurnResult:
-    sessionmaker = get_sessionmaker()
-    async with sessionmaker() as db:
-        context = DmContext(
-            db=db,
-            user_id=user_id,
-            actor_id=actor_id,
-            run_id=run_id,
-            turn_id=generate_id(),
-        )
-        return await game_service.resume(
-            agent, thread_id=thread_id, context=context, resume_value=resume_value
-        )
+_QUIT_WORDS = (":quit", ":q", "exit", "quit")
 
 
 def _print_turn_result(result: game_service.TurnResult) -> None:
-    """Render narration and tool results with distinct terminal markers."""
+    """Render narration and roll results with distinct terminal markers."""
     for roll in result.rolls:
         typer.echo(
             f"* rolled {roll['kind']} {roll['formula']}: {roll['faces']} "
@@ -85,6 +45,41 @@ def _print_turn_result(result: game_service.TurnResult) -> None:
         typer.echo(f"< {result.reply}")
 
 
+def _turn_result_from_events(events: list[Event]) -> game_service.TurnResult:
+    rolls = [
+        {
+            "kind": event.payload["kind"],
+            "formula": event.payload["formula"],
+            "faces": event.payload["faces"],
+            "modifier": event.payload["modifier"],
+            "total": event.payload["total"],
+        }
+        for event in events
+        if event.type == "roll"
+    ]
+    narrations = [event.payload.get("text", "") for event in events if event.type == "narration"]
+    return game_service.TurnResult(reply=narrations[-1] if narrations else "", rolls=rolls)
+
+
+def _print_prompt_events(events: list[Event]) -> dict[str, Any] | None:
+    """Echoes a pending `question`/`roll_requested` row exactly as the old
+    session did, returning the `question` payload (for its `options`) when
+    one was printed, or `None`."""
+    pending_question: dict[str, Any] | None = None
+    for event in events:
+        if event.type == "question":
+            pending_question = event.payload
+            typer.echo(f"\n[DM asks]: {event.payload.get('text', 'Choose an option:')}")
+            for idx, option in enumerate(event.payload.get("options", []), 1):
+                typer.echo(f"  {idx}. {option}")
+        elif event.type == "roll_requested":
+            typer.echo(
+                f"\n[Roll Requested]: {event.payload.get('kind', 'roll')} "
+                f"({event.payload.get('formula', '')})"
+            )
+    return pending_question
+
+
 async def _play_session(
     *,
     user_id: str,
@@ -92,85 +87,59 @@ async def _play_session(
     actor_id: str | None,
     thread_id: str,
 ) -> None:
-    async with checkpointer_service.checkpointer() as saver:
-        agent = game_service.build_agent(checkpointer=saver)
+    sessionmaker = get_sessionmaker()
+    cursor: str | None = None
+    pending_question: dict[str, Any] | None = None
 
-        config = RunnableConfig(configurable={"thread_id": thread_id})
-        state = await agent.aget_state(config)
-        in_flight_interrupt = (
-            state.tasks[0].interrupts[0].value
-            if (state.tasks and state.tasks[0].interrupts)
-            else None
-        )
+    async def _do_turn(text: str | None) -> game_service.TurnOutcome:
+        nonlocal cursor, pending_question
+        async with sessionmaker() as db:
+            outcome = await game_service.run_turn(db, user_id=user_id, run_id=run_id, text=text)
+            events = await playthrough_service.list_events(
+                db, user_id=user_id, run_id=run_id, after=cursor
+            )
+        if events:
+            cursor = events[-1].id
+        _print_turn_result(_turn_result_from_events(events))
+        question = _print_prompt_events(events)
+        if question is not None:
+            pending_question = question
+        return outcome
 
-        while True:
-            if in_flight_interrupt is not None:
-                int_type = in_flight_interrupt.get("type")
-                if int_type == "question":
-                    q_text = in_flight_interrupt.get("text", "Choose an option:")
-                    options = in_flight_interrupt.get("options", [])
-                    typer.echo(f"\n[DM asks]: {q_text}")
-                    for idx, opt in enumerate(options, 1):
-                        typer.echo(f"  {idx}. {opt}")
-                    try:
-                        ans = await asyncio.to_thread(input, "?> ")
-                    except (EOFError, KeyboardInterrupt):
-                        break
-                    ans_clean = ans.strip()
-                    if ans_clean.isdigit():
-                        idx = int(ans_clean) - 1
-                        if 0 <= idx < len(options):
-                            ans_clean = options[idx]
-                    resume_val = ans_clean
-                elif int_type == "roll_request":
-                    req_kind = in_flight_interrupt.get("kind", "roll")
-                    formula = in_flight_interrupt.get("formula", "")
-                    typer.echo(f"\n[Roll Requested]: {req_kind} ({formula})")
-                    try:
-                        await asyncio.to_thread(input, "Press Enter to roll...")
-                    except (EOFError, KeyboardInterrupt):
-                        break
-                    resume_val = {"action": "roll"}
-                else:
-                    try:
-                        resume_val = await asyncio.to_thread(input, "?> ")
-                    except (EOFError, KeyboardInterrupt):
-                        break
+    outcome = await _do_turn(None)
 
-                result = await _resume_turn(
-                    agent,
-                    user_id=user_id,
-                    actor_id=actor_id,
-                    run_id=run_id,
-                    thread_id=thread_id,
-                    resume_value=resume_val,
-                )
-            else:
-                try:
-                    player_text = await asyncio.to_thread(input, "> ")
-                except (EOFError, KeyboardInterrupt):
-                    break
+    while True:
+        if outcome.awaiting.startswith("roll:"):
+            try:
+                await asyncio.to_thread(input, "Press Enter to roll...")
+            except (EOFError, KeyboardInterrupt):
+                break
+            outcome = await _do_turn(None)
+            continue
 
-                if not player_text.strip() or player_text.strip().lower() in (
-                    ":quit",
-                    ":q",
-                    "exit",
-                    "quit",
-                ):
-                    break
+        if outcome.awaiting.startswith("answer:"):
+            try:
+                answer = await asyncio.to_thread(input, "?> ")
+            except (EOFError, KeyboardInterrupt):
+                break
+            answer_clean = answer.strip()
+            options = (pending_question or {}).get("options", [])
+            if answer_clean.isdigit():
+                idx = int(answer_clean) - 1
+                if 0 <= idx < len(options):
+                    answer_clean = options[idx]
+            outcome = await _do_turn(answer_clean)
+            continue
 
-                result = await _run_turn(
-                    agent,
-                    user_id=user_id,
-                    actor_id=actor_id,
-                    run_id=run_id,
-                    thread_id=thread_id,
-                    text=player_text,
-                )
+        try:
+            player_text = await asyncio.to_thread(input, "> ")
+        except (EOFError, KeyboardInterrupt):
+            break
 
-            _print_turn_result(result)
+        if not player_text.strip() or player_text.strip().lower() in _QUIT_WORDS:
+            break
 
-            in_flight_interrupt = result.interrupt
+        outcome = await _do_turn(player_text)
 
 
 class _ToolAwareStubModel(GenericFakeChatModel):
