@@ -112,6 +112,34 @@ def player_roll_plan(
 # "investigate the ground", never the bare word "search" alone, so an
 # exact-membership check never fired outside this file's own tests).
 _SEARCH_KEYWORDS = ("search", "investigate", "examine", "inspect", "look for", "track")
+_MOVEMENT_KEYWORDS = (
+    "climb", "continue", "descend", "enter", "follow", "go", "head", "leave",
+    "move", "pass through", "proceed", "return", "travel", "walk",
+)
+
+
+def _authored_exit_for_move(text: str | None, situation: Situation):
+    """Return the uniquely matching authored exit for explicit movement."""
+    if not text:
+        return None
+    lowered = text.casefold()
+    path_action = "take" in lowered and any(
+        word in lowered for word in ("path", "track", "route", "road", "trail")
+    )
+    if not path_action and not any(keyword in lowered for keyword in _MOVEMENT_KEYWORDS):
+        return None
+    candidates = situation.exits
+    if len(candidates) == 1:
+        return candidates[0]
+    matches = tuple(
+        exit_
+        for exit_ in candidates
+        if any(
+            value and value.casefold() in lowered
+            for value in (exit_.id, exit_.to, exit_.description)
+        )
+    )
+    return matches[0] if len(matches) == 1 else None
 
 
 def needs_move_assessment(intent: str, refs: Mapping[str, str], situation: Situation) -> bool:
@@ -453,9 +481,22 @@ def _expand_read_move_plan(
     mutation, closed off with `COMPLETE_ACTION`."""
     if len(proposed) == 1 and proposed[0].kind is OperationKind.REQUEST_ROLL:
         payload = proposed[0].payload
+        consumer = payload.get("consumer")
+        if consumer is None:
+            # Decision validation rejects this before normal execution. Keep
+            # this boundary defensive as well: a malformed DecisionResult
+            # must become an ordinary refused operation, never a raw KeyError
+            # that aborts the whole turn.
+            return (
+                OperationSpec(
+                    kind=OperationKind.REQUEST_ROLL,
+                    payload={**payload, "actor_id": payload.get("actor_id", hero_id)},
+                ),
+                OperationSpec(kind=OperationKind.COMPLETE_ACTION, payload={}),
+            )
         return player_roll_plan(
             actor_id=payload.get("actor_id", hero_id),
-            consumer=OperationKind(payload["consumer"]),
+            consumer=OperationKind(consumer),
             payload=payload,
         )
     defaulted = tuple(_with_default_actor(hero_id, spec) for spec in proposed)
@@ -476,16 +517,26 @@ def apply_decision(
 
     if result.kind is DecisionKind.READ_MOVE:
         decision: ReadMoveDecision = result.value
+        proposed = decision.proposed
+        if proposed is None:
+            authored_exit = _authored_exit_for_move(state["turn"].text, situation)
+            if authored_exit is not None:
+                proposed = (
+                    OperationSpec(
+                        kind=OperationKind.USE_EXIT,
+                        payload={"actor_id": hero_id, "exit_id": authored_exit.id},
+                    ),
+                )
         intent = _canonical_intent(decision.intent, decision.proposed)
         refs = _sanitized_refs(intent, decision.refs, situation)
         move = Move(intent=intent, refs=refs)
         delta: dict[str, Any] = {"move": move}
-        if decision.proposed:
+        if proposed:
             delta["action"] = ActionCursor(
                 action_id=_new_id(),
                 actor_id=hero_id,
                 kind=intent,
-                plan=_expand_read_move_plan(hero_id, decision.proposed),
+                plan=_expand_read_move_plan(hero_id, proposed),
                 step_index=0,
                 status="planned",
                 roll_id=None,

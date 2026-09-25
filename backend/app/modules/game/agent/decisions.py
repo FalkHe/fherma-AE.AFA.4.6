@@ -38,7 +38,7 @@ from app.modules.srd.errors import SrdCorpusEmptyError
 
 from . import model_call
 from .flow_state import GameFlowState, Operation, OperationKind, OperationSpec, ReactionSpec, Usage
-from .operations import validate_refs
+from .operations import missing_required_key, validate_refs
 
 MAX_TOOL_CALLS = 3
 RETRY_BUDGET = 2
@@ -267,7 +267,6 @@ DECISION_HANDLERS: dict[DecisionKind, Strategy] = {
                 OperationKind.REQUEST_ROLL,
                 OperationKind.REQUEST_CHOICE,
                 OperationKind.SET_HOSTILITY,
-                OperationKind.LEAVE_SCENE,
                 OperationKind.ENTER_NEXT_ADVENTURE,
             }
         ),
@@ -422,6 +421,17 @@ def _validate(
                 synthetic = Operation(
                     operation_id="proposed", kind=operation_kind, payload=op.payload
                 )
+                missing = missing_required_key(synthetic)
+                if missing is not None:
+                    return f"missing_key:{missing}"
+                if operation_kind is OperationKind.TAKE_ITEM:
+                    item_id = op.payload.get("item_id")
+                    if any(
+                        item.id == item_id
+                        for actor in situation.actors
+                        for item in actor.inventory
+                    ):
+                        return "item_held_by_creature_use_give"
                 reason = validate_refs(situation, synthetic)
                 if reason is not None:
                     return reason
