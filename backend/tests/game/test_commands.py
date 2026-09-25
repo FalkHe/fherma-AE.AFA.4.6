@@ -603,3 +603,228 @@ def test_a_session_quit_while_the_dm_waits_for_an_answer_still_has_it_waiting_on
     assert second_result.exit_code == 0, second_result.output
     assert "Do you sneak or run?" in second_result.stdout
     assert "You choose to sneak quietly." in second_result.stdout
+async def _noop_record_narration(db, **kwargs):
+    return _Event(id="event-2", type="narration", payload={"text": kwargs.get("text", "")})
+
+
+def test_events_resolves_latest_run_id_when_omitted(monkeypatch):
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+    monkeypatch.setattr(
+        playthrough_service,
+        "get_latest_campaign_run_id",
+        lambda db: asyncio.sleep(0, "latest-run-123"),
+    )
+    monkeypatch.setattr(playthrough_service, "get_run", lambda db, run_id: asyncio.sleep(0, None))
+
+    fake_events = [
+        _Event(
+            id="ev-1",
+            type="narration",
+            visibility="player",
+            payload={"text": "Welcome to the dungeon."},
+            campaign_run_id="latest-run-123",
+        ),
+        _Event(
+            id="ev-2",
+            type="tool_call",
+            visibility="dm",
+            payload={
+                "name": "inspect_object",
+                "args": {"instance_key": "chest"},
+                "result": "locked",
+            },
+            campaign_run_id="latest-run-123",
+        ),
+    ]
+    monkeypatch.setattr(
+        playthrough_service,
+        "list_all_events",
+        lambda db, run_id, after_id=None, limit=None: asyncio.sleep(0, fake_events),
+    )
+
+    result = runner.invoke(cli, ["game", "events"])
+
+    assert result.exit_code == 0, result.output
+    assert "run: latest-run-123" in result.stdout
+    assert "[NARRATION] Welcome to the dungeon." in result.stdout
+    assert "[TOOL:DM] inspect_object({'instance_key': 'chest'}) -> locked" in result.stdout
+
+
+def test_events_with_explicit_run_id(monkeypatch):
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+    monkeypatch.setattr(playthrough_service, "get_run", lambda db, run_id: asyncio.sleep(0, None))
+    monkeypatch.setattr(
+        playthrough_service,
+        "list_all_events",
+        lambda db, run_id, after_id=None, limit=None: asyncio.sleep(0, []),
+    )
+
+    result = runner.invoke(cli, ["game", "events", "explicit-run-999"])
+
+    assert result.exit_code == 0, result.output
+    assert "run: explicit-run-999" in result.stdout
+
+
+def test_events_exits_1_when_no_runs_exist(monkeypatch):
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+    monkeypatch.setattr(
+        playthrough_service, "get_latest_campaign_run_id", lambda db: asyncio.sleep(0, None)
+    )
+
+    result = runner.invoke(cli, ["game", "events"])
+
+    assert result.exit_code == 1
+    assert "No campaign runs found." in result.stderr
+
+
+def test_events_verbose_json_output(monkeypatch):
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+    monkeypatch.setattr(playthrough_service, "get_run", lambda db, run_id: asyncio.sleep(0, None))
+    fake_events = [
+        _Event(
+            id="ev-1",
+            type="narration",
+            visibility="player",
+            payload={"text": "A dark cave opens up."},
+            campaign_run_id=RUN_ID,
+        )
+    ]
+    monkeypatch.setattr(
+        playthrough_service,
+        "list_all_events",
+        lambda db, run_id, after_id=None, limit=None: asyncio.sleep(0, fake_events),
+    )
+
+    result = runner.invoke(cli, ["game", "events", RUN_ID, "-v"])
+
+    assert result.exit_code == 0, result.output
+    assert "run: run-1" in result.stdout
+    assert '"id": "ev-1"' in result.stdout
+    assert '"type": "narration"' in result.stdout
+    assert '"text": "A dark cave opens up."' in result.stdout
+
+
+def test_events_follow_mode_polls_and_prints_new_events(monkeypatch):
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+    monkeypatch.setattr(playthrough_service, "get_run", lambda db, run_id: asyncio.sleep(0, None))
+    monkeypatch.setattr(
+        playthrough_service, "get_latest_event_id", lambda db, run_id: asyncio.sleep(0, "ev-0")
+    )
+
+    calls = 0
+
+    async def fake_list_all_events(db, *, run_id, after_id=None, limit=None):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return [
+                _Event(
+                    id="ev-1",
+                    type="player_action",
+                    visibility="player",
+                    payload={"text": "I open the door."},
+                    campaign_run_id=run_id,
+                )
+            ]
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(playthrough_service, "list_all_events", fake_list_all_events)
+
+    result = runner.invoke(cli, ["game", "events", RUN_ID, "-f"])
+
+    assert result.exit_code == 0, result.output
+    assert "run: run-1" in result.stdout
+    assert "[PLAYER] I open the door." in result.stdout
+
+
+def test_actions_prints_checkpoint_history_in_chronological_order(monkeypatch):
+    monkeypatch.setattr(commands, "get_sessionmaker", lambda: _FakeSessionmaker())
+    monkeypatch.setattr(
+        playthrough_service,
+        "get_latest_campaign_run_id",
+        lambda db: asyncio.sleep(0, RUN_ID),
+    )
+
+    snapshots = [
+        SimpleNamespace(
+            config={"configurable": {"checkpoint_id": "cp-2"}},
+            created_at=None,
+            metadata={"step": 2, "source": "loop", "writes": {"narrate": {"messages": ["reply"]}}},
+            next=("record_narration",),
+            values={},
+            tasks=(),
+            parent_config=None,
+        ),
+        SimpleNamespace(
+            config={"configurable": {"checkpoint_id": "cp-1"}},
+            created_at=None,
+            metadata={"step": 1, "source": "loop", "writes": {"load_context": {}}},
+            next=("narrate",),
+            values={},
+            tasks=(),
+            parent_config=None,
+        ),
+    ]
+
+    class _Agent:
+        async def _history(self, config, *, limit=None):
+            for snapshot in snapshots:
+                yield snapshot
+
+        def aget_state_history(self, config, *, limit=None):
+            return self._history(config, limit=limit)
+
+    @asynccontextmanager
+    async def fake_checkpointer():
+        yield object()
+
+    monkeypatch.setattr(commands.checkpointer_service, "checkpointer", fake_checkpointer)
+    monkeypatch.setattr(commands.game_service, "build_agent", lambda **kwargs: _Agent())
+
+    result = runner.invoke(cli, ["game", "actions"])
+
+    assert result.exit_code == 0, result.output
+    assert "thread: run-1" in result.stdout
+    assert result.stdout.index("[cp-1]") < result.stdout.index("[cp-2]")
+    assert '"narrate"' in result.stdout
+
+
+def test_actions_verbose_includes_pending_interrupts(monkeypatch):
+    snapshots = [
+        SimpleNamespace(
+            config={"configurable": {"checkpoint_id": "cp-9"}},
+            created_at=None,
+            metadata={"step": 9, "source": "loop", "writes": {}},
+            next=("narrate",),
+            values={"messages": []},
+            tasks=(
+                SimpleNamespace(
+                    name="narrate",
+                    interrupts=(SimpleNamespace(value={"type": "question"}),),
+                    error=None,
+                ),
+            ),
+            parent_config=None,
+        )
+    ]
+
+    class _Agent:
+        async def _history(self, config, *, limit=None):
+            for snapshot in snapshots:
+                yield snapshot
+
+        def aget_state_history(self, config, *, limit=None):
+            return self._history(config, limit=limit)
+
+    @asynccontextmanager
+    async def fake_checkpointer():
+        yield object()
+
+    monkeypatch.setattr(commands.checkpointer_service, "checkpointer", fake_checkpointer)
+    monkeypatch.setattr(commands.game_service, "build_agent", lambda **kwargs: _Agent())
+
+    result = runner.invoke(cli, ["game", "actions", RUN_ID, "--verbose", "--limit", "1"])
+
+    assert result.exit_code == 0, result.output
+    assert '"checkpoint": "cp-9"' in result.stdout
+    assert '"type": "question"' in result.stdout
