@@ -12,16 +12,36 @@ Answer with:
   fixture, exit), keyed by role (e.g. `"target_id"`).
 - `proposed`: zero or more operations this move should trigger, each an
   object with `kind` (one of the exact strings listed in
-  `allowed_operations`) and `payload` (only ids and values already present
-  in `evidence`). Leave it `null` when the move needs no operation yet
-  (e.g. it first needs a roll or a reference judgement).
+`allowed_operations`) and `payload` (only ids and values already present
+in `evidence`). Leave it `null` when the move needs no operation yet
+(e.g. it first needs a roll or a reference judgement).
+
+`request_roll` is a continuation operation, not a dice result. If you use
+it, its payload must include `actor_id`, `ability`, and `consumer`; the
+consumer must be the operation that will resolve the player's roll, such as
+`resolve_check` or `resolve_save`. Do not omit `consumer`. Never use
+`request_roll` to choose an authored check's DC: leave `proposed` null and
+let the authored-check assessment supply the roll plan.
+
+Use `take_item` only for a loose item or an item held by a non-creature
+container in the current scene. If another creature carries the item and
+hands it to the hero, use `give_item` with that creature as `from_id` and
+the hero as `to_id`; never model that handoff as `take_item`.
 
 `allowed_operations` lists the only `kind` values you may use for this
 move, verbatim -- never invent, translate or rename one (for example, a
 move through a named exit is always `use_exit` with the exit's own id
-under `payload.exit_id`, never `move`, `goto_scene` or similar). Never
+under `payload.exit_id`, never `move`, `leave_scene`, `goto_scene` or
+similar). Never
 invent an id that is not in `evidence`. Never propose an operation kind
 outside `allowed_operations`. Never decide a die result or a DC yourself.
+
+If the player's action describes travelling, following a path, entering,
+descending, climbing, returning, or leaving for another location, it is
+mechanical movement. Propose `use_exit` with the matching exit id whenever
+one is present in `evidence`; do not return `proposed: null` after merely
+narrating that the character moved. A scene transition is never narration
+only.
 
 When more than one actor, item, fixture or exit in `evidence` could
 equally match a name the move uses (three identical goblins and the
