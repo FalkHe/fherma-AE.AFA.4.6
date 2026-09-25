@@ -13,6 +13,7 @@ identical; `operations.py` owns the canonical one.
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from app.core.llm import service as llm_service
 from app.modules.playthrough import service as playthrough_service
 
 from .flow_state import (
@@ -23,8 +24,26 @@ from .flow_state import (
     OperationKind,
     OperationResult,
     StateDelta,
+    Usage,
     close_turn_state,
 )
+
+
+def _llm_usage(usage: Usage | None) -> llm_service.Usage | None:
+    """← bug (sprint 08, WI3): `_record_beat` passed `state["usage"]`
+    (`flow_state.Usage`, field `cost`) straight to `playthrough_service.
+    record_narration`'s `usage`, which reads `llm_service.Usage`'s own
+    `cost_usd`/`total_tokens` -- an `AttributeError` on every recorded
+    beat that ever accumulated any usage at all."""
+    if usage is None:
+        return None
+    return llm_service.Usage(
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        total_tokens=usage.prompt_tokens + usage.completion_tokens,
+        cost_usd=float(usage.cost) if usage.cost is not None else None,
+    )
+
 
 Handler = Callable[[Any, Operation, GameFlowState], Awaitable[tuple[OperationResult, StateDelta]]]
 
@@ -161,7 +180,7 @@ async def _record_beat(
         run_id=ctx.run_id,
         text=state["narrative"].draft,
         turn_id=state["turn"].turn_id,
-        usage=state["usage"],
+        usage=_llm_usage(state["usage"]),
     )
     result = OperationResult(
         operation_id=op.operation_id,

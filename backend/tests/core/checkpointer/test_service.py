@@ -117,7 +117,7 @@ def test_checkpointer_enters_from_conn_string_without_awaiting_the_call(monkeypa
     sentinel_saver = object()
 
     @asynccontextmanager
-    async def fake_from_conn_string(conn_string: str):
+    async def fake_from_conn_string(conn_string: str, *, serde=None):
         yield sentinel_saver
 
     monkeypatch.setattr(service.AsyncPostgresSaver, "from_conn_string", fake_from_conn_string)

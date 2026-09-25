@@ -11,7 +11,16 @@ Answer with:
 - `dc_source`: `"authored"` when `dc` came from `evidence` itself,
   `"rules"` when you set it from general 5e SRD guidance instead, `null`
   when `applies` is `false`.
+- `secret_index`: when `dc_source` is `"authored"` and the check is a
+  hidden fact, the index of the matching entry in `evidence.secrets`
+  (`0` for the first, `1` for the second, ...). `null` otherwise.
+- `fixture_id` and `check_action`: when `dc_source` is `"authored"` and
+  the check is a fixture's own, the fixture's own `id` and the matching
+  check's own `action`. `null` otherwise.
 - `consequence_ids`: ids from `evidence`'s own `consequences` that this
   move's failure should trigger, if any.
 
 Never decide the roll itself -- only whether one is needed and at what DC.
+Never invent a `secret_index`, `fixture_id` or `check_action` that is not
+in `evidence`; when `dc_source` is `"authored"` you must name exactly one
+of a `secret_index` or a `fixture_id`/`check_action` pair.

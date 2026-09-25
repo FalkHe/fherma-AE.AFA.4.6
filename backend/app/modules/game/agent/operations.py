@@ -8,7 +8,7 @@ service call it wraps commits, exactly as `agent/tools.py` already relies
 on for the old graph.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -59,6 +59,52 @@ def _refused(op: Operation, reason: str) -> OperationResult:
     return OperationResult(
         operation_id=op.operation_id, status="refused", reason=reason, event_ids=(), value={}
     )
+
+
+REQUIRED_KEYS: dict[OperationKind, tuple[str, ...]] = {
+    # ← live bug (run 01M36TZ745VSMGZP36YCT491CE): the model proposed an
+    # `interact` with no `object_id`; `validate_refs` only checks a key
+    # when present, so the payload reached `_interact`
+    # (`operations_world.py`) and raised `KeyError` inside the execute
+    # node. Every key a handler below reads with `payload[...]` (never
+    # `.get`) is named here -- `execute_operation` refuses a payload
+    # missing one before any handler ever runs, so a handler can no
+    # longer `KeyError` on a model-shaped payload.
+    OperationKind.RECORD_BEAT: (),
+    OperationKind.COMPLETE_ACTION: (),
+    OperationKind.CLOSE_TURN: (),
+    OperationKind.FINISH_RUN: ("outcome",),
+    OperationKind.REQUEST_ROLL: ("actor_id", "ability", "consumer"),
+    OperationKind.ROLL_PLAYER: (),
+    OperationKind.REQUEST_CHOICE: ("text", "options", "consumer"),
+    OperationKind.ACCEPT_CHOICE: ("text",),
+    OperationKind.ROLL_ACTOR: ("actor_id", "kind"),
+    OperationKind.PASSIVE_CHECK: ("actor_id", "ability", "dc"),
+    OperationKind.RESOLVE_CHECK: ("dc",),
+    OperationKind.RESOLVE_SAVE: ("dc",),
+    OperationKind.SETTLE_INITIATIVE: ("hero_ids", "hostile_ids", "scene_id"),
+    OperationKind.INTERACT: ("actor_id", "object_id", "action"),
+    OperationKind.TAKE_ITEM: ("actor_id", "item_id"),
+    OperationKind.DROP_ITEM: ("actor_id", "item_id"),
+    OperationKind.GIVE_ITEM: ("from_id", "to_id", "item_id"),
+    OperationKind.USE_EXIT: ("actor_id", "exit_id"),
+    OperationKind.ENTER_NEXT_ADVENTURE: (),
+    OperationKind.SET_HOSTILITY: ("actor_id", "hostile"),
+    OperationKind.LEAVE_SCENE: ("actor_id",),
+    OperationKind.RESOLVE_ATTACK: ("actor_id", "target_id", "roll_id"),
+    OperationKind.APPLY_DAMAGE: ("target_id", "roll_id"),
+}
+
+
+def missing_required_key(op: Operation) -> str | None:
+    """The first key `REQUIRED_KEYS[op.kind]` names that `op.payload` does
+    not carry, or `None`. Checked by `execute_operation` before
+    `validate_refs`/dispatch -- a payload missing a key its own handler
+    reads unconditionally must never reach that handler."""
+    for key in REQUIRED_KEYS.get(op.kind, ()):
+        if key not in op.payload:
+            return key
+    return None
 
 
 def validate_refs(situation: Situation, op: Operation) -> str | None:
@@ -196,9 +242,23 @@ async def _accept_choice(
         turn_id=state["turn"].turn_id,
     )
     delta: StateDelta = {"awaiting": None}
-    choice_key = payload.get("choice")
+    # ← key renamed from `"choice"` (`advance.resume_operation`'s own
+    # fix, sprint 08 WI3): `"choice"` collided with `validate_refs`'s own
+    # `payload.get("choice")` check, which expects an *object* id there
+    # for a different `Operation` shape entirely.
+    choice_key = payload.get("ref_key")
     if choice_key is not None and state["move"] is not None:
-        object_id = awaiting.consumer_payload.get(choice_key)
+        # `"choices"` (`advance.choice_options`'s own private label -> id
+        # mapping, ← live bug round 3): the player's own answer echoes
+        # one of `REQUEST_CHOICE`'s human-readable `options`, never an
+        # id, so it is looked up here first. `consumer_payload.get(
+        # choice_key)` is the older, single pre-resolved target shape
+        # (`advance.apply_choice_answer`'s own docstring) -- still tried
+        # as a fallback, never the other way around.
+        choices = awaiting.consumer_payload.get("choices")
+        object_id = choices.get(payload["text"]) if isinstance(choices, Mapping) else None
+        if object_id is None:
+            object_id = awaiting.consumer_payload.get(choice_key)
         if object_id is not None:
             delta["move"] = replace(
                 state["move"], refs={**state["move"].refs, choice_key: object_id}
@@ -219,7 +279,15 @@ async def _roll_actor(
         visibility=payload.get("visibility", "dm"),
         turn_id=state["turn"].turn_id,
     )
-    return _ok(op, event_ids=(event.id,), value={"roll_id": event.id}), {}
+    delta: StateDelta = {}
+    if state["action"] is not None:
+        # ← bug (sprint 08, WI3): unlike `_roll_player`, this never wrote
+        # the rolled event back onto `action.roll_id` -- a monster's own
+        # `RESOLVE_ATTACK`/`APPLY_DAMAGE` plan step (`advance.advance_
+        # action`'s own fallback, `advance.advance_hit`) then found no
+        # roll to consume.
+        delta["action"] = replace(state["action"], roll_id=event.id, roll_consumed=False)
+    return _ok(op, event_ids=(event.id,), value={"roll_id": event.id}), delta
 
 
 async def _passive_check(
@@ -286,7 +354,27 @@ async def _settle_initiative(
             hero_ids=list(payload["hero_ids"]),
             turn_id=state["turn"].turn_id,
         )
-        return _ok(op, event_ids=(event.id,), value={"status": "awaiting_hero_roll"}), {}
+        # ← bug (sprint 08, WI3): without an `AwaitingRef` here, nothing
+        # ever interrupted for the hero's own initiative roll --
+        # `advance_request` never fires and `advance_combat` re-requests
+        # the same roll forever. `advance.advance_combat` reads the
+        # resolved roll id back off the resumed `ROLL_PLAYER`'s own
+        # result once this request is answered.
+        awaiting = AwaitingRef(
+            request_id=event.id,
+            kind="roll",
+            actor_id=payload["hero_ids"][0],
+            public={"ability": "initiative"},
+            consumer=OperationKind.SETTLE_INITIATIVE,
+            consumer_payload={
+                "scene_id": payload["scene_id"],
+                "hero_ids": list(payload["hero_ids"]),
+                "hostile_ids": list(payload["hostile_ids"]),
+            },
+        )
+        return _ok(op, event_ids=(event.id,), value={"status": "awaiting_hero_roll"}), {
+            "awaiting": awaiting
+        }
     result = await playthrough_service.settle_initiative(
         ctx.db,
         user_id=ctx.user_id,
@@ -324,6 +412,14 @@ async def _resolve_attack(
         turn_id=state["turn"].turn_id,
     )
     delta: StateDelta = {}
+    action = state["action"]
+    if action is not None:
+        # ← bug (sprint 08, WI3): unlike `_resolve_roll` (`RESOLVE_CHECK`/
+        # `RESOLVE_SAVE`), this never marked the attack roll consumed, so
+        # `advance_hit`'s own `has_damage_roll` check mistook the spent
+        # attack roll for an already-rolled damage roll and skipped
+        # requesting one.
+        delta["action"] = replace(action, roll_consumed=True)
     if result.status in ("hit", "critical"):
         delta["pending_hit_id"] = result.hit_id
     value = {
@@ -383,6 +479,10 @@ async def execute_operation(
     `OPERATION_HANDLERS`. An `op.kind` with no handler (should not happen
     once every `OperationKind` is registered) is an `"error"`, not a
     refusal: it is this module's own bug, not a bad reference."""
+    missing = missing_required_key(op)
+    if missing is not None:
+        return _refused(op, f"missing_key:{missing}"), {}
+
     reason = validate_refs(ctx.situation, op)
     if reason is not None:
         return _refused(op, reason), {}

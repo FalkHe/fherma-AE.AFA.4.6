@@ -19,7 +19,7 @@
     },
     "max_hp": 12,
     "armour_class": 15,
-    "inventory": ["shepherds-knife", "wooden-shield", "hooded-lantern", "coil-of-twine", "rations"]
+    "inventory": ["wooden-shield", "hooded-lantern", "coil-of-twine", "rations"]
   },
   "object_templates": [
     {
