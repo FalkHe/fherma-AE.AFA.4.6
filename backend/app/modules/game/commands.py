@@ -16,7 +16,9 @@ from typing import Any
 
 import typer
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.runnables import RunnableConfig
 
+from app.core.checkpointer import service as checkpointer_service
 from app.core.db import get_sessionmaker
 from app.core.ids import generate_id
 from app.core.llm.errors import LlmError
