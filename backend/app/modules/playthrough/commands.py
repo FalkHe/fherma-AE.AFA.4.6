@@ -71,6 +71,7 @@ this module: `f"{exc.code}: {exc}"` to stderr plus `typer.Exit(code=1)`.
 """
 
 import asyncio
+import json
 from typing import Any
 
 import typer
@@ -247,3 +248,182 @@ def recap(
 
     for item in items:
         typer.echo(f"{item.id} {item.created_at.isoformat()} {item.text}")
+
+
+def _format_event(event: Event) -> str:
+    payload = event.payload or {}
+    ev_type = event.type
+    visibility = event.visibility
+    created = event.created_at.strftime("%H:%M:%S") if event.created_at else ""
+    time_part = f"[{created}] " if created else ""
+
+    if ev_type == "tool_call":
+        name = payload.get("name", "")
+        args = payload.get("args", {})
+        result = payload.get("result")
+        outcome = payload.get("outcome")
+        details = f"{name}({args})"
+        if outcome:
+            details += f" -> {outcome}"
+        elif result is not None:
+            details += f" -> {result}"
+        return f"{time_part}[TOOL:{visibility.upper()}] {details}"
+
+    if ev_type == "roll":
+        kind = payload.get("kind", "")
+        formula = payload.get("formula", "")
+        faces = payload.get("faces", [])
+        modifier = payload.get("modifier", 0)
+        total = payload.get("total", "")
+        mod_str = f"{modifier:+d}" if isinstance(modifier, int) else str(modifier)
+        details = f"{kind} {formula}: {faces} {mod_str} = {total}"
+        return f"{time_part}[ROLL:{visibility.upper()}] {details}"
+
+    if ev_type == "roll_requested":
+        kind = payload.get("kind", "")
+        actor = payload.get("actorId", "")
+        formula = payload.get("formula", "")
+        dc = payload.get("dc")
+        dc_str = f" dc={dc}" if dc is not None else ""
+        details = f"kind={kind} actor={actor} formula={formula}{dc_str}"
+        return f"{time_part}[ROLL_REQ:{visibility.upper()}] {details}"
+
+    if ev_type == "narration":
+        text = payload.get("text", "")
+        return f"{time_part}[NARRATION] {text}"
+
+    if ev_type == "player_action":
+        text = payload.get("text", "")
+        return f"{time_part}[PLAYER] {text}"
+
+    if ev_type == "question":
+        text = payload.get("text", "")
+        options = payload.get("options", [])
+        opt_str = f" options={options}" if options else ""
+        return f"{time_part}[QUESTION] {text}{opt_str}"
+
+    if ev_type == "hp_changed":
+        actor = payload.get("actorId", "")
+        delta = payload.get("delta", 0)
+        hp = payload.get("currentHp")
+        max_hp = payload.get("maxHp")
+        delta_str = f"{delta:+d}" if isinstance(delta, int) else str(delta)
+        return f"{time_part}[HP] {actor} {delta_str} (hp: {hp}/{max_hp})"
+
+    if ev_type == "item_moved":
+        item = payload.get("itemId", "")
+        from_loc = payload.get("from")
+        to_loc = payload.get("to")
+        return f"{time_part}[ITEM] {item} from={from_loc} to={to_loc}"
+
+    if ev_type == "way_opened":
+        way = payload.get("wayId", "")
+        return f"{time_part}[WAY] opened: {way}"
+
+    if ev_type == "rule_looked_up":
+        query = payload.get("query", "")
+        return f"{time_part}[RULE] {query}"
+
+    if ev_type in ("adventure_started", "adventure_completed"):
+        adv = payload.get("adventureId", "")
+        return f"{time_part}[{ev_type.upper()}] {adv}"
+
+    if ev_type == "scene_entered":
+        scene = payload.get("sceneId", "")
+        return f"{time_part}[SCENE] {scene}"
+
+    if ev_type in ("system", "error", "warning"):
+        msg = payload.get("message", payload)
+        return f"{time_part}[{ev_type.upper()}] {msg}"
+
+    return f"{time_part}[{ev_type.upper()}:{visibility.upper()}] {payload}"
+
+
+def _event_json(event: Event) -> str:
+    row = {
+        "id": event.id,
+        "campaign_run_id": event.campaign_run_id,
+        "actor_member_id": event.actor_member_id,
+        "turn_id": event.turn_id,
+        "type": event.type,
+        "visibility": event.visibility,
+        "payload": event.payload,
+        "prompt_tokens": event.prompt_tokens,
+        "completion_tokens": event.completion_tokens,
+        "cost_usd": str(event.cost_usd) if event.cost_usd is not None else None,
+        "created_at": event.created_at.isoformat() if event.created_at else None,
+    }
+    return json.dumps(row, indent=2, default=str)
+
+
+def _print_event(event: Event, *, verbose: bool) -> None:
+    if verbose:
+        typer.echo(_event_json(event))
+    else:
+        typer.echo(_format_event(event))
+
+
+async def _events_session(
+    *,
+    run_id: str | None,
+    follow: bool,
+    verbose: bool,
+    poll_interval: float = 0.25,
+) -> None:
+    sessionmaker = get_sessionmaker()
+    resolved_run_id = run_id
+    if resolved_run_id is None:
+        async with sessionmaker() as db:
+            resolved_run_id = await playthrough_service.get_latest_campaign_run_id(db)
+        if resolved_run_id is None:
+            typer.echo("No campaign runs found.", err=True)
+            raise typer.Exit(code=1)
+
+    async with sessionmaker() as db:
+        await playthrough_service.get_run(db, resolved_run_id)
+
+    typer.echo(f"run: {resolved_run_id}")
+
+    if not follow:
+        async with sessionmaker() as db:
+            events = await playthrough_service.list_all_events(db, run_id=resolved_run_id)
+        for event in events:
+            _print_event(event, verbose=verbose)
+        return
+
+    # Follow mode: -f => only new rows and auto poll
+    async with sessionmaker() as db:
+        last_event_id = await playthrough_service.get_latest_event_id(db, run_id=resolved_run_id)
+
+    try:
+        while True:
+            await asyncio.sleep(poll_interval)
+            async with sessionmaker() as db:
+                events = await playthrough_service.list_all_events(
+                    db, run_id=resolved_run_id, after_id=last_event_id
+                )
+            for event in events:
+                _print_event(event, verbose=verbose)
+                last_event_id = event.id
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        pass
+
+
+@playthrough_app.command("events")
+def events(
+    run_id: str | None = typer.Argument(
+        None, help="The campaign run id (defaults to the latest run)."
+    ),
+    follow: bool = typer.Option(False, "-f", "--follow", help="Only show new rows and auto poll."),
+    verbose: bool = typer.Option(
+        False, "-v", "--verbose", help="Display the whole event row as JSON."
+    ),
+) -> None:
+    """Stream or show all written event logs (including DM actions) for a campaign run."""
+    try:
+        asyncio.run(_events_session(run_id=run_id, follow=follow, verbose=verbose))
+    except PlaythroughError as exc:
+        typer.echo(f"{exc.code}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except KeyboardInterrupt:
+        pass

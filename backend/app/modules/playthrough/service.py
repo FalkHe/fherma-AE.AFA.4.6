@@ -357,6 +357,22 @@ async def _get_run(db: AsyncSession, run_id: str) -> CampaignRun:
     return run
 
 
+async def get_run(db: AsyncSession, run_id: str) -> CampaignRun:
+    """The run row itself without a membership gate."""
+    return await _get_run(db, run_id)
+
+
+async def get_latest_campaign_run_id(db: AsyncSession) -> str | None:
+    """The most recently created campaign run id, or None if no runs exist."""
+    stmt = (
+        select(CampaignRun.id)
+        .order_by(CampaignRun.created_at.desc(), CampaignRun.id.desc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 def _require_writable(run: CampaignRun) -> None:
     """Raises `RunArchivedError` when `run` is archived.
 
@@ -3865,6 +3881,34 @@ async def list_events(
     if after is not None:
         stmt = stmt.where(Event.id > after)
 
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_latest_event_id(db: AsyncSession, *, run_id: str) -> str | None:
+    """The newest event id for `run_id`, or None if no events exist yet."""
+    await _get_run(db, run_id)
+    stmt = (
+        select(Event.id).where(Event.campaign_run_id == run_id).order_by(Event.id.desc()).limit(1)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def list_all_events(
+    db: AsyncSession,
+    *,
+    run_id: str,
+    after_id: str | None = None,
+    limit: int | None = None,
+) -> list[Event]:
+    """Every event for `run_id` (both player- and dm-visible), oldest first."""
+    await _get_run(db, run_id)
+    stmt = select(Event).where(Event.campaign_run_id == run_id).order_by(Event.id)
+    if after_id is not None:
+        stmt = stmt.where(Event.id > after_id)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await db.execute(stmt)
     return list(result.scalars().all())
 

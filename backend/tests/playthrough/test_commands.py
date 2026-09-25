@@ -417,3 +417,42 @@ def test_recap_on_a_foreign_or_unknown_run_exits_1_with_not_found_on_stderr(monk
     assert result.exit_code == 1
     assert result.stdout == ""
     assert result.stderr.strip() == f"NOT_FOUND: campaign run not found: {RUN_ID}"
+
+
+# --- `app playthrough events` ------------------------------------------------
+
+
+def test_playthrough_events_resolves_latest_run_id_when_omitted(monkeypatch):
+    monkeypatch.setattr(
+        playthrough_service,
+        "get_latest_campaign_run_id",
+        lambda db: asyncio.sleep(0, "latest-run-123"),
+    )
+    monkeypatch.setattr(playthrough_service, "get_run", lambda db, run_id: asyncio.sleep(0, None))
+
+    fake_events = [
+        SimpleNamespace(
+            id="ev-1",
+            type="narration",
+            visibility="player",
+            payload={"text": "The goblin laughs."},
+            campaign_run_id="latest-run-123",
+            actor_member_id=None,
+            turn_id=None,
+            prompt_tokens=None,
+            completion_tokens=None,
+            cost_usd=None,
+            created_at=None,
+        ),
+    ]
+    monkeypatch.setattr(
+        playthrough_service,
+        "list_all_events",
+        lambda db, run_id, after_id=None, limit=None: asyncio.sleep(0, fake_events),
+    )
+
+    result = runner.invoke(cli, ["playthrough", "events"])
+
+    assert result.exit_code == 0, result.output
+    assert "run: latest-run-123" in result.stdout
+    assert "[NARRATION] The goblin laughs." in result.stdout
