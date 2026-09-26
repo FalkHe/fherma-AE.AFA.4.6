@@ -193,3 +193,31 @@ def test_execute_operation_refuses_give_item_with_a_stale_receiver(monkeypatch):
     assert result.reason == "stale_reference"
     assert delta == {}
     assert called is False
+
+
+def test_roll_actor_refuses_instead_of_crashing_when_derivation_raises(monkeypatch):
+    """← live bug (run 01M3E8VSFCZ856D2SNFATQXAPM): `playthrough_service.roll`
+    raising `ValueError` (a weaponless actor, or an unresolved attack name)
+    used to propagate straight out of `_roll_actor` and 500 the whole
+    turn. It must refuse the step instead, exactly like a stale reference
+    or a missing key."""
+
+    async def fake_roll(*args, **kwargs):
+        raise ValueError("this actor has no attacks")
+
+    monkeypatch.setattr(playthrough_service, "roll", fake_roll)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.ROLL_ACTOR,
+        payload={"actor_id": "hero-1", "kind": "attack", "context": {"item_id": "shield-1"}},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "refused"
+    assert result.reason == "this actor has no attacks"
+    assert delta == {}

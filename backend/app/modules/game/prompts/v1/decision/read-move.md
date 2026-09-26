@@ -23,6 +23,11 @@ consumer must be the operation that will resolve the player's roll, such as
 `request_roll` to choose an authored check's DC: leave `proposed` null and
 let the authored-check assessment supply the roll plan.
 
+When the move is an attack and names a specific weapon the hero already
+carries (e.g. "with my shepherd's knife"), record that carried item's own
+id from `evidence.hero.inventory` under `refs["item_id"]` -- never its
+name, and never invent one that is not there.
+
 Use `take_item` only for a loose item or an item held by a non-creature
 container in the current scene. If another creature carries the item and
 hands it to the hero, use `give_item` with that creature as `from_id` and
