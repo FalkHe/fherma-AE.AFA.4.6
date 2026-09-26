@@ -18,11 +18,12 @@ returns `rule_count == 0` -- so the CLI spells out "0 rules" and the ingest
 command itself (decided wording, sprint plan).
 
 `app srd ingest` -- sprint 004-02 WI1, sprint 004-03 WI1. `--dry-run`
-fetches and chunks the source and reports the counts on stdout; no DB
+reads and chunks the local source and reports the counts on stdout; no DB
 access, no embedding call. Without `--dry-run` it opens its own session
 (same pattern as `status`) and runs `service.ingest`, then prints the
 report. `SrdSourceError`, `SrdVectorWidthError` and `LlmError` each map to
-one stderr line plus `typer.Exit(1)`, never a traceback.
+one stderr line plus `typer.Exit(1)`, never a traceback. Both modes download
+the source only when `--refresh-source` is explicitly supplied.
 
 `app srd search` -- sprint 004-05 WI1, sprint 004-06 WI1. `service.
 search_rules` (sprint 06) drops every match past `RELEVANCE_FLOOR` itself,
@@ -71,23 +72,26 @@ def status() -> None:
     typer.echo(f"ingested at: {result.ingested_at}")
 
 
-async def _run_ingest() -> IngestReport:
+async def _run_ingest(*, refresh_source: bool = False) -> IngestReport:
     sessionmaker = get_sessionmaker()
     async with sessionmaker() as db:
 
         def _on_batch(done: int, total: int) -> None:
             typer.echo(f"embedded {done}/{total} chunks", err=True)
 
-        return await srd_service.ingest(db, on_batch=_on_batch)
+        return await srd_service.ingest(db, refresh_source=refresh_source, on_batch=_on_batch)
 
 
 @srd_app.command("ingest")
 def ingest(
-    dry_run: bool = typer.Option(False, "--dry-run", help="Fetch and chunk without embedding."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Chunk without embedding or DB writes."),
+    refresh_source: bool = typer.Option(
+        False, "--refresh-source", help="Download and replace the bundled SRD source first."
+    ),
 ) -> None:
     if dry_run:
         try:
-            path = srd_service.fetch_source()
+            path = srd_service.source_path(refresh_source=refresh_source)
             chunks = srd_service.chunk_source(path)
         except SrdSourceError as exc:
             typer.echo(str(exc), err=True)
@@ -107,7 +111,7 @@ def ingest(
         return
 
     try:
-        report = asyncio.run(_run_ingest())
+        report = asyncio.run(_run_ingest(refresh_source=refresh_source))
     except (SrdSourceError, SrdVectorWidthError, LlmError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc

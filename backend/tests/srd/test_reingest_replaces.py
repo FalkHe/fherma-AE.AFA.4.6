@@ -69,7 +69,7 @@ def test_reingest_replaces_the_corpus_and_a_duplicate_citation_leaves_it_intact(
 
     try:
         # First ingest.
-        report_one = asyncio.run(srd_service.ingest(srd_db))
+        report_one = asyncio.run(srd_service.ingest(srd_db, refresh_source=True))
         count_one, distinct_one = asyncio.run(_row_count_and_distinct_citations())
         created_at_one = asyncio.run(_max_created_at())
 
@@ -77,7 +77,7 @@ def test_reingest_replaces_the_corpus_and_a_duplicate_citation_leaves_it_intact(
         assert count_one == distinct_one  # AC2: no citation stored twice
 
         # Second ingest, same source -- AC1: same row count, later ingest time.
-        report_two = asyncio.run(srd_service.ingest(srd_db))
+        report_two = asyncio.run(srd_service.ingest(srd_db, refresh_source=True))
         count_two, distinct_two = asyncio.run(_row_count_and_distinct_citations())
         created_at_two = asyncio.run(_max_created_at())
 
@@ -93,7 +93,7 @@ def test_reingest_replaces_the_corpus_and_a_duplicate_citation_leaves_it_intact(
         monkeypatch.setattr(srd_service, "chunk_source", lambda path: duplicate_chunks)
 
         with pytest.raises(Exception):  # noqa: B017 - the DB driver's own IntegrityError type
-            asyncio.run(srd_service.ingest(srd_db))
+            asyncio.run(srd_service.ingest(srd_db, refresh_source=True))
 
         # A failed commit leaves the session with a pending rollback; a
         # fresh statement needs it rolled back first, exactly like any

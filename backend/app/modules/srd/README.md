@@ -32,15 +32,15 @@ this module reaches the corpus directly (D1).
   embedding model and ingest time on stdout; exits 1 with a stderr line
   naming 0 rules and `app srd ingest` when the corpus is empty, or naming
   both widths on a vector-width mismatch.
-- `app srd ingest --dry-run` (`commands.py`, sprint 004-02 WI1): fetches the
-  SRD source (`service.fetch_source`) and splits it into citable
+- `app srd ingest --dry-run` (`commands.py`): reads the bundled
+  SRD source and splits it into citable
   heading-path chunks (`service.chunk_source`), then reports the stored
   path, byte count, chunk count, total token count and a sample of heading
   paths on stdout. No DB access, no embedding call. `SrdSourceError` (an
   unreachable host, a non-2xx response, an unwritable target, or a source
   with no headings) prints one stderr line and exits 1.
-- `app srd ingest` (`commands.py` / `service.ingest`, sprint 004-03 WI1):
-  fetches, chunks, embeds (`core/llm/service.embed_texts`, batched under
+- `app srd ingest` (`commands.py` / `service.ingest`):
+  reads the bundled source, chunks, embeds (`core/llm/service.embed_texts`, batched under
   the gateway's per-request token cap by `EMBED_BATCH_SIZE`) and replaces
   the whole `srd_rules` table in one transaction, then reports the source
   version, byte count, chunk count, token count and USD cost (`n/a` when
@@ -71,6 +71,12 @@ this module reaches the corpus directly (D1).
   or an LLM gateway failure prints one stderr line — each case exits 1 with
   no traceback. `RuleMatch.score` is the raw cosine distance (`<=>`), 0..2,
   lower is closer — not a similarity score.
+
+Both ingestion modes use `content/srd/v1/SRD_CC_v5.1.md` by default. A missing
+file fails with instructions to restore it or use `--refresh-source`; there
+is no implicit download. Add `--refresh-source` to download and replace the
+source first, including with `--dry-run`. Full ingestion restores the prior
+source if subsequent processing fails; default local ingestion never rewrites it.
 
 ## Relevance floor
 

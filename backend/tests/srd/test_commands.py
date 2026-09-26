@@ -13,6 +13,7 @@ runs -- so leaving it real here stays engine-free exactly like
 
 from datetime import UTC, datetime
 
+import pytest
 from typer.testing import CliRunner
 
 from app.cli import cli
@@ -83,10 +84,12 @@ def test_status_on_vector_width_mismatch_exits_1_with_stderr_naming_both_widths(
     assert "1536" in result.stderr
 
 
-def test_ingest_prints_the_report(monkeypatch):
+@pytest.mark.parametrize("refresh_source", [False, True])
+def test_ingest_prints_the_report(monkeypatch, refresh_source):
     from app.modules.srd.schemas import IngestReport
 
     async def fake_ingest(db, **kwargs):
+        assert kwargs["refresh_source"] is refresh_source
         return IngestReport(
             source_version="v1",
             source_bytes=1024,
@@ -98,7 +101,8 @@ def test_ingest_prints_the_report(monkeypatch):
 
     monkeypatch.setattr(srd_service, "ingest", fake_ingest)
 
-    result = runner.invoke(cli, ["srd", "ingest"])
+    args = ["srd", "ingest"] + (["--refresh-source"] if refresh_source else [])
+    result = runner.invoke(cli, args)
 
     assert result.exit_code == 0, result.output
     assert "v1" in result.stdout
@@ -124,15 +128,24 @@ def test_ingest_on_llm_error_exits_1_with_its_message(monkeypatch):
     assert LLM_FAILURE_MESSAGE in result.stderr
 
 
+@pytest.mark.parametrize("refresh_source", [False, True])
 def test_ingest_dry_run_prints_path_byte_count_chunk_count_tokens_and_sample_headings(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, refresh_source
 ):
     from app.modules.srd.schemas import RuleChunk
 
-    fixture_path = tmp_path / "SRD_CC_v5.1.md"
+    monkeypatch.setattr(srd_service, "SRD_ROOT", tmp_path)
+    fixture_path = tmp_path / srd_service.SOURCE_VERSION / srd_service.SOURCE_FILENAME
+    fixture_path.parent.mkdir(parents=True)
     fixture_path.write_bytes(b"some markdown source")
 
-    monkeypatch.setattr(srd_service, "fetch_source", lambda: fixture_path)
+    fetched = []
+
+    def fake_fetch(**kwargs):
+        fetched.append(True)
+        return fixture_path
+
+    monkeypatch.setattr(srd_service, "fetch_source", fake_fetch)
     monkeypatch.setattr(
         srd_service,
         "chunk_source",
@@ -147,9 +160,11 @@ def test_ingest_dry_run_prints_path_byte_count_chunk_count_tokens_and_sample_hea
         ],
     )
 
-    result = runner.invoke(cli, ["srd", "ingest", "--dry-run"])
+    args = ["srd", "ingest", "--dry-run"] + (["--refresh-source"] if refresh_source else [])
+    result = runner.invoke(cli, args)
 
     assert result.exit_code == 0, result.output
+    assert fetched == ([True] if refresh_source else [])
     assert str(fixture_path) in result.stdout
     assert str(len(fixture_path.read_bytes())) in result.stdout
     assert "3" in result.stdout  # chunk count
@@ -161,12 +176,12 @@ def test_ingest_dry_run_prints_path_byte_count_chunk_count_tokens_and_sample_hea
 def test_ingest_dry_run_on_srd_source_error_exits_1_with_its_message(monkeypatch):
     from app.modules.srd.errors import SrdSourceError
 
-    def failing_fetch():
+    def failing_fetch(**kwargs):
         raise SrdSourceError("the source could not be reached")
 
     monkeypatch.setattr(srd_service, "fetch_source", failing_fetch)
 
-    result = runner.invoke(cli, ["srd", "ingest", "--dry-run"])
+    result = runner.invoke(cli, ["srd", "ingest", "--dry-run", "--refresh-source"])
 
     assert result.exit_code == 1, result.output
     assert result.stdout == ""

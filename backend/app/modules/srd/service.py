@@ -131,6 +131,19 @@ def fetch_source(*, version: str = SOURCE_VERSION) -> Path:
     return target
 
 
+def source_path(*, version: str = SOURCE_VERSION, refresh_source: bool = False) -> Path:
+    """Use the bundled source unless a download is explicitly requested."""
+    if refresh_source:
+        return fetch_source(version=version)
+    path = SRD_ROOT / version / SOURCE_FILENAME
+    if not path.is_file():
+        raise SrdSourceError(
+            f"SRD source is missing: {path}; restore the bundled file or run "
+            "`app srd ingest --refresh-source` to download it"
+        )
+    return path
+
+
 def _get_encoding() -> tiktoken.Encoding:
     global _encoding
     if _encoding is None:
@@ -305,10 +318,12 @@ async def ingest(
     db: AsyncSession,
     *,
     version: str = SOURCE_VERSION,
+    refresh_source: bool = False,
     on_batch: Callable[[int, int], None] | None = None,
 ) -> IngestReport:
-    """Fetches, stores, chunks, embeds and stores the SRD corpus, replacing
-    it wholesale.
+    """Chunks and embeds the local SRD corpus, replacing database rows wholesale.
+
+    Only `refresh_source=True` downloads and replaces the source file.
 
     Checks the embedding width first (AC3), before `fetch_source` spends a
     gateway request. Every chunk is embedded, in `EMBED_BATCH_SIZE`-sized
@@ -340,9 +355,11 @@ async def ingest(
     check_vector_width()
 
     dest_path = SRD_ROOT / version / SOURCE_FILENAME
-    previous_source_bytes = dest_path.read_bytes() if dest_path.exists() else None
+    previous_source_bytes = (
+        dest_path.read_bytes() if refresh_source and dest_path.exists() else None
+    )
 
-    path = fetch_source(version=version)
+    path = source_path(version=version, refresh_source=refresh_source)
 
     try:
         chunks = chunk_source(path)
@@ -393,7 +410,8 @@ async def ingest(
             await db.rollback()
             raise
     except BaseException:
-        _restore_previous_source(dest_path, previous_source_bytes)
+        if refresh_source:
+            _restore_previous_source(dest_path, previous_source_bytes)
         raise
 
     return IngestReport(

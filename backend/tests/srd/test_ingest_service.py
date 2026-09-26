@@ -18,6 +18,7 @@ from app.core.llm.errors import LlmError
 from app.core.llm.service import EmbeddingResult, Usage
 from app.core.settings import get_settings
 from app.modules.srd import service as srd_service
+from app.modules.srd.errors import SrdSourceError
 from app.modules.srd.models import EMBEDDING_WIDTH
 
 
@@ -85,7 +86,7 @@ def test_ingest_embeds_every_chunk_and_writes_one_row_each(matching_width, monke
     monkeypatch.setattr(srd_service.llm_service, "embed_texts", fake_embed_texts)
     db = FakeWriteSession()
 
-    report = asyncio.run(srd_service.ingest(db))
+    report = asyncio.run(srd_service.ingest(db, refresh_source=True))
 
     chunks = srd_service.chunk_source(dest_path)
     assert len(db.added) == len(chunks)
@@ -100,6 +101,56 @@ def test_ingest_embeds_every_chunk_and_writes_one_row_each(matching_width, monke
     assert report.chunk_count == len(chunks)
     assert report.cost_usd == pytest.approx(0.01)
     assert report.cost_complete is True
+
+
+@pytest.mark.parametrize("embedding_fails", [False, True])
+def test_ingest_defaults_to_local_source_without_downloading_or_rewriting(
+    matching_width, monkeypatch, tmp_path, embedding_fails
+):
+    path = _stub_source(monkeypatch, tmp_path)
+    path.parent.mkdir(parents=True)
+    original = b"# Local rules\n\nlocal body"
+    path.write_bytes(original)
+    original_mtime = path.stat().st_mtime_ns
+
+    def forbidden_fetch(**kwargs):
+        pytest.fail("default ingestion must not download")
+
+    def embed(texts, *, model=None):
+        assert texts == ["Local rules\n\nlocal body"]
+        if embedding_fails:
+            raise LlmError("embedding failed")
+        return EmbeddingResult(
+            vectors=[[0.1] * EMBEDDING_WIDTH],
+            usage=Usage(prompt_tokens=1, completion_tokens=0, total_tokens=1, cost_usd=None),
+        )
+
+    monkeypatch.setattr(srd_service, "fetch_source", forbidden_fetch)
+    monkeypatch.setattr(srd_service.llm_service, "embed_texts", embed)
+    db = FakeWriteSession()
+    if embedding_fails:
+        with pytest.raises(LlmError):
+            asyncio.run(srd_service.ingest(db))
+        assert db.executed == []
+    else:
+        asyncio.run(srd_service.ingest(db))
+        assert db.committed
+        assert db.added[0].text == "local body"
+    assert path.read_bytes() == original
+    assert path.stat().st_mtime_ns == original_mtime
+
+
+def test_ingest_missing_local_source_fails_without_download(matching_width, monkeypatch, tmp_path):
+    monkeypatch.setattr(srd_service, "SRD_ROOT", tmp_path)
+
+    def forbidden_fetch(**kwargs):
+        pytest.fail("missing source must not trigger an implicit download")
+
+    monkeypatch.setattr(srd_service, "fetch_source", forbidden_fetch)
+    db = FakeWriteSession()
+    with pytest.raises(SrdSourceError, match="--refresh-source"):
+        asyncio.run(srd_service.ingest(db))
+    assert db.executed == []
 
 
 def test_ingest_embeds_the_heading_trail_joined_to_the_body_but_stores_the_body_alone(
@@ -125,7 +176,7 @@ def test_ingest_embeds_the_heading_trail_joined_to_the_body_but_stores_the_body_
     monkeypatch.setattr(srd_service.llm_service, "embed_texts", fake_embed_texts)
     db = FakeWriteSession()
 
-    asyncio.run(srd_service.ingest(db))
+    asyncio.run(srd_service.ingest(db, refresh_source=True))
 
     chunks = srd_service.chunk_source(dest_path)
     assert captured_texts == [f"{chunk.heading_path}\n\n{chunk.text}" for chunk in chunks]
@@ -157,7 +208,7 @@ def test_ingest_on_embedding_failure_adds_and_commits_nothing_and_restores_the_s
     db = FakeWriteSession()
 
     with pytest.raises(LlmError):
-        asyncio.run(srd_service.ingest(db))
+        asyncio.run(srd_service.ingest(db, refresh_source=True))
 
     assert db.added == []
     assert db.committed is False
@@ -192,7 +243,7 @@ def test_ingest_failing_on_the_second_batch_adds_and_commits_nothing(
     db = FakeWriteSession()
 
     with pytest.raises(LlmError):
-        asyncio.run(srd_service.ingest(db))
+        asyncio.run(srd_service.ingest(db, refresh_source=True))
 
     assert calls["count"] == 2
     assert db.executed == []
@@ -235,7 +286,7 @@ def test_ingest_deletes_then_adds_then_commits_in_order_with_no_commit_before_de
 
     db = OrderedFakeWriteSession()
 
-    asyncio.run(srd_service.ingest(db))
+    asyncio.run(srd_service.ingest(db, refresh_source=True))
 
     assert call_log == ["execute", "add_all", "commit"]
     assert len(db.executed) == 1  # exactly one execute call: the delete
@@ -256,7 +307,7 @@ def test_ingest_row_count_follows_a_changed_source_file(matching_width, monkeypa
     monkeypatch.setattr(srd_service.llm_service, "embed_texts", fake_embed_texts)
 
     db_before = FakeWriteSession()
-    report_before = asyncio.run(srd_service.ingest(db_before))
+    report_before = asyncio.run(srd_service.ingest(db_before, refresh_source=True))
     original_chunks = srd_service.chunk_source(dest_path)
     assert report_before.chunk_count == len(original_chunks)
     assert len(db_before.added) == len(original_chunks)
@@ -269,7 +320,7 @@ def test_ingest_row_count_follows_a_changed_source_file(matching_width, monkeypa
     monkeypatch.setattr(srd_service, "fetch_source", _fake_fetch_with_new_section)
 
     db_after = FakeWriteSession()
-    report_after = asyncio.run(srd_service.ingest(db_after))
+    report_after = asyncio.run(srd_service.ingest(db_after, refresh_source=True))
     expected_chunks = srd_service.chunk_source(dest_path)
 
     assert report_after.chunk_count != report_before.chunk_count
