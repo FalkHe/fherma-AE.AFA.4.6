@@ -35,7 +35,15 @@ export type TranscriptRow =
       total: number;
       verdict?: "madeIt" | "missed";
     }
-  | { kind: "divider"; id: string; scene: string };
+  | { kind: "divider"; id: string; scene: string }
+  | { kind: "ending"; id: string; outcome: RunOutcome };
+
+/** `finish_run`'s own `Literal` (`backend/app/modules/playthrough/service.py`)
+ * -- the only three values a `system` event's `details.outcome` ever
+ * carries. */
+export type RunOutcome = "victory" | "defeat" | "authored";
+
+const RUN_OUTCOMES: readonly RunOutcome[] = ["victory", "defeat", "authored"];
 
 /** The single question or dice roll the game is waiting on (sprint 010/09
  * WI2, I1) -- the events read's `awaiting` marker, resolved against the
@@ -232,10 +240,20 @@ function toRow(event: EventRead, heroName: string, requests: Map<string, Payload
       const scene = str(payload, "sceneTitle");
       return scene === "" ? null : { kind: "divider", id: event.id, scene };
     }
+    case "system": {
+      // `finish_run` is the only writer of a `system` event (`service.py`)
+      // and always carries `details.outcome`; a refusal event or any other
+      // future `system` shape carries no such field and silently produces
+      // no row, same as the default branch below.
+      const outcome = nestedString(payload.details, "outcome");
+      return RUN_OUTCOMES.includes(outcome as RunOutcome)
+        ? { kind: "ending", id: event.id, outcome: outcome as RunOutcome }
+        : null;
+    }
     default:
-      // `adventure_started`/`adventure_completed`, `system`/`error`/
-      // `warning`, `tool_call`, and any type this mapper does not yet know
-      // about -- all silently produce no row.
+      // `adventure_started`/`adventure_completed`, `error`/`warning`,
+      // `tool_call`, and any type this mapper does not yet know about --
+      // all silently produce no row.
       return null;
   }
 }

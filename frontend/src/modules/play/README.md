@@ -213,6 +213,20 @@ module owns everything past "Start adventure" / "Continue".
   already had. Reloading mid-prompt shows the same buttons, since both
   `pending` and `awaiting` come straight off the transcript read.
 
+## Owns (defect fix — a finished run closes the play screen)
+
+- `transcript.ts` — a sixth row kind, `"ending"` (`{ kind: "ending", id,
+  outcome }`), mapped from a `system` event whose `details.outcome` is one
+  of `finish_run`'s own three values (`victory`/`defeat`/`authored`); a
+  `system` event carrying no such field (e.g. the "already finished"
+  refusal) still produces no row.
+- `components/EndingDivider.tsx` — the transcript's closing marker, styled
+  like `SceneDivider`, worded through `ending.<outcome>` in `play.json`.
+- `PlayRoute` reads `table.runStatus === "finished"` (not the transcript's
+  own `ending` row, which a reload can race) to replace the composer with a
+  permanent closed line (`composer.closed`) plus a link back to the
+  campaign (`end.button`), instead of the turn-in-progress composer states.
+
 ## Surface
 
 - `TranscriptRow`, `SystemKey`, `EventRead` (re-exported) — consumed by

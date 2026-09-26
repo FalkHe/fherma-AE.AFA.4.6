@@ -35,6 +35,7 @@ import { PlayerRow } from "./PlayerRow";
 import { SystemLine } from "./SystemLine";
 import { DiceChip } from "./DiceChip";
 import { SceneDivider } from "./SceneDivider";
+import { EndingDivider } from "./EndingDivider";
 import { ThinkingLine } from "./ThinkingLine";
 
 export interface TranscriptProps {
@@ -64,6 +65,8 @@ function renderRow(row: TranscriptRow): ReactElement {
       );
     case "divider":
       return <SceneDivider key={row.id} scene={row.scene} />;
+    case "ending":
+      return <EndingDivider key={row.id} outcome={row.outcome} />;
   }
 }
 

@@ -161,6 +161,15 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // buttons this render is meant to hide). Only once nothing is sending does
   // a still-open `awaiting` marker pick the choice/roll line; last, the
   // plain running/open split AC4 already covered.
+  // The run itself is over (`finish_run`, `backend/app/modules/playthrough/
+  // service.py`): `table.runStatus` flips to `"finished"` and stays there
+  // for the rest of this run's life -- read straight off the table, not
+  // derived from the transcript's own `ending` row, since a finished run
+  // with a transcript the events read has not yet caught up to (a reload
+  // racing the finishing turn's own settle) must close the composer just
+  // as surely as one that has.
+  const finished = table.runStatus === "finished";
+
   let composerState: ComposerState;
   if (isSending) {
     composerState = "turnRunning";
@@ -230,7 +239,33 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
       </Box>
 
       <Box sx={{ px: 4, flexShrink: 0 }}>
-        <Composer state={composerState} onSend={send} />
+        {finished ? (
+          // A finished run never reopens for another turn (defect fix):
+          // the composer's own three "closed" states (`Composer.tsx`) all
+          // describe a turn still in progress, not a run that has ended
+          // outright, so this is a fourth, permanent closed line, drawn
+          // here rather than inside `Composer` since it alone needs the
+          // campaign link back out.
+          <Stack spacing={1} sx={{ alignItems: "center" }}>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-small)",
+                textAlign: "center",
+              }}
+            >
+              {t("composer.closed")}
+            </Typography>
+            {table.campaignTitle !== null && (
+              <Link component={RouterLink} to={`/runs/${runId}`}>
+                {t("end.button", { campaign: table.campaignTitle })}
+              </Link>
+            )}
+          </Stack>
+        ) : (
+          <Composer state={composerState} onSend={send} />
+        )}
       </Box>
     </Stack>
   );

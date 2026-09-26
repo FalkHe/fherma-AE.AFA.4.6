@@ -495,4 +495,45 @@ describe("PlayRoute on /runs/:runId/play (AC2, AC6, AC7)", () => {
     await screen.findByRole("heading", { level: 1, name: "Goblins of Greenhollow" });
     expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })).toHaveLength(0);
   });
+
+  it("a finished run shows the ending line and closes the composer, replacing it with a link back to the campaign", async () => {
+    stubAuthenticated();
+    mockTable("run-1", { ...TABLE, runStatus: "finished" });
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-1/events", {
+      status: 200,
+      body: {
+        events: [
+          { id: "e1", type: "narration", turnId: "t1", payload: { text: "The goblins close in." }, createdAt: "2026-09-08T21:00:00+00:00" },
+          {
+            id: "e2",
+            type: "system",
+            turnId: "t1",
+            payload: { message: "The party has fallen. The adventure ends in defeat.", details: { outcome: "defeat" } },
+            createdAt: "2026-09-08T21:01:00+00:00",
+          },
+        ],
+        awaiting: "none",
+      },
+    });
+
+    renderApp(["/runs/run-1/play"]);
+
+    expect(await screen.findByText("The adventure ends in defeat.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("What do you do?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
+    expect(screen.getByText("This adventure has ended.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to Greenhollow" })).toHaveAttribute("href", "/runs/run-1");
+  });
+
+  it("an unfinished run keeps the composer open and shows no ending line", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockEvents("run-1");
+
+    renderApp(["/runs/run-1/play"]);
+
+    await screen.findByLabelText("What do you do?");
+    expect(screen.queryByText("This adventure has ended.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/The adventure ends in/)).not.toBeInTheDocument();
+  });
 });
