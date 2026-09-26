@@ -83,7 +83,7 @@ describe("useTakeTurn", () => {
     expect(result.current.pending).not.toBeNull();
 
     await waitFor(() => expect(result.current.pending).toBeNull());
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["transcript", "run-1"] }, { cancelRefetch: false });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["transcript", "run-1"] }, { cancelRefetch: true });
   });
 
   it("startOpening posts { text: null } and leaves pending null while isSending is true ← AC4", async () => {

@@ -138,6 +138,32 @@ describe("PlayRoute on /runs/:runId/play (AC2, AC6, AC7)", () => {
     expect(screen.getByText("The Village Green · saved as you go")).toBeInTheDocument();
   });
 
+  // Defect B: the table read (`usePlayTable.ts`) is fetched once and never
+  // invalidated by a turn settling, so it cannot be this header's only
+  // source of truth for the current scene -- the transcript's own
+  // `scene_entered` rows (`divider`, `transcript.ts`) are kept live already
+  // (every turn settle re-reads it) and are read here in preference to it.
+  it("the scene line follows the transcript's own latest scene marker, not only the table read", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-1/events", {
+      status: 200,
+      body: {
+        events: [
+          { id: "e1", type: "scene_entered", turnId: "t1", payload: { adventureRunId: "ar1", sceneId: "s1", sceneTitle: "The Village Green" }, createdAt: "2026-09-08T21:00:00+00:00" },
+          { id: "e2", type: "narration", turnId: "t2", payload: { text: "You push through the reeds." }, createdAt: "2026-09-08T21:01:00+00:00" },
+          { id: "e3", type: "scene_entered", turnId: "t2", payload: { adventureRunId: "ar1", sceneId: "s2", sceneTitle: "The Lair Maw" }, createdAt: "2026-09-08T21:02:00+00:00" },
+        ],
+        awaiting: "none",
+      },
+    });
+
+    renderApp(["/runs/run-1/play"]);
+
+    expect(await screen.findByText("The Lair Maw · saved as you go")).toBeInTheDocument();
+    expect(screen.queryByText("The Village Green · saved as you go")).not.toBeInTheDocument();
+  });
+
   it("the back link returns to the lobby (the run screen)", async () => {
     stubAuthenticated();
     mockTable("run-1", TABLE);

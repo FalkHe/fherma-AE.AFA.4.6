@@ -129,7 +129,31 @@ export function installFetchMock(): void {
       );
     }
     const responder = queue.length > 1 ? queue.shift()! : queue[0];
-    const result = typeof responder === "function" ? await responder() : responder;
+    // Honours an `AbortSignal` passed via `init.signal` or riding along on a
+    // `Request` object (`RequestOptions`'s own signal channel) -- needed so
+    // a hook that races its own fetch against a deadline (`usePlayTranscript`'s
+    // `transcriptTimeoutMs`, or a query TanStack itself aborts on
+    // `cancelRefetch: true`) can be exercised without waiting out a real
+    // network hang in a test. A responder that never settles (`deferredResponse`
+    // left unresolved) rejects the moment the signal fires instead of hanging
+    // the test forever.
+    const signal = init?.signal ?? (isRequestObject ? (input as Request).signal : undefined);
+    const resultPromise = typeof responder === "function" ? responder() : Promise.resolve(responder);
+    if (signal?.aborted) {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
+    const result = signal
+      ? await Promise.race([
+          resultPromise,
+          new Promise<never>((_resolve, reject) => {
+            signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("The operation was aborted.", "AbortError")),
+              { once: true },
+            );
+          }),
+        ])
+      : await resultPromise;
 
     return new Response(result.body === undefined ? null : JSON.stringify(result.body), {
       status: result.status,
