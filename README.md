@@ -17,23 +17,72 @@ agent) and **mechanics** (deterministic tools for dice, hit points and state
 validation). The agent never fakes a roll and never edits state directly.
 Only the SRD rules text is RAG. See `docs/general/architecture.md`.
 
-## Current state
+## Current state - Stage 01 ( AE Sprint 3 )
 
-Scaffolding. The repository carries the Docker environment, the modular
-backend and frontend skeletons, and username/password authentication. The
-game agent itself is not built yet.
+The app includes username/password authentication, campaign selection,
+AI-assisted character creation, and a playable Dungeon Master agent with
+deterministic mechanics, persistent game state, and SRD rule retrieval.
+
+**Implemented Featues:**
+- basic persistent game schema and mechanics
+- first Campaign + 1 Adventure Story
+- SRD Rule ingestion (embedding)
+- simple character creation agent
+- **The Dungeon Master Agent ( core of this Project )**
+- Langfuse / Langsmith Tracing
+
+**Planned Features - Stage 02 ( AE Capstone )**
+- advanced DM Agent
+  - Optimized Context
+  - Optimized Prompts ( automated Walkthrough tests  with analysis)
+- Party sidebar ( display current, stats, scene, etc. )
+- Narration token Streaming
+- automated Image generation for Adventures, Scenes and Characters
+- polished frontend
+- evtl. multiplayer mode
 
 ## Quick start
 
-Everything runs in Docker; no host Python or Node toolchain is required. Make
-sure ports `5173` and `8000` are free.
+Everything runs in Docker; install Docker with Compose and Make. No host
+Python or Node toolchain is required. Make sure ports `5173` and `8000` are
+free.
 
 ```bash
-cp .env.dist .env       # every default works out of the box
+cp .env.dist .env
+```
+
+Set `OPENROUTER_API_KEY` in `.env` before continuing. All model calls go
+through OpenRouter, including chat, embeddings and portraits. The app can
+start without a key, but AI character creation and gameplay need one.
+The model defaults are in `.env.dist`.
+
+```bash
+make build              # builds app and CLI images
 make up                 # API, frontend, Postgres; migrates the DB on boot
 ```
 
+Once the API has finished starting (check `docker compose logs app-web`),
+load the SRD rules into a fresh database:
+
+```bash
+docker compose run --rm app-cli app srd ingest
+docker compose run --rm app-cli app srd status
+```
+
+CLI commands start Postgres if needed and wait for it to be healthy. They
+do not run migrations; the initial `make up` above handles those.
+
+Ingestion uses the bundled `backend/content/srd/v1/SRD_CC_v5.1.md` and calls
+OpenRouter for embeddings, incurring model usage costs. It only needs to run
+once per database unless you want to replace the rules corpus; `make down` preserves the database
+volume. Campaign content is already included in `backend/content/campaigns/`.
+
+To explicitly download a replacement SRD source before ingesting, add
+`--refresh-source`. Use `--dry-run` to preview chunks without embeddings or
+database writes; it uses the local file unless combined with `--refresh-source`.
+
 Open <http://localhost:5173>, register a username and password, and sign in.
+Start a campaign, create your character, and begin an adventure.
 
 - Frontend: <http://localhost:5173>
 - Backend API: <http://localhost:8000>
@@ -41,36 +90,33 @@ Open <http://localhost:5173>, register a username and password, and sign in.
 
 `make down` stops everything. `make help` lists every target.
 
-### Public hostname / SSL reverse proxy
+### Optional tracing: Langfuse and LangSmith
 
-The stack can remain in `ENVIRONMENT=development` behind an HTTPS reverse
-proxy. Configure the browser-facing addresses in `.env`:
+Both services are external; Compose does not host either of them. You can
+enable either or both in `.env`, or leave tracing disabled for local play.
 
-```dotenv
-VITE_API_URL=https://dnd.example.com
-VITE_ALLOWED_HOST=dnd.example.com
-VITE_API_PROXY_TARGET=http://app-web:8000
-FRONTEND_ORIGIN=https://dnd.example.com
-```
+- **Langfuse** captures chat, embedding and image calls through
+  `backend/app/core/tracing/`. Set `LANGFUSE_PUBLIC_KEY`,
+  `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` for your external project.
+  Replace the example base URL in `.env.dist` with your instance's URL.
+  Leaving any of the three blank disables Langfuse. Tracing failures are
+  logged without failing model calls.
+- **LangSmith** traces LangChain/LangGraph agent execution. Set
+  `LANGSMITH_TRACING=true`, replace the `LANGSMITH_API_KEY` placeholder with
+  your key, and set `LANGSMITH_PROJECT` to your project name. Set
+  `LANGSMITH_ENDPOINT` to your external service's API endpoint (the template
+  uses `https://api.smith.langchain.com`). Direct OpenRouter SDK calls for
+  embeddings and images are not automatically captured by LangSmith.
+  Keep `LANGSMITH_TRACING=false` to disable it.
 
-With `VITE_API_PROXY_TARGET` set, send every request for the public hostname to
-`127.0.0.1:5173`; Vite forwards `/api/*` to the backend over the Compose
-network. If the API uses a separate public hostname instead, leave
-`VITE_API_PROXY_TARGET` blank, put that origin in `VITE_API_URL`, and route it
-to `127.0.0.1:8000`. `FRONTEND_ORIGIN` must always be the exact frontend
-origin. Recreate the affected services after changing these values:
+Both endpoints must be reachable from inside the backend containers.
+After changing `.env` for a running stack, recreate the API container:
 
 ```bash
-docker compose up -d --force-recreate frontend app-web
+docker compose up -d --force-recreate app-web
 ```
 
-The external proxy must support WebSocket upgrades for the Vite development
-server and disable response buffering for `/api/*` so campaign SSE updates
-arrive immediately.
-
-`OPENROUTER_API_KEY` is not needed yet — nothing calls a model until the game
-agent lands — but set it now if you have one; every LLM call in this project
-goes through OpenRouter.
+New `app-cli` containers pick up the updated values automatically.
 
 ## Stack
 
@@ -105,12 +151,6 @@ make rebuild         # build, then recreate the stack and renew node_modules
 Test and lint targets run in one-off CLI containers (`app-cli`, `node-cli`,
 compose profile `cli`), so they work with the stack down. Run `make build`
 after changing dependencies so those images stay fresh.
-
-Langfuse tracing is wired into the LLM seam (`backend/app/core/tracing/`)
-and points at an external Langfuse instance — nothing is hosted here. Fill
-in `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` in
-`.env` to switch it on; leave any of them empty and the app behaves
-identically with tracing off. A Langfuse outage never fails a model call.
 
 ## Documentation
 
