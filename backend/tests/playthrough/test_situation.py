@@ -45,6 +45,8 @@ VERSION = "v1"
 
 TO_THORNWAY = "to-thornway"
 TO_LAIR_MAW = "to-lair-maw"
+MIRA_TEMPLATE = "mira"
+KNIFE_TEMPLATE = "shepherds-knife"
 LAIR_MAW_EXIT = "to-lair-hollow"
 INJECTED_CONDITION = "the goblins have already been dealt with"
 FIXTURE_BYPASSED_ACTION = "Cut through the lashings that hold the screen together"
@@ -68,6 +70,34 @@ def _with_injected_condition(loaded: LoadedCampaign) -> LoadedCampaign:
     new_scene = scene.model_copy(update={"exits": new_exits})
     new_scenes = {**loaded.scenes, "lair-maw": new_scene}
     return loaded.model_copy(update={"scenes": new_scenes})
+
+
+async def _give_knife(db, *, user_id: str, run_id: str, character_id: str) -> None:
+    """Mira hands her shepherd's knife to the hero, exactly as
+    `village-green`'s own content has her do -- the seed pack no longer
+    carries one of its own. Must run before the actor leaves
+    `village-green`: `give` never reaches across scenes."""
+    mira_id = (
+        await db.execute(
+            text(
+                "SELECT id FROM objects WHERE campaign_run_id = :run_id "
+                "AND template_id = :template_id"
+            ),
+            {"run_id": run_id, "template_id": MIRA_TEMPLATE},
+        )
+    ).scalar_one()
+    knife_id = (
+        await db.execute(
+            text(
+                "SELECT id FROM objects WHERE owner_object_id = :owner "
+                "AND template_id = :template_id"
+            ),
+            {"owner": mira_id, "template_id": KNIFE_TEMPLATE},
+        )
+    ).scalar_one()
+    await playthrough_service.give(
+        db, user_id=user_id, from_id=mira_id, to_id=character_id, item_id=knife_id
+    )
 
 
 async def _walk_to_lair_maw(db, *, user_id: str, run_id: str, actor_id: str) -> None:
@@ -104,6 +134,9 @@ def test_a_rich_scene_populates_every_field(playthrough_db, monkeypatch):
         )
         adventure_run = await playthrough_service.enter_adventure(
             playthrough_db, user_id=owner_id, run_id=run.id
+        )
+        await _give_knife(
+            playthrough_db, user_id=owner_id, run_id=run.id, character_id=character.id
         )
         await _walk_to_lair_maw(
             playthrough_db, user_id=owner_id, run_id=run.id, actor_id=character.id

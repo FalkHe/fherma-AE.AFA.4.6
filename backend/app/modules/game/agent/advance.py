@@ -14,6 +14,7 @@ The `resume_operation(awaiting, resume)` helper turns a checkpointed
   `select_next_effect` runs again with `state["awaiting"]` cleared.
 """
 
+import re
 import uuid
 from collections.abc import Mapping
 from dataclasses import replace
@@ -104,7 +105,9 @@ def _authored_exit_for_move(text: str | None, situation: Situation):
     path_action = "take" in lowered and any(
         word in lowered for word in ("path", "track", "route", "road", "trail")
     )
-    if not path_action and not any(keyword in lowered for keyword in _MOVEMENT_KEYWORDS):
+    if not path_action and not any(
+        re.search(rf"\b{re.escape(keyword)}\b", lowered) for keyword in _MOVEMENT_KEYWORDS
+    ):
         return None
     candidates = situation.exits
     if len(candidates) == 1:

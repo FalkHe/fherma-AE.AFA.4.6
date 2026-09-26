@@ -97,7 +97,10 @@ class _second_connection:
 async def _reach_lair_maw(db: AsyncSession, *, username: str):
     """A fresh run, its one character, positioned at `lair-maw` where
     `thorn-screen` stands -- two free `use_exit` calls from the entry
-    scene, exactly `research.md`'s own path."""
+    scene, exactly `research.md`'s own path. Mira hands over her own
+    `shepherds-knife` before the walk starts, exactly as `village-green`'s
+    own content has her do -- the seed pack no longer carries one of its
+    own."""
     user_id = generate_id()
     await _insert_user(db, user_id, username=username)
     await db.commit()
@@ -105,6 +108,26 @@ async def _reach_lair_maw(db: AsyncSession, *, username: str):
     run = await service.start_campaign_run(db, user_id=user_id, campaign_id=CAMPAIGN_ID)
     character = await service.create_character(db, user_id=user_id, run_id=run.id)
     await service.enter_adventure(db, user_id=user_id, run_id=run.id)
+
+    mira_id = (
+        await db.execute(
+            text("SELECT id FROM objects WHERE campaign_run_id = :run_id AND template_id = 'mira'"),
+            {"run_id": run.id},
+        )
+    ).scalar_one()
+    mira_knife_id = (
+        await db.execute(
+            text(
+                "SELECT id FROM objects WHERE owner_object_id = :owner "
+                "AND template_id = 'shepherds-knife'"
+            ),
+            {"owner": mira_id},
+        )
+    ).scalar_one()
+    await service.give(
+        db, user_id=user_id, from_id=mira_id, to_id=character.id, item_id=mira_knife_id
+    )
+
     await service.use_exit(db, user_id=user_id, actor_id=character.id, exit_id="to-thornway")
     await service.use_exit(db, user_id=user_id, actor_id=character.id, exit_id="to-lair-maw")
 

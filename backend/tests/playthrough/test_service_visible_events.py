@@ -83,7 +83,17 @@ async def _reach_village_green(db: AsyncSession, *, username: str):
 
 
 async def _reach_lair_maw(db: AsyncSession, *, username: str):
+    """Reaches `lair-maw`. Mira hands over her own `shepherds-knife`
+    before the walk starts, exactly as `village-green`'s own content has
+    her do -- the seed pack no longer carries one of its own."""
     user_id, run, character = await _reach_village_green(db, username=username)
+
+    mira_id = await _object_id(db, run_id=run.id, template_id="mira")
+    mira_knife_id = await _owned_object_id(db, owner_id=mira_id, template_id=KNIFE_TEMPLATE)
+    await service.give(
+        db, user_id=user_id, from_id=mira_id, to_id=character.id, item_id=mira_knife_id
+    )
+
     await service.use_exit(db, user_id=user_id, actor_id=character.id, exit_id="to-thornway")
     await service.use_exit(db, user_id=user_id, actor_id=character.id, exit_id="to-lair-maw")
 
@@ -291,13 +301,17 @@ def test_a_refused_take_leaves_no_item_moved_entry(playthrough_db):
         # `bent-horseshoe` stands at `village-green`, three scenes away.
         horseshoe_id = await _object_id(playthrough_db, run_id=run.id, template_id="bent-horseshoe")
 
+        # Setup's own knife handover already appended one `item_moved`
+        # entry (Mira's "given") -- the refusal below must add none.
+        before = await _player_events(playthrough_db, run.id, type_="item_moved")
+
         result = await service.take(
             playthrough_db, user_id=user_id, actor_id=character.id, item_id=horseshoe_id
         )
         assert result.status == "refused"
 
-        visible = await _player_events(playthrough_db, run.id, type_="item_moved")
-        assert visible == []
+        after = await _player_events(playthrough_db, run.id, type_="item_moved")
+        assert after == before
 
     asyncio.run(_scenario())
 

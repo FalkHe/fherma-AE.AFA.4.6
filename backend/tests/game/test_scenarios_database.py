@@ -92,7 +92,10 @@ async def _events_for_run(session, run_id: str) -> list:
 
 async def _setup_run(db, *, username: str) -> tuple[str, str, str]:
     """Starts a run, builds the seed character and enters the adventure --
-    the same path `test_concurrent_monster_rolls_database.py` walks.
+    the same path `test_concurrent_monster_rolls_database.py` walks. Mira
+    then hands the shepherd's knife to the hero, exactly as the content's
+    own `village-green` truth has her do (the seed character's own pack no
+    longer carries one -- `campaign.json`'s `seed_character.inventory`).
     Returns `(owner_id, run_id, hero_id)`."""
     owner_id = generate_id()
     await _insert_user(db, owner_id, username=username)
@@ -102,6 +105,26 @@ async def _setup_run(db, *, username: str) -> tuple[str, str, str]:
     )
     character = await playthrough_service.create_character(db, user_id=owner_id, run_id=run.id)
     await playthrough_service.enter_adventure(db, user_id=owner_id, run_id=run.id)
+
+    mira_ids = await _object_ids(db, run.id, template_id=MIRA_TEMPLATE, scene_id=VILLAGE_GREEN)
+    mira_id = mira_ids[0]
+    knife_row = (
+        await db.execute(
+            text(
+                "SELECT id FROM objects WHERE campaign_run_id = :run_id "
+                "AND owner_object_id = :mira_id AND template_id = 'shepherds-knife'"
+            ),
+            {"run_id": run.id, "mira_id": mira_id},
+        )
+    ).one()
+    await playthrough_service.give(
+        db,
+        user_id=owner_id,
+        from_id=mira_id,
+        to_id=character.id,
+        item_id=knife_row.id,
+    )
+
     return owner_id, run.id, character.id
 
 
