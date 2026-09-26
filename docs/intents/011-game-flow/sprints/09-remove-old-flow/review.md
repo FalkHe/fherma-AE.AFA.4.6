@@ -21,3 +21,4 @@ The opt-in database test suite (`make backend-test-db`) fails 22 of its 189 test
 Brief: docs/intents/011-game-flow/sprints/09-remove-old-flow/brief.md
 
 ## Verdict
+Round 1: changes requested — the cleanup holds up, but a game left waiting for a dice roll or a choice before the new flow went live can no longer be picked up: the player stays on the same unanswered prompt with no way forward, where until now it recovered by itself.
