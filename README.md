@@ -23,7 +23,7 @@ The app includes username/password authentication, campaign selection,
 AI-assisted character creation, and a playable Dungeon Master agent with
 deterministic mechanics, persistent game state, and SRD rule retrieval.
 
-**Implemented Featues:**
+**Implemented Features:**
 - basic persistent game schema and mechanics
 - first Campaign + 1 Adventure Story
 - SRD Rule ingestion (embedding)
@@ -69,8 +69,8 @@ docker compose run --rm app-cli app srd ingest
 docker compose run --rm app-cli app srd status
 ```
 
-CLI commands start Postgres if needed and wait for it to be healthy. They
-do not run migrations; the initial `make up` above handles those.
+CLI containers join the Compose network but do not start Postgres or run
+migrations themselves; the `make up` above provides both.
 
 Ingestion uses the bundled `backend/content/srd/v1/SRD_CC_v5.1.md` and calls
 OpenRouter for embeddings, incurring model usage costs. It only needs to run
@@ -101,7 +101,8 @@ enable either or both in `.env`, or leave tracing disabled for local play.
   Replace the example base URL in `.env.dist` with your instance's URL.
   Leaving any of the three blank disables Langfuse. Tracing failures are
   logged without failing model calls.
-- **LangSmith** traces LangChain/LangGraph agent execution. Set
+- **LangSmith** is picked up by LangChain itself from the environment; the
+  backend contains no LangSmith-specific code. Set
   `LANGSMITH_TRACING=true`, replace the `LANGSMITH_API_KEY` placeholder with
   your key, and set `LANGSMITH_PROJECT` to your project name. Set
   `LANGSMITH_ENDPOINT` to your external service's API endpoint (the template
@@ -120,12 +121,12 @@ New `app-cli` containers pick up the updated values automatically.
 
 ## Stack
 
-- **Backend**: Python, FastAPI, Typer, SQLAlchemy 2 (async), Alembic,
-  PostgreSQL (pgvector), LangChain/LangGraph over OpenRouter. No background
+- **Backend**: Python 3.12, FastAPI, Typer, SQLAlchemy 2 (async), Alembic,
+  PostgreSQL 16 (pgvector), LangChain/LangGraph over OpenRouter, Langfuse SDK. No background
   job runner and no Redis — every operation is request-scoped or a CLI
   one-off. See `docs/general/backend-stack.md`.
-- **Frontend**: TypeScript, React, Material UI, Vite, TanStack Query, React
-  Router, react-i18next. See `docs/general/frontend-stack.md`.
+- **Frontend**: TypeScript, React 19, Material UI 9, Vite, TanStack Query,
+  React Router, react-i18next; Vitest and Testing Library for tests. See `docs/general/frontend-stack.md`.
 - **Architecture and conventions**: `docs/general/architecture.md`.
 
 Both trees are organised by domain **module** rather than by technical layer:
@@ -142,6 +143,7 @@ frontend/src/modules/<module>/    components/ hooks/ routes/
 
 ```bash
 make test            # both suites (backend-test / frontend-test individually)
+make backend-test-db # opt-in tests against a scratch Postgres database
 make lint            # ruff, ESLint, tsc (backend-lint / frontend-lint / frontend-typecheck)
 make generate-api    # regenerate the frontend's typed API client (stack must be up)
 make build           # rebuild images after a dependency change

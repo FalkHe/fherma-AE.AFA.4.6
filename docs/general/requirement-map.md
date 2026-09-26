@@ -27,10 +27,10 @@ Aiming for ≥2 medium + 1 hard.
 |---|---|
 | Medium 1 — token usage and cost | Per turn and per campaign run, summed from the event stream |
 | Medium 2 — long/short-term memory | LangGraph checkpointer (short), narration search by meaning (long) |
-| Medium 8 — security guard, dev/user split | Ownership/authentication boundaries; developer drawer |
+| Medium 8 — security guard, dev/user split | Ownership/authentication boundaries; the model can only pick validated operations. No prompt-injection filter; model and prompt settings are operator-side (`.env`, `core/prompts/`) |
 | Hard 1 — agentic RAG | On-demand `lookup_rule` read-only aid inside `decide` |
-| Easy 2 — personality | DM tone selectable per campaign run |
-| Easy 4 — model settings | Model and temperature in the developer drawer |
+| Easy 2 — personality | Proposal only: a DM tone per campaign run is not implemented |
+| Easy 4 — model settings | Not implemented: no developer drawer; the model is configured in `.env` |
 
 Langfuse tracing of every model call (`core/tracing/`, external instance)
 covers hard task 2, but is not counted above.

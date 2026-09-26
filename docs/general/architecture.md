@@ -39,8 +39,8 @@ yet; the boundary is stated here so nothing is built across it later.
 
 ## System components
 
-None of these exist yet. They are listed so the boundaries between them are
-fixed before anything is built.
+All of these exist today except where a sentence says otherwise. They are
+listed so the boundaries between them stay fixed.
 
 **Character generation agent** — runs once at the start of a playthrough. The
 player describes an idea in plain words; the agent asks a follow-up or two,
@@ -70,8 +70,11 @@ evidence.
 **Web client** — narration pane, state panel (HP, AC, inventory; turn order is
 deferred — the DM-turn phase decides what a fight needs, and nothing tracks
 turns before Stage 02), filtered agent trace with roll log and rule citations,
-token and cost display, a campaign-run list, and a developer drawer (model,
-temperature, system prompt, DM personality) kept separate from the player UI.
+and a campaign-run list. Shipped today: sign-in, the campaign-run list, the
+character-creation chat and the play screen (transcript, composer, roll and
+choice prompts, dice chips). The state panel, trace view, token and cost
+display and a developer drawer (model, temperature, system prompt, DM
+personality) are planned, not built.
 
 ## Deployment shape
 
