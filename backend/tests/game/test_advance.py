@@ -7,6 +7,7 @@ from dataclasses import replace
 from app.modules.game.agent.advance import (
     apply_decision,
     eligible_hostiles,
+    materialize_hero_action,
     reconcile_step,
     resume_operation,
     select_next_effect,
@@ -35,7 +36,14 @@ from app.modules.game.agent.flow_state import (
     TurnFrame,
     Usage,
 )
-from app.modules.playthrough.situation import ActorView, ExitView, SecretView, Situation
+from app.modules.playthrough.situation import (
+    ActorView,
+    AttackView,
+    ExitView,
+    ItemView,
+    SecretView,
+    Situation,
+)
 
 
 def _turn(**overrides) -> TurnFrame:
@@ -904,3 +912,38 @@ def test_hero_down_with_player_text_closes_on_the_ending_never_an_attempt():
     assert closing_effect.kind == "closing"
     assert closing_effect.payload == {"outcome": "defeat"}
     assert closing_effect.allowed_evidence_ids == ("ending-event-1", "finish-tool-call-1")
+
+
+def test_materialize_hero_action_picks_the_carried_item_that_has_an_attack():
+    """← live bug (run 01M3E8VSFCZ856D2SNFATQXAPM): with no `item_id` and
+    no `attack` ref naming a weapon, the fallback used to be a bare
+    `inventory[0]` off an unordered query -- a hero carrying a shield
+    before a knife could swing the shield, which has no attack at all,
+    and crash the roll. Deterministically prefers the first carried item
+    that actually has one, by the item's own id, over an item with
+    none."""
+    shield = ItemView(id="item-2-shield", name="Wooden Shield", attacks=())
+    knife = ItemView(
+        id="item-1-knife",
+        name="Shepherd's Knife",
+        attacks=(AttackView(name="Knife", to_hit=2, damage="1d4"),),
+    )
+    hero = replace(_hero(), inventory=(shield, knife))
+    situation = _situation(hero=hero, actors=(_actor("goblin-1"),))
+    combat = CombatCursor(
+        scene_id="scene-1",
+        order=("hero-1",),
+        index=0,
+        round=1,
+        round_admitted=True,
+        winning_side="hero",
+    )
+    move = Move(intent="attack", refs={"target_id": "goblin-1"})
+    state = _state(move=move, action=None, combat=combat)
+
+    delta = materialize_hero_action(state, situation)
+
+    action = delta["action"]
+    roll_step = action.plan[0]
+    assert roll_step.kind == OperationKind.ROLL_ACTOR
+    assert roll_step.payload["context"]["item_id"] == "item-1-knife"

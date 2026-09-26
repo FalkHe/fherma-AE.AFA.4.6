@@ -661,15 +661,26 @@ def progress_combat(state: GameFlowState, situation: Situation) -> dict[str, Any
 
 def _resolve_hero_weapon(situation: Situation, refs: Mapping[str, str]) -> str | None:
     """Defaults an attack's own `item_id` to a carried item matching the
-    named `attack` word, or the hero's first carried item as a last
-    resort, when `READ_MOVE` left it unset -- `dice.derive_formula`
+    named `attack` word, or the hero's first carried item that actually
+    has an attack, when `READ_MOVE` left it unset -- `dice.derive_formula`
     refuses a character's own attack roll outright with no `item_id` at
     all (← live bug: "attack the goblin with my spear" named no item in
     `evidence` at all, since the hero carries only a knife, so
     `READ_MOVE` correctly left `item_id` unset per its own "never invent
     an id" rule; the hero's own attack roll is never an interrupt
     (`attack_plan`'s own docstring) and crashed the whole turn instead of
-    asking again)."""
+    asking again).
+
+    The last-resort fallback picks deterministically among items that
+    have at least one attack, ordered by the carried item's own id (←
+    live bug, run 01M3E8VSFCZ856D2SNFATQXAPM: the underlying inventory
+    query carries no `ORDER BY` at all, so a bare `inventory[0]` could
+    just as well land on a shield or a lantern -- neither has an attack
+    to roll, and `dice._select_attack` raised `ValueError` uncaught,
+    500ing the whole turn). Carrying nothing with an attack at all
+    returns `None`, letting `_roll_actor`'s own `ValueError` guard refuse
+    the roll cleanly instead of ever inventing a weapon that isn't
+    there."""
     item_id = refs.get("item_id")
     if item_id is not None:
         return item_id
@@ -682,7 +693,8 @@ def _resolve_hero_weapon(situation: Situation, refs: Mapping[str, str]) -> str |
             item_name = item.name.casefold()
             if attack_name in item_name or item_name in attack_name:
                 return item.id
-    return inventory[0].id
+    armed = sorted((item for item in inventory if item.attacks), key=lambda item: item.id)
+    return armed[0].id if armed else None
 
 
 def materialize_hero_action(state: GameFlowState, situation: Situation) -> dict[str, Any]:
