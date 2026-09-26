@@ -36,7 +36,7 @@ directly rather than through `TestClient`.
 The seed sheet and inventory are read from the shipped `greenhollow/v1`
 content (`app.modules.content.service.load_campaign`) rather than pasted as
 literals, so this file survives an authored content change; the sprint's
-own contract already tells us Greenhollow's seed pack is five distinct
+own contract already tells us Greenhollow's seed pack is four distinct
 items, so every carried key ends `:1`.
 
 No `pytest-asyncio` in this suite (`AGENTS.md` gotchas).
@@ -234,8 +234,8 @@ def test_ac2_the_character_and_its_pack_land_as_real_rows_from_the_seed_sheet(pl
         )
 
         sheet = content_service.load_campaign("greenhollow", "v1").campaign.seed_character
-        assert len(sheet.inventory) == 5  # Greenhollow's seed pack is five distinct items
-        assert len(set(sheet.inventory)) == 5  # every carried key below ends `:1`
+        assert len(sheet.inventory) == 4  # Greenhollow's seed pack is four distinct items
+        assert len(set(sheet.inventory)) == 4  # every carried key below ends `:1`
 
         character_row = (
             await playthrough_db.execute(

@@ -13,7 +13,8 @@ target, spent twice) plus the hp clamp and the alive/down split.
 
 `@pytest.mark.database`, against the shared scratch-database fixture
 (`playthrough_db`) and the real shipped `greenhollow/v1` content: the
-seed character (AC 15, 12 hp, carrying `shepherds-knife`, +4/1d4+2) and
+seed character (AC 15, 12 hp), handed Mira's own `shepherds-knife`
+(+4/1d4+2) by `_reach_lair_maw` the way the game's own first scene does, and
 the `goblin` (AC 13, 7 hp, `Rusty Shortsword` +4/1d6+2, `Sling` +4/1d4+2)
 placed three-deep in `lair-maw`, reached the same way
 `test_service_interact.py` and qa's own suite do:
@@ -133,7 +134,12 @@ class _second_connection:
         await self._engine.dispose()
 
 
-async def _reach_lair_maw(db: AsyncSession, *, username: str):
+async def _reach_lair_maw(db: AsyncSession, *, username: str, with_knife: bool = True):
+    """Reaches `lair-maw`. `with_knife` (default) has Mira hand her own
+    `shepherds-knife` to the hero first, exactly as `village-green`'s own
+    content has her do -- the seed pack no longer carries one of its own.
+    Pass `with_knife=False` for a scenario that needs Mira to keep hers
+    (an item genuinely uncarried by the actor)."""
     user_id = generate_id()
     await _insert_user(db, user_id, username=username)
     await db.commit()
@@ -141,6 +147,20 @@ async def _reach_lair_maw(db: AsyncSession, *, username: str):
     run = await service.start_campaign_run(db, user_id=user_id, campaign_id=CAMPAIGN_ID)
     character = await service.create_character(db, user_id=user_id, run_id=run.id)
     await service.enter_adventure(db, user_id=user_id, run_id=run.id)
+    if with_knife:
+        mira_id = (
+            await db.execute(
+                text(
+                    "SELECT id FROM objects WHERE campaign_run_id = :run_id "
+                    "AND template_id = 'mira'"
+                ),
+                {"run_id": run.id},
+            )
+        ).scalar_one()
+        mira_knife_id = await _miras_object_id(db, run_id=run.id, template_id=KNIFE_TEMPLATE)
+        await service.give(
+            db, user_id=user_id, from_id=mira_id, to_id=character.id, item_id=mira_knife_id
+        )
     await service.use_exit(db, user_id=user_id, actor_id=character.id, exit_id="to-thornway")
     await service.use_exit(db, user_id=user_id, actor_id=character.id, exit_id="to-lair-maw")
     return user_id, run, character
@@ -314,6 +334,27 @@ def test_attack_refuses_a_target_in_another_scene(playthrough_db):
         )
         character = await service.create_character(playthrough_db, user_id=user_id, run_id=run.id)
         await service.enter_adventure(playthrough_db, user_id=user_id, run_id=run.id)
+        # Mira hands over her shepherd's knife before the character ever
+        # leaves `village-green` (`give` never reaches across scenes).
+        mira_id = (
+            await playthrough_db.execute(
+                text(
+                    "SELECT id FROM objects WHERE campaign_run_id = :run_id "
+                    "AND template_id = 'mira'"
+                ),
+                {"run_id": run.id},
+            )
+        ).scalar_one()
+        mira_knife_id = await _miras_object_id(
+            playthrough_db, run_id=run.id, template_id=KNIFE_TEMPLATE
+        )
+        await service.give(
+            playthrough_db,
+            user_id=user_id,
+            from_id=mira_id,
+            to_id=character.id,
+            item_id=mira_knife_id,
+        )
         # The character stays at `village-green`; the goblins are three
         # scenes away at `lair-maw`.
         goblin_id = (await _goblin_ids(playthrough_db, run_id=run.id))[0]
@@ -355,7 +396,7 @@ def test_attack_refuses_a_target_in_another_scene(playthrough_db):
 def test_attack_refuses_an_item_the_actor_does_not_carry(playthrough_db):
     async def _scenario():
         user_id, run, character = await _reach_lair_maw(
-            playthrough_db, username="attack-unheld-item"
+            playthrough_db, username="attack-unheld-item", with_knife=False
         )
         goblin_id = (await _goblin_ids(playthrough_db, run_id=run.id))[0]
         # Mira's own copy of the same template the character carries --

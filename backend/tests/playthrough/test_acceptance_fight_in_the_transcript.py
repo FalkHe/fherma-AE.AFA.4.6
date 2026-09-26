@@ -87,7 +87,8 @@ TO_THORNWAY = "to-thornway"  # village-green -> thornway
 TO_LAIR_MAW = "to-lair-maw"  # thornway -> lair-maw
 
 GOBLIN_TEMPLATE = "goblin"
-KNIFE_TEMPLATE = "shepherds-knife"  # the seed character's own carried weapon
+MIRA_TEMPLATE = "mira"  # village-green, carries the shepherd's knife
+KNIFE_TEMPLATE = "shepherds-knife"  # handed over by Mira, never the seed pack's own
 HORSESHOE_TEMPLATE = "bent-horseshoe"  # a floor item at village-green, carried by nobody
 
 GOBLIN_ARMOUR_CLASS = 13
@@ -398,6 +399,20 @@ async def _column_names(session, table: str) -> set[str]:
     return {row.column_name for row in rows}
 
 
+async def _give_knife(db, *, user_id: str, run_id: str, character_id: str) -> str:
+    """Mira hands her shepherd's knife to the hero, exactly as
+    `village-green`'s own content has her do -- the seed pack no longer
+    carries one of its own. Returns the knife's object id. Must run before
+    the actor leaves `village-green`: `give` never reaches across
+    scenes."""
+    mira_id = (await _object_ids_by_template(db, run_id, MIRA_TEMPLATE, scene_id=VILLAGE_GREEN))[0]
+    knife_id = await _carried_object_id(db, owner_id=mira_id, template_id=KNIFE_TEMPLATE)
+    await playthrough_service.give(
+        db, user_id=user_id, from_id=mira_id, to_id=character_id, item_id=knife_id
+    )
+    return knife_id
+
+
 async def _walk_to_lair_maw(db, *, user_id: str, actor_id: str) -> None:
     await playthrough_service.use_exit(db, user_id=user_id, actor_id=actor_id, exit_id=TO_THORNWAY)
     await playthrough_service.use_exit(db, user_id=user_id, actor_id=actor_id, exit_id=TO_LAIR_MAW)
@@ -416,12 +431,11 @@ async def _setup_in_lair_maw(db, *, username: str):
     )
     character = await playthrough_service.create_character(db, user_id=owner_id, run_id=run.id)
     await playthrough_service.enter_adventure(db, user_id=owner_id, run_id=run.id)
+    knife_id = await _give_knife(db, user_id=owner_id, run_id=run.id, character_id=character.id)
     await _walk_to_lair_maw(db, user_id=owner_id, actor_id=character.id)
 
     goblin_ids = await _object_ids_by_template(db, run.id, GOBLIN_TEMPLATE, scene_id=LAIR_MAW)
     assert len(goblin_ids) == 3, "greenhollow/v1's lair-maw placement changed under this test"
-
-    knife_id = await _carried_object_id(db, owner_id=character.id, template_id=KNIFE_TEMPLATE)
 
     return owner_id, run, character, goblin_ids, knife_id
 
@@ -576,14 +590,17 @@ def test_ac1_attack_compares_the_roll_to_armour_and_refuses_the_rest(playthrough
         await playthrough_service.enter_adventure(
             playthrough_db, user_id=elsewhere_owner_id, run_id=elsewhere_run.id
         )
+        elsewhere_knife_id = await _give_knife(
+            playthrough_db,
+            user_id=elsewhere_owner_id,
+            run_id=elsewhere_run.id,
+            character_id=elsewhere_character.id,
+        )
         elsewhere_goblin_id = (
             await _object_ids_by_template(
                 playthrough_db, elsewhere_run.id, GOBLIN_TEMPLATE, scene_id=LAIR_MAW
             )
         )[0]
-        elsewhere_knife_id = await _carried_object_id(
-            playthrough_db, owner_id=elsewhere_character.id, template_id=KNIFE_TEMPLATE
-        )
         elsewhere_roll = await _rolled(
             playthrough_db,
             user_id=elsewhere_owner_id,

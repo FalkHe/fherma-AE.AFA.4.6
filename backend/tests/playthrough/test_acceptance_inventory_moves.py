@@ -16,10 +16,11 @@ one_action.py`).
 Exercised against the shipped `greenhollow/v1` content (`backend/content/
 campaigns/greenhollow/v1/`), read by template id rather than pasted as
 literals-only guesses: `village-green` (the entry scene) carries a loose
-`bent-horseshoe` on the ground and the creature `mira`, who already holds
-her own `shepherds-knife`; the seed character's own starting pack (`
-campaign.json`'s `seed_character.inventory`) carries a `shepherds-knife`
-of its own -- a second, distinct row, never Mira's. Down the one path
+`bent-horseshoe` on the ground and the creature `mira`, who holds the one
+and only `shepherds-knife` -- the seed character's own starting pack (`
+campaign.json`'s `seed_character.inventory`) no longer carries one of its
+own; the AC2 scenario below has Mira hand hers to the actor mid-scenario,
+through `give`, exactly as the game's own first scene does. Down the one path
 `test_acceptance_exits_and_endings.py` and `test_acceptance_interact_and_
 one_action.py` also walk (`village-green` -> `thornway` -> `lair-maw` ->
 `lair-hollow`), `lair-hollow` carries the goblin boss holding a
@@ -213,9 +214,6 @@ def test_ac2_take_drop_and_give_move_the_item_and_refuse_across_scenes_or_anothe
         (mira_knife_id,) = await _carried_object_ids(
             playthrough_db, owner_id=mira_id, template_id=KNIFE_TEMPLATE
         )
-        (actor_knife_id,) = await _carried_object_ids(
-            playthrough_db, owner_id=character.id, template_id=KNIFE_TEMPLATE
-        )
 
         # -- take puts the horseshoe in the actor's hands and off the
         # floor; a free drop right after, in the very same turn, puts it
@@ -310,6 +308,20 @@ def test_ac2_take_drop_and_give_move_the_item_and_refuse_across_scenes_or_anothe
             "itemId": str(horseshoe_id),
         }
         assert give_calls[0]["outcome"] == {}
+
+        # -- Mira hands the actor her own shepherd's knife -- the
+        # content's own first-scene handover (`village-green`'s
+        # `npc_intent`) -- so a second, distinct item exists to prove
+        # give refuses once the actor has left the green.
+        knife_give_result = await playthrough_service.give(
+            playthrough_db,
+            user_id=owner_id,
+            from_id=mira_id,
+            to_id=character.id,
+            item_id=mira_knife_id,
+        )
+        assert knife_give_result.status == "ok"
+        actor_knife_id = mira_knife_id
 
         # -- refusal: any of the three across two different scenes -- the
         # actor leaves the green; Mira stays behind.
