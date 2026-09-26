@@ -430,6 +430,7 @@ async def _resolve_attack(
         delta["action"] = replace(action, roll_consumed=True)
     if result.status in ("hit", "critical"):
         delta["pending_hit_id"] = result.hit_id
+        delta["pending_critical"] = result.status == "critical"
     value = {
         "status": result.status,
         "total": result.total,
@@ -459,7 +460,7 @@ async def _apply_damage(
         "is_alive": result.is_alive,
         "down": result.down,
     }
-    return _ok(op, value=value), {"pending_hit_id": None}
+    return _ok(op, value=value), {"pending_hit_id": None, "pending_critical": False}
 
 
 _LOCAL_HANDLERS: dict[OperationKind, Handler] = {

@@ -824,6 +824,7 @@ def advance_hit(state: GameFlowState, situation: Situation) -> NextEffect | None
     # at all) come from the same `RESOLVE_ATTACK` step, not `state["move"]`.
     attack_name = resolve_step.get("attack")
     item_id = resolve_step.get("item_id")
+    critical = state["pending_critical"]
     if not has_damage_roll:
         # ← bug (sprint 08, WI3): `REQUEST_ROLL`/`request_player_roll`
         # refuses `kind="damage"` outright, same as the attack roll above
@@ -841,7 +842,12 @@ def advance_hit(state: GameFlowState, situation: Situation) -> NextEffect | None
     return Operation(
         operation_id=_new_id(),
         kind=OperationKind.APPLY_DAMAGE,
-        payload={"hit_id": hit_id, "target_id": target_id, "roll_id": action.roll_id},
+        payload={
+            "hit_id": hit_id,
+            "target_id": target_id,
+            "roll_id": action.roll_id,
+            "critical": critical,
+        },
     )
 
 

@@ -60,6 +60,7 @@ def _state() -> dict:
         "combat": None,
         "awaiting": None,
         "pending_hit_id": None,
+        "pending_critical": False,
         "reactions": [],
         "narrative": NarrativeCursor(beat_id=None, draft=None, event_id=None),
         "effect": None,
@@ -221,3 +222,57 @@ def test_roll_actor_refuses_instead_of_crashing_when_derivation_raises(monkeypat
     assert result.status == "refused"
     assert result.reason == "this actor has no attacks"
     assert delta == {}
+
+
+def test_resolve_attack_records_critical_on_the_state_delta(monkeypatch):
+    """← finding (run 01M3E8VSFCZ856D2SNFATQXAPM): a natural-20 hit's own
+    `critical` status never reached the later `damage` step because
+    nothing on the flow state remembered it. `_resolve_attack` must set
+    `pending_critical` alongside `pending_hit_id` so `advance_hit` can
+    still tell a crit from a plain hit once the roll is spent."""
+    from app.modules.playthrough.schemas import AttackResult
+
+    async def fake_attack(*args, **kwargs):
+        return AttackResult(
+            status="critical", hit_id="hit-1", total=24, natural=20, armour_class=14
+        )
+
+    monkeypatch.setattr(playthrough_service, "attack", fake_attack)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.RESOLVE_ATTACK,
+        payload={"actor_id": "hero-1", "target_id": "hero-1", "roll_id": "roll-1"},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "ok"
+    assert delta["pending_hit_id"] == "hit-1"
+    assert delta["pending_critical"] is True
+
+
+def test_resolve_attack_clears_critical_on_a_plain_hit(monkeypatch):
+    from app.modules.playthrough.schemas import AttackResult
+
+    async def fake_attack(*args, **kwargs):
+        return AttackResult(status="hit", hit_id="hit-1", total=17, natural=13, armour_class=14)
+
+    monkeypatch.setattr(playthrough_service, "attack", fake_attack)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.RESOLVE_ATTACK,
+        payload={"actor_id": "hero-1", "target_id": "hero-1", "roll_id": "roll-1"},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "ok"
+    assert delta["pending_critical"] is False

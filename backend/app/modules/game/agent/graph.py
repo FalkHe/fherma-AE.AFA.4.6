@@ -66,6 +66,7 @@ def initial_state(frame: TurnFrame) -> GameFlowState:
         awaiting=None,
         resume=None,
         pending_hit_id=None,
+        pending_critical=False,
         check_outcome=None,
         reactions=[],
         narrative=NarrativeCursor(beat_id=None, draft=None, event_id=None),
