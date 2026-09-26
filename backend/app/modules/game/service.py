@@ -12,7 +12,14 @@ the five-node flow in `agent/graph.py`. The turn's kind is read from the
 DM thread's own checkpoint: `AwaitingRef` means a roll or choice resume,
 `snapshot.next` means a retry, and otherwise the input starts an action or
 opening. The checkpoint is authoritative; transcript history is only read
-back for the response after graph execution.
+back for the response after graph execution. One migration case remains:
+a checkpoint written before this flow existed comes back with empty
+`values` (the current graph only ever returns the channels *it* declares,
+and an untouched run's checkpoint is empty too) -- indistinguishable here
+from a thread never touched, so that one case alone also asks the
+transcript's own `playthrough_service.get_awaiting` before falling
+through to a fresh action/opening, and resolves the dangling request it
+finds there directly.
 
 Tests monkeypatch `service.chat_model` and the compiled graph's
 `ainvoke`/`aget_state`.
@@ -124,10 +131,20 @@ async def run_turn(
     3. No `awaiting` but `snapshot.next` is non-empty -> kind `retry`:
        `ainvoke(None)` resumes from the last saved step, repeating nothing
        already recorded.
-    4. `text` present -> kind `action`: a newly minted turn id,
+    4. Neither of the above, and the checkpoint's own `values` are empty
+       (a run whose checkpoint predates this flow -- migration case, see
+       module docstring): the transcript itself (`get_awaiting`) is asked
+       once for an open request the checkpoint no longer knows about. A
+       dangling roll is resolved directly through
+       `playthrough_service.resolve_roll_request` and returned as kind
+       `roll` with no `ainvoke` at all. A dangling question with
+       non-empty `text` is recorded through `record_answer` and then run
+       as an ordinary fresh action turn. Anything else non-`"none"` here
+       is `ActionNotAvailableError`, same as case 2's refusal.
+    5. `text` present -> kind `action`: a newly minted turn id,
        `playthrough_service.record_player_action` first, then
        `ainvoke(initial_state(...))`.
-    5. No `text` -> kind `opening`, DM-led: no player row is written.
+    6. No `text` -> kind `opening`, DM-led: no player row is written.
 
     Neither the `roll` nor `answer` branch writes an answer/roll row here
     -- the flow's own `accept_choice`/`roll_player` operations write those
@@ -182,6 +199,96 @@ async def run_turn(
             kind = "retry"
             turn_id = await _resolved_turn_id()
             await agent.ainvoke(None, config=config)
+        elif not snapshot.values:
+            # Migration case (see module docstring): a checkpoint written
+            # before this flow existed never declared `turn`/`awaiting`,
+            # so `aget_state` reads it back as empty `values` -- the same
+            # shape as a thread never touched. The transcript is asked
+            # directly, once, rather than trusted to be silent just
+            # because the checkpoint is.
+            pending_awaiting = await playthrough_service.get_awaiting(
+                db, user_id=user_id, run_id=run_id
+            )
+
+            if pending_awaiting.startswith("roll:"):
+                request_id = pending_awaiting.removeprefix("roll:")
+                turn_id = await _resolved_turn_id()
+                await playthrough_service.resolve_roll_request(
+                    db, user_id=user_id, request_id=request_id, turn_id=turn_id
+                )
+                awaiting_str = await playthrough_service.get_awaiting(
+                    db, user_id=user_id, run_id=run_id
+                )
+                return TurnOutcome(turn_id=turn_id, kind="roll", awaiting=awaiting_str)
+
+            if pending_awaiting.startswith("answer:") and text and text.strip():
+                question_id = pending_awaiting.removeprefix("answer:")
+                events = await playthrough_service.list_events(db, user_id=user_id, run_id=run_id)
+                question_event = next((event for event in events if event.id == question_id), None)
+                options = (
+                    list(question_event.payload.get("options") or [])
+                    if question_event is not None
+                    else []
+                )
+                if options and text not in options:
+                    raise ActionNotAvailableError(awaiting=pending_awaiting, options=options)
+                turn_id = generate_id()
+                await playthrough_service.record_answer(
+                    db,
+                    user_id=user_id,
+                    run_id=run_id,
+                    text=text,
+                    question_id=question_id,
+                    turn_id=turn_id,
+                )
+                frame = TurnFrame(
+                    run_id=run_id,
+                    hero_id=character.id,
+                    turn_id=turn_id,
+                    input_kind="action",
+                    text=text,
+                    status="open",
+                    round_admitted=False,
+                )
+                await agent.ainvoke(initial_state(frame), config=config)
+                kind = "action"
+                awaiting_str = await playthrough_service.get_awaiting(
+                    db, user_id=user_id, run_id=run_id
+                )
+                return TurnOutcome(turn_id=turn_id, kind=kind, awaiting=awaiting_str)
+
+            if pending_awaiting != "none":
+                raise ActionNotAvailableError(awaiting=pending_awaiting, options=[])
+
+            if text and text.strip():
+                kind = "action"
+                turn_id = generate_id()
+                await playthrough_service.record_player_action(
+                    db, user_id=user_id, run_id=run_id, text=text, turn_id=turn_id
+                )
+                frame = TurnFrame(
+                    run_id=run_id,
+                    hero_id=character.id,
+                    turn_id=turn_id,
+                    input_kind="action",
+                    text=text,
+                    status="open",
+                    round_admitted=False,
+                )
+                await agent.ainvoke(initial_state(frame), config=config)
+            else:
+                kind = "opening"
+                turn_id = generate_id()
+                frame = TurnFrame(
+                    run_id=run_id,
+                    hero_id=character.id,
+                    turn_id=turn_id,
+                    input_kind="opening",
+                    text=None,
+                    status="open",
+                    round_admitted=False,
+                )
+                await agent.ainvoke(initial_state(frame), config=config)
         else:
             if text and text.strip():
                 kind = "action"
