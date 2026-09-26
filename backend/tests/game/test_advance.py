@@ -67,6 +67,7 @@ def _state(**overrides) -> dict:
         combat=None,
         awaiting=None,
         pending_hit_id=None,
+        pending_critical=False,
         check_outcome=None,
         reactions=[],
         narrative=NarrativeCursor(beat_id=None, draft=None, event_id=None),
@@ -168,6 +169,36 @@ def test_pending_hit_with_a_consumed_damage_roll_applies_damage():
     assert isinstance(effect, Operation)
     assert effect.kind == OperationKind.APPLY_DAMAGE
     assert effect.payload["hit_id"] == "hit-1"
+
+
+def test_pending_hit_from_a_critical_carries_critical_into_apply_damage():
+    """← finding (run 01M3E8VSFCZ856D2SNFATQXAPM): a crit's own damage
+    formula never doubled because nothing carried `pending_critical`
+    through to `APPLY_DAMAGE`'s own payload."""
+    goblin = _actor("goblin-1")
+    situation = _situation(actors=(goblin,))
+    action = ActionCursor(
+        action_id="action-1",
+        actor_id="hero-1",
+        kind="attack",
+        plan=(),
+        step_index=0,
+        status="reserved",
+        roll_id="roll-1",
+        roll_consumed=False,
+    )
+    state = _state(
+        pending_hit_id="hit-1",
+        pending_critical=True,
+        move=Move(intent="attack", refs={"actor_id": "hero-1", "target_id": "goblin-1"}),
+        action=action,
+    )
+
+    effect = select_next_effect(state, situation)
+
+    assert isinstance(effect, Operation)
+    assert effect.kind == OperationKind.APPLY_DAMAGE
+    assert effect.payload["critical"] is True
 
 
 def test_hero_down_requires_finish_run_before_anything_else():

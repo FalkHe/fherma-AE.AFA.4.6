@@ -169,6 +169,7 @@ class GameFlowState(TypedDict):
     awaiting: AwaitingRef | None
     resume: Any | None  # effects.ResumeResult | None (sprint 011/07, WI2)
     pending_hit_id: str | None
+    pending_critical: bool
     check_outcome: bool | None
     reactions: list[ReactionSpec]
     narrative: NarrativeCursor
@@ -190,6 +191,7 @@ def close_turn_state(state: GameFlowState) -> StateDelta:
         "move": None,
         "action": None,
         "pending_hit_id": None,
+        "pending_critical": False,
         "check_outcome": None,
         "result": None,
         "usage": None,
