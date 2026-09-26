@@ -270,15 +270,23 @@ async def _roll_actor(
     ctx: OperationContext, op: Operation, state: GameFlowState
 ) -> tuple[OperationResult, StateDelta]:
     payload = op.payload
-    event = await playthrough_service.roll(
-        ctx.db,
-        user_id=ctx.user_id,
-        actor_id=payload["actor_id"],
-        kind=payload["kind"],
-        context=payload.get("context", {}),
-        visibility=payload.get("visibility", "dm"),
-        turn_id=state["turn"].turn_id,
-    )
+    try:
+        event = await playthrough_service.roll(
+            ctx.db,
+            user_id=ctx.user_id,
+            actor_id=payload["actor_id"],
+            kind=payload["kind"],
+            context=payload.get("context", {}),
+            visibility=payload.get("visibility", "dm"),
+            turn_id=state["turn"].turn_id,
+        )
+    except ValueError as exc:
+        # ← live bug (run 01M3E8VSFCZ856D2SNFATQXAPM): `dice.derive_formula`
+        # raising over a weapon-less actor or an unresolved attack name --
+        # a modelling mistake `reconcile_step` already knows how to close
+        # a plan out over (same as any other refused step) -- crashed the
+        # whole turn with a 500 instead, since nothing here ever caught it.
+        return _refused(op, str(exc)), {}
     delta: StateDelta = {}
     if state["action"] is not None:
         # ← bug (sprint 08, WI3): unlike `_roll_player`, this never wrote
