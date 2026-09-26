@@ -1894,9 +1894,8 @@ _PLAYER_ROLL_KINDS: frozenset[str] = frozenset(
 )
 """What `request_player_roll` may ask for (sprint 010/10, ← finding): a
 player rolls their own checks, saves, initiative and the odd bespoke
-`custom` roll -- never `attack`/`damage`, which the DM rolls itself
-through `roll`/`roll_dice` for every actor, hero included (`prompts/v1/
-system/dm.md`'s own rule)."""
+`custom` roll -- never `attack`/`damage`, which deterministic combat
+operations resolve for every actor, hero included."""
 
 
 async def request_player_roll(

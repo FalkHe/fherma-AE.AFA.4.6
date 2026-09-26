@@ -1,11 +1,11 @@
 # Game flow v2: execution structure
 
 This document is the implementation guide for the LangGraph structure behind
-the game flow in [game-flow.md](game-flow.md). The original document remains
-the gameplay contract: its moves, narration timing, combat order, ownership of
-rolls and transcript invariants still apply. This version replaces its large
-node-by-node graph mapping with a smaller execution model a developer can
-implement directly.
+the game flow. The gameplay contract it implements — moves, narration timing,
+combat order, ownership of rolls and transcript invariants — is stated in
+[the game module README](../../backend/app/modules/game/README.md) and in
+[game-flow.v2.examples.md](game-flow.v2.examples.md); the earlier node-by-node
+graph document was retired with the old flow.
 
 The graph has five reusable nodes. D&D concepts such as attacks, checks,
 movement and initiative are typed data handled by those nodes, rather than
@@ -650,5 +650,5 @@ The v2 structure is established when:
 - player waits resume the same request, action and turn;
 - `advance` prevents closure with a pending hit, input request or owed combat
   action;
-- end-to-end transcript tests demonstrate the invariants in
-  [game-flow.md](game-flow.md).
+- end-to-end transcript tests demonstrate the invariants shown in
+  [game-flow.v2.examples.md](game-flow.v2.examples.md).

@@ -288,9 +288,11 @@ def test_retry_resumes_with_none_from_the_last_saved_step(monkeypatch):
     asyncio.run(_run())
 
 
-def test_a_roll_left_by_the_old_flow_is_resolved_without_invoking_the_graph(monkeypatch):
-    """← sprint 011/08 round 1, defect B: `aget_state` on a checkpoint the
-    old flow wrote (no `turn`/`awaiting` channel it ever declared) comes
+def test_a_roll_left_by_a_pre_migration_checkpoint_is_resolved_without_invoking_the_graph(
+    monkeypatch,
+):
+    """← migration case: `aget_state` on a checkpoint written before this
+    flow existed (no `turn`/`awaiting` channel it ever declared) comes
     back with empty `values` -- identical to a thread never touched -- but
     a transcript still waiting on a `roll_requested` must not fall into
     the stale-request refusal."""
@@ -329,7 +331,7 @@ def test_a_roll_left_by_the_old_flow_is_resolved_without_invoking_the_graph(monk
     asyncio.run(_run())
 
 
-def test_a_question_left_by_the_old_flow_is_answered_then_continues_as_a_fresh_action(
+def test_a_question_left_by_a_pre_migration_checkpoint_is_answered_then_continues_as_a_fresh_action(
     monkeypatch,
 ):
     async def _run():
@@ -373,7 +375,9 @@ def test_a_question_left_by_the_old_flow_is_answered_then_continues_as_a_fresh_a
     asyncio.run(_run())
 
 
-def test_an_off_menu_answer_to_a_question_left_by_the_old_flow_is_refused(monkeypatch):
+def test_an_off_menu_answer_to_a_question_left_by_a_pre_migration_checkpoint_is_refused(
+    monkeypatch,
+):
     async def _run():
         agent = _install_agent(monkeypatch, _Snapshot(values={}))
 
@@ -406,10 +410,10 @@ def test_an_off_menu_answer_to_a_question_left_by_the_old_flow_is_refused(monkey
     asyncio.run(_run())
 
 
-def test_a_new_flow_awaiting_takes_precedence_over_any_legacy_check(monkeypatch):
-    """A checkpoint that already carries `turn` is never treated as legacy,
-    even when `get_awaiting` would report an open request -- the normal
-    `awaiting` branch alone decides."""
+def test_a_new_flow_awaiting_takes_precedence_over_any_pre_migration_check(monkeypatch):
+    """A checkpoint that already carries `turn` is never treated as a
+    pre-migration checkpoint, even when `get_awaiting` would report an
+    open request -- the normal `awaiting` branch alone decides."""
 
     async def _run():
         awaiting = AwaitingRef(
