@@ -80,16 +80,15 @@ Mutable state in Postgres. See [model.md](model.md).
 
 - **Tool** — deterministic code the agent calls: dice, state mutation,
   lookups. The agent never fakes a roll or edits state directly.
-- **Checkpointer** — LangGraph's store for the conversation and graph
-  plumbing. Rebuildable; not a source of truth.
-- **Guard node** — the check that runs before the agent, rejecting prompt
-  injection and out-of-band state changes ("my HP is 100").
+- **Checkpointer** — LangGraph's store for active turn and combat cursors,
+  requests, results and narration progress. Rebuildable; not a source of truth
+  for durable world facts.
 - **RAG** — retrieval-augmented generation. Here it means SRD lookups only;
   structured content is read from JSON, never retrieved.
 - **Agentic RAG** — the agent decides whether to look a rule up, and may
   re-query.
-- **Human-in-the-loop** — the agent interrupts and waits for the player
-  whenever a decision is theirs (`ask_player`).
+- **Human-in-the-loop** — the graph interrupts and waits for the player at
+  `await_player` whenever a decision is theirs.
 - **Developer drawer** — the part of the UI holding model, temperature,
   system prompt and DM personality, kept out of the player experience.
 

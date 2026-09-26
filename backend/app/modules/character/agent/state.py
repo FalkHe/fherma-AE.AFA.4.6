@@ -1,7 +1,6 @@
 """`CreationContext` is the graph's `context_schema`: what the write needs
 and the model must never be able to supply. It reaches a tool through
-`ToolRuntime`, so it is absent from every tool's model-facing schema
-(same seam as `game.agent.state.DmContext`).
+`ToolRuntime`, so it is absent from every tool's model-facing schema.
 """
 
 from dataclasses import dataclass, field

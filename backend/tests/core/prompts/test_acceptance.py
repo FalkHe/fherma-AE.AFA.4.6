@@ -35,9 +35,9 @@ class TestAC1VerbatimText:
     def test_ac1_service_text_is_the_files_exact_bytes(self, prompts_root):
         # ← AC1
         text = "You are the Dungeon Master.  \nBe vivid.\n\n"
-        path = _write_prompt(prompts_root, "game", "v1", "system", "dm", text)
+        path = _write_prompt(prompts_root, "sample", "v1", "system", "story", text)
 
-        resolved = service.load_prompt("game/system/dm")
+        resolved = service.load_prompt("sample/system/story")
 
         assert resolved.text == text
         assert resolved.text.encode() == path.read_bytes()
@@ -45,9 +45,9 @@ class TestAC1VerbatimText:
     def test_ac1_cli_stdout_is_the_files_exact_bytes_and_nothing_else(self, prompts_root):
         # ← AC1
         text = "Line one.\nLine two with trailing spaces.   \n\n"
-        path = _write_prompt(prompts_root, "game", "v1", "system", "dm", text)
+        path = _write_prompt(prompts_root, "sample", "v1", "system", "story", text)
 
-        result = runner.invoke(cli, ["prompt", "show", "game/system/dm"])
+        result = runner.invoke(cli, ["prompt", "show", "sample/system/story"])
 
         assert result.exit_code == 0
         assert result.stdout == text
@@ -62,11 +62,11 @@ class TestAC2VersionResolution:
 
     def test_ac2_default_resolves_numerically_highest_not_lexically(self, prompts_root):
         # ← AC2: lexical sort would wrongly pick "v9" over "v10".
-        _write_prompt(prompts_root, "game", "v1", "system", "dm", "v1 text\n")
-        _write_prompt(prompts_root, "game", "v9", "system", "dm", "v9 text\n")
-        path_v10 = _write_prompt(prompts_root, "game", "v10", "system", "dm", "v10 text\n")
+        _write_prompt(prompts_root, "sample", "v1", "system", "story", "v1 text\n")
+        _write_prompt(prompts_root, "sample", "v9", "system", "story", "v9 text\n")
+        path_v10 = _write_prompt(prompts_root, "sample", "v10", "system", "story", "v10 text\n")
 
-        resolved = service.load_prompt("game/system/dm")
+        resolved = service.load_prompt("sample/system/story")
 
         assert resolved.version == "v10"
         assert resolved.text == "v10 text\n"
@@ -74,10 +74,10 @@ class TestAC2VersionResolution:
 
     def test_ac2_explicit_version_flag_resolves_exactly_that_version(self, prompts_root):
         # ← AC2
-        _write_prompt(prompts_root, "game", "v1", "system", "dm", "v1 text\n")
-        _write_prompt(prompts_root, "game", "v2", "system", "dm", "v2 text\n")
+        _write_prompt(prompts_root, "sample", "v1", "system", "story", "v1 text\n")
+        _write_prompt(prompts_root, "sample", "v2", "system", "story", "v2 text\n")
 
-        resolved = service.load_prompt("game/system/dm", version="v1")
+        resolved = service.load_prompt("sample/system/story", version="v1")
 
         assert resolved.version == "v1"
         assert resolved.text == "v1 text\n"
@@ -85,30 +85,32 @@ class TestAC2VersionResolution:
     def test_ac2_nonexistent_version_fails_rather_than_falling_back(self, prompts_root):
         # ← AC2: D5 forbids a silent fallback that would change which
         # prompt a playthrough started with.
-        _write_prompt(prompts_root, "game", "v1", "system", "dm", "v1 text\n")
+        _write_prompt(prompts_root, "sample", "v1", "system", "story", "v1 text\n")
 
         with pytest.raises(PromptNotFoundError):
-            service.load_prompt("game/system/dm", version="v2")
+            service.load_prompt("sample/system/story", version="v2")
 
     def test_ac2_list_versions_sorts_numerically_not_lexically(self, prompts_root):
         # ← AC2: `list_versions` is the interface a caller uses to see
         # which version counts as "highest".
-        _write_prompt(prompts_root, "game", "v1", "system", "dm", "one\n")
-        _write_prompt(prompts_root, "game", "v9", "system", "dm", "nine\n")
-        _write_prompt(prompts_root, "game", "v10", "system", "dm", "ten\n")
+        _write_prompt(prompts_root, "sample", "v1", "system", "story", "one\n")
+        _write_prompt(prompts_root, "sample", "v9", "system", "story", "nine\n")
+        _write_prompt(prompts_root, "sample", "v10", "system", "story", "ten\n")
 
-        versions = service.list_versions("game")
+        versions = service.list_versions("sample")
 
         assert versions[-1] == "v10"
         assert versions == sorted(versions, key=lambda v: int(v[1:]))
 
     def test_ac2_cli_default_and_pinned_version_agree_with_the_service(self, prompts_root):
         # ← AC2: the same v9/v10 sharp case through the real CLI.
-        _write_prompt(prompts_root, "game", "v9", "system", "dm", "nine\n")
-        _write_prompt(prompts_root, "game", "v10", "system", "dm", "ten\n")
+        _write_prompt(prompts_root, "sample", "v9", "system", "story", "nine\n")
+        _write_prompt(prompts_root, "sample", "v10", "system", "story", "ten\n")
 
-        default_result = runner.invoke(cli, ["prompt", "show", "game/system/dm"])
-        pinned_result = runner.invoke(cli, ["prompt", "show", "game/system/dm", "--version", "v9"])
+        default_result = runner.invoke(cli, ["prompt", "show", "sample/system/story"])
+        pinned_result = runner.invoke(
+            cli, ["prompt", "show", "sample/system/story", "--version", "v9"]
+        )
 
         assert default_result.exit_code == 0
         assert default_result.stdout == "ten\n"
@@ -117,9 +119,9 @@ class TestAC2VersionResolution:
 
     def test_ac2_cli_nonexistent_version_fails_rather_than_falling_back(self, prompts_root):
         # ← AC2
-        _write_prompt(prompts_root, "game", "v1", "system", "dm", "v1 text\n")
+        _write_prompt(prompts_root, "sample", "v1", "system", "story", "v1 text\n")
 
-        result = runner.invoke(cli, ["prompt", "show", "game/system/dm", "--version", "v2"])
+        result = runner.invoke(cli, ["prompt", "show", "sample/system/story", "--version", "v2"])
 
         assert result.exit_code != 0
         assert result.stdout == ""
@@ -131,25 +133,25 @@ class TestAC3ResolvedVersionReachesTheTerminal:
 
     def test_ac3_service_result_carries_prompt_id_and_resolved_version(self, prompts_root):
         # ← AC3
-        _write_prompt(prompts_root, "game", "v3", "system", "dm", "text\n")
+        _write_prompt(prompts_root, "sample", "v3", "system", "story", "text\n")
 
-        resolved = service.load_prompt("game/system/dm")
+        resolved = service.load_prompt("sample/system/story")
 
         assert resolved.version == "v3"
-        assert resolved.prompt_id == "game/system/dm"
-        assert resolved.capability == "game"
+        assert resolved.prompt_id == "sample/system/story"
+        assert resolved.capability == "sample"
         assert resolved.kind == "system"
-        assert resolved.name == "dm"
+        assert resolved.name == "story"
 
     def test_ac3_cli_stderr_reports_resolved_prompt_id_and_version(self, prompts_root):
         # ← AC3: text on stdout, the resolved version identifier on stderr
         # -- both reach the terminal from one run.
-        _write_prompt(prompts_root, "game", "v2", "system", "dm", "text\n")
+        _write_prompt(prompts_root, "sample", "v2", "system", "story", "text\n")
 
-        result = runner.invoke(cli, ["prompt", "show", "game/system/dm"])
+        result = runner.invoke(cli, ["prompt", "show", "sample/system/story"])
 
         assert result.exit_code == 0
-        assert "resolved: game/system/dm v2" in result.stderr
+        assert "resolved: sample/system/story v2" in result.stderr
         assert result.stdout == "text\n"
 
 
@@ -160,27 +162,27 @@ class TestAC4InvalidVsNotFoundFailDifferently:
 
     def test_ac4_parse_prompt_id_splits_a_valid_id_into_its_three_parts(self):
         # ← AC4
-        capability, kind, name = service.parse_prompt_id("game/system/dm")
+        capability, kind, name = service.parse_prompt_id("sample/system/story")
 
-        assert (capability, kind, name) == ("game", "system", "dm")
+        assert (capability, kind, name) == ("sample", "system", "story")
 
     def test_ac4_unknown_id_raises_not_found_with_its_own_code(self, prompts_root):
         # ← AC4
         with pytest.raises(PromptNotFoundError) as excinfo:
-            service.load_prompt("game/system/does-not-exist")
+            service.load_prompt("sample/system/does-not-exist")
 
         assert excinfo.value.code == "PROMPT_NOT_FOUND"
 
     @pytest.mark.parametrize(
         "malformed_id",
         [
-            "game/system",  # too few segments
-            "game/system/dm/extra",  # too many segments
-            "Game/system/dm",  # uppercase
-            "game/system/-dm",  # leading hyphen
-            "game/system/dm-",  # trailing hyphen
+            "sample/system",  # too few segments
+            "sample/system/story/extra",  # too many segments
+            "Sample/system/story",  # uppercase
+            "sample/system/-dm",  # leading hyphen
+            "sample/system/story-",  # trailing hyphen
             "game//dm",  # empty segment
-            "game/system/",  # trailing empty segment
+            "sample/system/",  # trailing empty segment
         ],
     )
     def test_ac4_malformed_id_raises_invalid_with_its_own_code(self, prompts_root, malformed_id):
@@ -193,11 +195,11 @@ class TestAC4InvalidVsNotFoundFailDifferently:
     @pytest.mark.parametrize(
         "traversal_id",
         [
-            "../game/system/dm",
+            "../sample/system/story",
             "game/../system/dm",
-            "game/system/../dm",
+            "sample/system/../dm",
             "/etc/passwd",
-            "game/system/../../etc/passwd",
+            "sample/system/../../etc/passwd",
         ],
     )
     def test_ac4_traversal_attempt_is_rejected_as_invalid_not_not_found(
@@ -220,15 +222,15 @@ class TestAC4InvalidVsNotFoundFailDifferently:
         assert not issubclass(PromptIdInvalidError, PromptNotFoundError)
 
         with pytest.raises(PromptNotFoundError):
-            service.load_prompt("game/system/missing")
+            service.load_prompt("sample/system/missing")
         with pytest.raises(PromptIdInvalidError):
             service.load_prompt("not valid")
 
     def test_ac4_cli_not_found_exits_3_and_reports_its_code(self, prompts_root):
         # ← AC4
-        _write_prompt(prompts_root, "game", "v1", "system", "dm", "text\n")
+        _write_prompt(prompts_root, "sample", "v1", "system", "story", "text\n")
 
-        result = runner.invoke(cli, ["prompt", "show", "game/system/does-not-exist"])
+        result = runner.invoke(cli, ["prompt", "show", "sample/system/does-not-exist"])
 
         assert result.exit_code == 3
         assert "PROMPT_NOT_FOUND" in result.stderr
@@ -236,7 +238,7 @@ class TestAC4InvalidVsNotFoundFailDifferently:
 
     def test_ac4_cli_invalid_id_exits_2_and_reports_its_code(self, prompts_root):
         # ← AC4
-        result = runner.invoke(cli, ["prompt", "show", "Game/System/DM"])
+        result = runner.invoke(cli, ["prompt", "show", "Sample/System/Story"])
 
         assert result.exit_code == 2
         assert "PROMPT_ID_INVALID" in result.stderr
@@ -245,10 +247,10 @@ class TestAC4InvalidVsNotFoundFailDifferently:
     def test_ac4_cli_malformed_version_flag_exits_2_as_invalid(self, prompts_root):
         # ← AC4: a malformed `--version` is an invalid-shaped failure, not
         # a not-found.
-        _write_prompt(prompts_root, "game", "v1", "system", "dm", "text\n")
+        _write_prompt(prompts_root, "sample", "v1", "system", "story", "text\n")
 
         result = runner.invoke(
-            cli, ["prompt", "show", "game/system/dm", "--version", "version-one"]
+            cli, ["prompt", "show", "sample/system/story", "--version", "version-one"]
         )
 
         assert result.exit_code == 2
@@ -257,7 +259,7 @@ class TestAC4InvalidVsNotFoundFailDifferently:
 
     def test_ac4_cli_traversal_attempt_exits_2_as_invalid_not_3_as_not_found(self, prompts_root):
         # ← AC4
-        result = runner.invoke(cli, ["prompt", "show", "../game/system/dm"])
+        result = runner.invoke(cli, ["prompt", "show", "../sample/system/story"])
 
         assert result.exit_code == 2
         assert "PROMPT_ID_INVALID" in result.stderr
@@ -265,7 +267,7 @@ class TestAC4InvalidVsNotFoundFailDifferently:
 
     def test_ac4_cli_exit_codes_for_not_found_and_invalid_differ(self, prompts_root):
         # ← AC4: different codes, different exit statuses, both non-zero.
-        not_found = runner.invoke(cli, ["prompt", "show", "game/system/does-not-exist"])
+        not_found = runner.invoke(cli, ["prompt", "show", "sample/system/does-not-exist"])
         invalid = runner.invoke(cli, ["prompt", "show", "not valid"])
 
         assert not_found.exit_code != 0
@@ -298,10 +300,10 @@ class TestAC5NoProviderNoDatabase:
     ):
         # ← AC5
         self._poison_provider_and_db(monkeypatch)
-        _write_prompt(prompts_root, "game", "v1", "system", "dm", "text\n")
+        _write_prompt(prompts_root, "sample", "v1", "system", "story", "text\n")
 
         try:
-            resolved = service.load_prompt("game/system/dm")
+            resolved = service.load_prompt("sample/system/story")
         finally:
             get_settings.cache_clear()
 
@@ -312,10 +314,10 @@ class TestAC5NoProviderNoDatabase:
     ):
         # ← AC5
         self._poison_provider_and_db(monkeypatch)
-        _write_prompt(prompts_root, "game", "v1", "system", "dm", "text\n")
+        _write_prompt(prompts_root, "sample", "v1", "system", "story", "text\n")
 
         try:
-            result = runner.invoke(cli, ["prompt", "show", "game/system/dm"])
+            result = runner.invoke(cli, ["prompt", "show", "sample/system/story"])
         finally:
             get_settings.cache_clear()
 

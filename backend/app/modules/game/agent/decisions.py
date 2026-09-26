@@ -427,9 +427,7 @@ def _validate(
                 if operation_kind is OperationKind.TAKE_ITEM:
                     item_id = op.payload.get("item_id")
                     if any(
-                        item.id == item_id
-                        for actor in situation.actors
-                        for item in actor.inventory
+                        item.id == item_id for actor in situation.actors for item in actor.inventory
                     ):
                         return "item_held_by_creature_use_give"
                 reason = validate_refs(situation, synthetic)

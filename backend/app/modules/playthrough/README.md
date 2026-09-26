@@ -456,7 +456,7 @@ Service functions (`service.py`), called as `service.f(...)`:
   failing that, `ref` is matched case-insensitively against every living,
   positioned creature's own `name` in the run, the first (by id) winning a
   tie, raising `GameObjectNotFoundError(ref)` when neither matches. Callers
-  (`game.agent.tools`) use this as a fallback when an id lookup fails, not
+  the game agent uses this as a fallback when an id lookup fails, not
   a replacement for it. `describe_scene_creatures(run_id, scene_id=…|
   near_actor_id=…)` reads every creature positioned in one scene — id
   first, `role` (`player`/`monster`/`npc`, the last two told apart by

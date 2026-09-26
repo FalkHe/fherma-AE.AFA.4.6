@@ -304,8 +304,8 @@ backend/content/campaigns/<campaign_id>/<version>/
 backend/content/srd/        # SRD 5.1 source for the ingest CLI
 
 backend/app/modules/<capability>/prompts/v<n>/<kind>/<id>.md
-    # e.g. modules/game/prompts/v1/system/dm.md
-    #      modules/game/prompts/v1/personality/<id>.md   # the run's personality id references these
+    # e.g. modules/game/prompts/v1/decision/read-move.md
+    #      modules/game/prompts/v1/narration/beat.md
     # each capability owns its own prompts/ tree; there is no shared root, so a
     # character-generation prompt lives under whichever capability owns that
     # agent, never nested inside `game`

@@ -5,8 +5,9 @@ components, wire convention, session model — is
 [general/architecture.md](general/architecture.md); this page is the short
 index agents read first. `docs/README.md` indexes everything else.
 
-State: **scaffolding**. Docker environment, modular backend/frontend
-skeletons and username/password authentication exist. The game agent does not.
+State: the MVP single-player game loop is implemented end to end — auth,
+character generation, adventure content, the five-node game agent, SRD rules
+RAG, and the playthrough/event persistence it all writes through.
 
 ## Tech stack
 
@@ -21,15 +22,28 @@ skeletons and username/password authentication exist. The game agent does not.
 
 - `backend/app/core/` → settings, logging, security primitives, db session
 - `backend/app/api/v1/router.py` → combines the modular routers, nothing else
-- `backend/app/modules/<module>/` → `models.py schemas.py routes.py service.py` (today: `auth`, `users`, `health`)
+- `backend/app/modules/<module>/` → `models.py schemas.py routes.py service.py`
+  (today: `auth`, `users`, `health`, `character`, `content`, `srd`, `game`,
+  `playthrough`)
 - `backend/tests/<module>/` → mirrors `modules/` one-to-one
 - `backend/alembic/` → migrations; `app-web` runs `alembic upgrade head` on boot
 - `frontend/src/core/` → theme, config, api client, i18n setup, the shared app frame (`layout/`)
-- `frontend/src/modules/<module>/` → `components/ hooks/ routes/` (today: `auth`, `playthrough`, `character`, `play`)
+- `frontend/src/modules/<module>/` → `components/ hooks/ routes/` (today: `auth`,
+  `playthrough`, `character`, `play`)
 - `frontend/src/api/schema.d.ts` → generated from the backend's OpenAPI, committed
 - `docs/general/` → system-wide docs · `docs/modules/` → one subsystem each · `docs/roadmap/` → history
 - `docs/intents/` → fhit intents and sprints
-- `docs/roadmap/` → old development roadmap, never write, only read phases.md and treat each phase as intent 
+- `docs/roadmap/` → old development roadmap, never write, only read phases.md and treat each phase as intent
+
+## Game agent
+
+The `game` module runs one LangGraph flow per turn: a scheduler node
+(`advance`) picks one typed effect and routes to a worker — `decide`,
+`execute`, `await_player` or `narrate` — which performs it and returns to
+`advance`. `decide` may call two read-only aids: SRD rules lookup (RAG) and
+history recall. All mutations run through `playthrough.service`. Details:
+[game module README](../backend/app/modules/game/README.md) and
+[general/architecture.md](general/architecture.md).
 
 ## Conventions
 

@@ -2,7 +2,7 @@
 `character.service` / `builder.py` / `playthrough.service`, which own
 every rule. The docstring is what the model reads to decide when and how
 to call it; `runtime` is injected by `ToolNode` and hidden from the
-model's schema (same seam as `game.agent.tools`).
+model's schema.
 
 Every number on the sheet comes from `builder` through these tools --
 never from the model's own words (← AC3). The draft lives in graph state

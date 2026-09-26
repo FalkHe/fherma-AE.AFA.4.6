@@ -159,13 +159,6 @@ async def advance(state: GameFlowState) -> StateDelta:
         working.update(hero_action)
         delta.update(hero_action)
 
-    if working["action"] is None and working["move"] is None:
-        refusal = advance_module.guard_refusal(working["turn"].text)
-        if refusal is not None:
-            guard_delta = advance_module.guard_state(working["turn"].text)
-            working.update(guard_delta)
-            delta.update(guard_delta)
-
     delta["effect"] = advance_module.select_next_effect(working, situation)
     return delta
 

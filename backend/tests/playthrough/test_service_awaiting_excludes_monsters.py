@@ -12,8 +12,8 @@ the transcript back through the ORM, and a monster's own dangling row is
 built directly through the one writer, `append_event`, rather than through
 `roll`/`request_player_roll` (which always write a matching pair) -- the
 only way to reproduce a row that fell out of sync without also
-reproducing the race itself (covered instead, at the `ToolNode` layer, by
-`tests/game/test_concurrent_monster_rolls_database.py`).
+reproducing the race itself (covered by the active game-flow integration
+scenarios).
 """
 
 import asyncio
