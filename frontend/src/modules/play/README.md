@@ -114,7 +114,11 @@ module owns everything past "Start adventure" / "Continue".
   option and re-reads itself every few seconds (`refetchInterval`, override
   via `pollIntervalMs`) for as long as that ref reads true or the read
   itself still looks mid-turn — a fallback for when the notice stream drops
-  or delays a tick (sprint 010/07 round 2, ← AC2/AC4).
+  or delays a tick (sprint 010/07 round 2, ← AC2/AC4). The read itself is
+  bounded by its own deadline (`transcriptTimeoutMs`, default 15s,
+  `AbortSignal.timeout` combined via `AbortSignal.any` with TanStack's own
+  per-fetch signal) so a hung connection cannot wedge it forever (defect A
+  round 2).
 - `hooks/useTakeTurn.ts` — `useTakeTurn({ runId, rows }) →
   { send, isSending, pending }`, the one write behind a turn
   (`POST …/game/runs/{runId}/turn`). `send` shows the player's words at once
@@ -124,20 +128,29 @@ module owns everything past "Start adventure" / "Continue".
   once the real `player_action` row lands in `rows` (an id the snapshot
   didn't have) or the moment the mutation settles at all, so a failed turn
   never leaves a ghost row behind. Either way, settling invalidates the
-  transcript query so the next read picks up whatever the turn actually
-  recorded.
+  transcript query with `cancelRefetch: true` so the next read picks up
+  whatever the turn actually recorded, even if an older, pre-settle read is
+  still in flight (defect A round 2: `cancelRefetch: false` let a stale
+  read swallow the invalidation and leave the screen stuck showing
+  "thinking" after a long turn).
 
   `PlayRoute` composes these into the play screen: it appends `pending` (if
   any) to `usePlayTranscript`'s own rows as one more `player` row before
   handing them to `Transcript`, subscribes to `useRunNotices` to invalidate
-  the same transcript query on every server tick, and derives the
-  composer's state and the thinking line from the same two reads —
-  `awaiting` picks `awaitingRoll`/`awaitingChoice` outright; otherwise a
-  turn counts as running while the mutation is in flight (`isSending`) or,
-  after a reload mid-turn with nothing pending, while `turnUnfinished` is
-  still true — and that one `turnRunning` flag drives both the transcript's
-  `thinking` prop and the composer's `"turnRunning"` state together, so
-  either always mirrors the other.
+  the same transcript query (`cancelRefetch: true`, same reasoning) on
+  every server tick, and derives the composer's state and the thinking line
+  from the same two reads — `awaiting` picks `awaitingRoll`/`awaitingChoice`
+  outright; otherwise a turn counts as running while the mutation is in
+  flight (`isSending`) or, after a reload mid-turn with nothing pending,
+  while `turnUnfinished` is still true — and that one `turnRunning` flag
+  drives both the transcript's `thinking` prop and the composer's
+  `"turnRunning"` state together, so either always mirrors the other. The
+  header's scene line (D12 §2) reads the transcript's own latest `divider`
+  row in preference to the table read's `scene` (`usePlayTable.ts`, fetched
+  once and never invalidated by a turn), falling back to the table read
+  only while the transcript carries no scene marker yet — so entering a new
+  scene mid-session updates the header the same turn it happens, not only
+  after a reload (defect B).
 
 ## Owns (sprint 010/08 — start adventure, and the opening scene)
 

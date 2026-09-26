@@ -99,6 +99,13 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // thinking line and the closed composer while it runs.
   useOpeningTurn(startOpening);
 
+  // A ref, synced from its own effect (not read during render -- the
+  // `react-hooks` lint rule disallows writing a ref's `.current` there,
+  // and for good reason: React does not guarantee this render is the one
+  // that commits). `usePlayTranscript.ts`'s own fallback-poll fix (defect A
+  // round 2) no longer depends on this being perfectly up to the render;
+  // the primary fix there is `useTakeTurn.ts`'s `cancelRefetch: true`, which
+  // does not go through this ref at all.
   useEffect(() => {
     isSendingRef.current = isSending;
   }, [isSending]);
@@ -110,7 +117,11 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   useRunNotices(runId, () => {
     // `cancelRefetch` lives on `invalidateQueries`'s second argument, not
     // inside the filters object -- same note as `useTakeTurn.ts`'s own call.
-    void queryClient.invalidateQueries({ queryKey: ["transcript", runId] }, { cancelRefetch: false });
+    // `true` (defect A round 2, matching `useTakeTurn.ts`'s own fix): a tick
+    // arriving while an earlier read from before this turn's narration
+    // landed is still in flight must not fold into that stale read -- it
+    // needs its own, fresh one, same reasoning as the post-turn settle.
+    void queryClient.invalidateQueries({ queryKey: ["transcript", runId] }, { cancelRefetch: true });
   });
 
   // The player's own words show at once, before the network round-trip
@@ -127,6 +138,21 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // all -- whenever the last recorded event is not yet the closing
   // narration (AC4).
   const turnRunning = isSending || (awaiting === "none" && turnUnfinished);
+
+  // Defect B fix: the table read (`usePlayTable.ts`) is fetched once on
+  // mount and never invalidated by a turn settling, so `table.scene` itself
+  // stays whatever scene the run was in when the page loaded -- a move
+  // that enters a new scene mid-session left this line unchanged until a
+  // reload. The transcript, by contrast, is already kept live (this turn's
+  // own settle invalidates it, `useTakeTurn.ts`/`useRunNotices` above); its
+  // own `scene_entered` rows (`divider`, `transcript.ts`) are the same fact
+  // the header wants, read fresher. The *last* divider row in `rows` is the
+  // scene most recently entered; `table.scene`'s own name is kept as the
+  // fallback for a run with no scene row yet (a fresh adventure whose
+  // opening turn has not landed one -- `table.scene` already reflects that
+  // one correctly and the transcript would otherwise show nothing).
+  const latestDivider = [...rows].reverse().find((row) => row.kind === "divider");
+  const sceneName = latestDivider?.scene ?? table.scene?.name ?? null;
 
   // Sprint 010/09 WI5, I6: `isSending` wins outright -- the moment an answer
   // or a roll is sent, the buttons must be gone even before the transcript
@@ -186,8 +212,8 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
             {table.adventure.title}
           </Typography>
         )}
-        {table.scene !== null && (
-          <Typography sx={{ color: "text.secondary" }}>{t("header.scene", { scene: table.scene.name })}</Typography>
+        {sceneName !== null && (
+          <Typography sx={{ color: "text.secondary" }}>{t("header.scene", { scene: sceneName })}</Typography>
         )}
       </Stack>
 
