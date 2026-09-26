@@ -1,3 +1,3 @@
-- [ ] Currently all users see all campaings, this needs to be restricted so only owners can see their own campaigns
-- [ ] ./REVIEW.md and WALKTHROUGH.md need to be aligned on the current state of the code. REVIEW is intended to explaion against 135.md requirements ; WALKTHROUGH.md needs showcase the main game mechanics (give knive, exit scene to another one, preception roll, attack roll). Make sure the walkthrough is running and actions are shown in the narration stream. 
-- [ ] check if README.md is on track, change if something is incorrect.
+- [x] Currently all users see all campaings, this needs to be restricted so only owners can see their own campaigns
+- [x] ./REVIEW.md and WALKTHROUGH.md need to be aligned on the current state of the code. REVIEW is intended to explaion against 135.md requirements ; WALKTHROUGH.md needs showcase the main game mechanics (give knive, exit scene to another one, preception roll, attack roll). Make sure the walkthrough is running and actions are shown in the narration stream. 
+- [x] check if README.md is on track, change if something is incorrect.
