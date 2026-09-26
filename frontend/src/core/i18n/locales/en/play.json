@@ -17,7 +17,8 @@
     "send": "Send",
     "turnRunning": "The Dungeon Master has the floor.",
     "awaitingChoice": "The Dungeon Master is waiting on one of those.",
-    "awaitingRoll": "The dice go first."
+    "awaitingRoll": "The dice go first.",
+    "closed": "This adventure has ended."
   },
   "thinking": {
     "first": "The Dungeon Master is thinking…",
@@ -48,8 +49,12 @@
     "line": "The Dungeon Master has lost the thread of that one. Nothing that already happened is lost — shall we pick it up again?",
     "retry": "Try again"
   },
+  "ending": {
+    "victory": "The adventure ends in victory.",
+    "defeat": "The adventure ends in defeat.",
+    "authored": "The story has run its course."
+  },
   "end": {
-    "marker": "Here ends {{adventure}}",
     "button": "Back to {{campaign}}"
   },
   "empty": "Nothing written down yet. The Dungeon Master is opening the book.",
