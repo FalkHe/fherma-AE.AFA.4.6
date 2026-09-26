@@ -48,6 +48,20 @@ from app.modules.playthrough import service as playthrough_service
 TurnKind = Literal["answer", "roll", "retry", "action", "opening"]
 
 
+def _new_turn_state(frame: TurnFrame, snapshot: Any) -> dict[str, Any]:
+    """`initial_state(frame)`, save for `combat` -- carried over from the
+    thread's own last checkpoint instead of wiped (← finding, run
+    01M3E8VSFCZ856D2SNFATQXAPM): a running fight is scoped to the DM
+    thread, not to one turn, and sprint 011/05's "a running fight
+    survives a server restart" means a fresh action/opening turn must
+    not re-roll initiative for a fight already under way. Every other
+    key stays turn-local, exactly as `initial_state` already sets it."""
+    state = initial_state(frame)
+    if snapshot.values:
+        state["combat"] = snapshot.values.get("combat")
+    return state
+
+
 @dataclass(frozen=True)
 class TurnResult:
     """CLI-only rendering shape (`game/commands.py`) -- narration text plus
@@ -250,7 +264,7 @@ async def run_turn(
                     status="open",
                     round_admitted=False,
                 )
-                await agent.ainvoke(initial_state(frame), config=config)
+                await agent.ainvoke(_new_turn_state(frame, snapshot), config=config)
                 kind = "action"
                 awaiting_str = await playthrough_service.get_awaiting(
                     db, user_id=user_id, run_id=run_id
@@ -275,7 +289,7 @@ async def run_turn(
                     status="open",
                     round_admitted=False,
                 )
-                await agent.ainvoke(initial_state(frame), config=config)
+                await agent.ainvoke(_new_turn_state(frame, snapshot), config=config)
             else:
                 kind = "opening"
                 turn_id = generate_id()
@@ -288,7 +302,7 @@ async def run_turn(
                     status="open",
                     round_admitted=False,
                 )
-                await agent.ainvoke(initial_state(frame), config=config)
+                await agent.ainvoke(_new_turn_state(frame, snapshot), config=config)
         else:
             if text and text.strip():
                 kind = "action"
@@ -305,7 +319,7 @@ async def run_turn(
                     status="open",
                     round_admitted=False,
                 )
-                await agent.ainvoke(initial_state(frame), config=config)
+                await agent.ainvoke(_new_turn_state(frame, snapshot), config=config)
             else:
                 kind = "opening"
                 turn_id = generate_id()
@@ -318,7 +332,7 @@ async def run_turn(
                     status="open",
                     round_admitted=False,
                 )
-                await agent.ainvoke(initial_state(frame), config=config)
+                await agent.ainvoke(_new_turn_state(frame, snapshot), config=config)
 
     awaiting_str = await playthrough_service.get_awaiting(db, user_id=user_id, run_id=run_id)
     return TurnOutcome(turn_id=turn_id, kind=kind, awaiting=awaiting_str)

@@ -176,6 +176,37 @@ def test_action_turn_records_player_action_then_invokes_initial_state(monkeypatc
     asyncio.run(_run())
 
 
+def test_a_fresh_action_turn_carries_a_running_fight_forward(monkeypatch):
+    """← finding (run 01M3E8VSFCZ856D2SNFATQXAPM): a fight spans several
+    player turns, but every fresh action turn used to invoke the graph
+    with `initial_state`'s own `combat=None`, wiping whatever fight was
+    already under way and forcing initiative to be rolled again. The
+    previous checkpoint's own `combat` must survive onto the new turn's
+    starting state."""
+
+    async def _run():
+        _stub_get_awaiting(monkeypatch, "none")
+        combat = {"scene_id": "scene-1", "order": ["hero-1", "goblin-1"], "index": 1, "round": 1}
+        agent = _install_agent(
+            monkeypatch, _Snapshot(values={"turn": _turn_frame(), "combat": combat})
+        )
+
+        async def fake_record_player_action(db, **kwargs):
+            return None
+
+        monkeypatch.setattr(playthrough_service, "record_player_action", fake_record_player_action)
+
+        outcome = await game_service.run_turn(
+            object(), user_id=USER_ID, run_id=RUN_ID, text="I attack the goblin again"
+        )
+
+        assert outcome.kind == "action"
+        [state] = agent.ainvoke_calls
+        assert state["combat"] == combat
+
+    asyncio.run(_run())
+
+
 def test_roll_answer_resumes_with_an_empty_payload_and_writes_no_row_itself(monkeypatch):
     async def _run():
         _stub_get_awaiting(monkeypatch, "none")
