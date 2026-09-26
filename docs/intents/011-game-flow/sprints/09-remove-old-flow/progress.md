@@ -3,7 +3,7 @@ author: sprint
 owner: agent
 created: 2026-09-26
 updated: 2026-09-26
-stage: running
+stage: done
 ---
 # Progress: Sprint 09
 
@@ -29,3 +29,4 @@ Status: `open | running | done | failed`
 
 ## Verify
 Round 1: changes-requested — scope/outcome: the legacy-checkpoint recovery for runs paused under the old flow was removed with the cleanup, so such runs are stuck; review.md claimed nothing visible changes.
+Round 2: approve — all criteria and the round-1 item pass; MR !80 approved.

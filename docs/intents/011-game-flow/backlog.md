@@ -19,7 +19,7 @@ Steps 01–03 harden the rules layer under the running game; 04–07 build the n
 | 06 | The storyteller decides one narrow thing at a time from facts it may see, and prose is written only from what actually happened | 05 | #73 | done |
 | 07 | One rule decides what happens next, so a landed hit always reaches damage, every eligible enemy acts once, and a turn never ends with something owed | 06 | #74 | done |
 | 08 | Every turn the player takes runs through the new game flow, with rolls, answers, fights and restarts behaving as before or better | 07 | #75 | done |
-| 09 | The replaced game machinery and its outdated documentation are gone, leaving one way the game works | 08 | #76 | running |
+| 09 | The replaced game machinery and its outdated documentation are gone, leaving one way the game works | 08 | #76 | done |
 
 ## Notes
 

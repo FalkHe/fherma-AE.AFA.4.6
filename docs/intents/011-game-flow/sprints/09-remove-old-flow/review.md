@@ -23,3 +23,4 @@ Brief: docs/intents/011-game-flow/sprints/09-remove-old-flow/brief.md
 
 ## Verdict
 Round 1: changes requested — the cleanup holds up, but a game left waiting for a dice roll or a choice before the new flow went live can no longer be picked up: the player stays on the same unanswered prompt with no way forward, where until now it recovered by itself.
+Round 2: approved — the replaced game machinery and its outdated documentation are gone, the play is unchanged for players, and a campaign that was left waiting for a dice roll or a choice before the new flow went live now picks up where it stopped again. Alongside the cleanup two unimplemented refactoring proposals were deleted; only one of them concerned the old flow, so say the word if you want the other one back.
