@@ -26,10 +26,6 @@ from app.modules.game.agent.flow_state import (
 def build_graph(
     model: BaseChatModel,
     *,
-    system_prompt: str | None = None,  # noqa: ARG001 -- unused; kept so the old
-    # call site (`game/service.py`, WI2 rewrites it) still imports and calls
-    # this function without changes. The new flow has no single system
-    # prompt -- each node builds its own request.
     checkpointer: BaseCheckpointSaver,
 ) -> CompiledStateGraph:
     graph = StateGraph(GameFlowState)

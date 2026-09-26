@@ -1,0 +1,26 @@
+---
+author: sprint
+owner: agent
+created: 2026-09-26
+updated: 2026-09-26
+url: https://gitlab.hermann.pm/f4lkh3/fherma-ae.afa.4.6/-/merge_requests/80
+---
+# Review: Sprint 09 — The old game flow is gone
+
+## What changed
+The replaced game machinery is deleted: the old tool collection, the guard step, the combat-specific steps, the message-based state, the old system prompt, the generated graph diagram and every test that asserted them. The game module README, the architecture documents, the glossary, the data model, the requirement map and the documentation index now describe only the five-part flow with its two read-only aids, rules lookup and history recall. The play works exactly as it did after sprint 08; nothing a player sees changes. A game that was left waiting for a roll or a choice before the new flow went live still picks up where it stopped: that recovery stays as clearly marked migration code that reads the stored checkpoint, not the old flow.
+
+## How to check it
+- Search the backend and current docs for the old names (for example `DmContext`, `load_context`, `dm.md`): nothing matches.
+- Open `docs/architecture.md` and `backend/app/modules/game/README.md`: both describe the five-part flow and the two aids, and no document under `docs/general/` links to a missing file.
+- Run `make lint` and `make test`: both green.
+- A campaign paused on a roll before sprint 08 went live: pressing the roll button continues the game.
+
+## Heads-up
+The opt-in database test suite (`make backend-test-db`) fails 22 of its 189 tests with missing item rows; the same failures reproduce on `main`, so they predate this sprint and are proposed as a fix-up in the backlog. The regex prompt-injection guard leaves with the old flow, as intent 011 planned; "security guard" in the requirement map now rests on ownership and authentication boundaries.
+
+Brief: docs/intents/011-game-flow/sprints/09-remove-old-flow/brief.md
+
+## Verdict
+Round 1: changes requested — the cleanup holds up, but a game left waiting for a dice roll or a choice before the new flow went live can no longer be picked up: the player stays on the same unanswered prompt with no way forward, where until now it recovered by itself.
+Round 2: approved — the replaced game machinery and its outdated documentation are gone, the play is unchanged for players, and a campaign that was left waiting for a dice roll or a choice before the new flow went live now picks up where it stopped again. Alongside the cleanup two unimplemented refactoring proposals were deleted; only one of them concerned the old flow, so say the word if you want the other one back.

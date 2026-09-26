@@ -7,16 +7,7 @@ writes to the database. The eight priorities are ordinary functions
 NextEffect | None`, tried in order by `select_next_effect`; the first one
 that returns non-`None` wins.
 
-Two helpers exist for the caller (`agent/flow_nodes.py`, WI2/WI3) to apply
-before or after calling this module, since this module itself never
-mutates state:
-
-- `guard_state(text)` -- when `select_next_effect` answers a fresh action
-  turn with a guard refusal (`Operation(RECORD_BEAT)`), the node must
-  first put the canned text into `state["narrative"].draft` with this
-  helper, exactly as `narrate()` would have, before executing the
-  operation.
-- `resume_operation(awaiting, resume)` -- turns a checkpointed
+The `resume_operation(awaiting, resume)` helper turns a checkpointed
   `ResumeResult` (from `await_player`'s `interrupt()`) into the operation
   that consumes it, or `None` when the response answers a request other
   than the one checkpointed. The node calls this once per resume, before
@@ -31,7 +22,6 @@ from typing import Any
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.situation import Situation
 
-from . import nodes
 from .decisions import (
     DecisionKind,
     DecisionRequest,
@@ -48,7 +38,6 @@ from .flow_state import (
     CombatCursor,
     GameFlowState,
     Move,
-    NarrativeCursor,
     OperationKind,
     OperationResult,
     OperationSpec,
@@ -57,29 +46,6 @@ from .flow_state import (
 
 def _new_id() -> str:
     return uuid.uuid4().hex
-
-
-def guard_refusal(text: str | None) -> str | None:
-    """The first `nodes.GUARD_PATTERNS` refusal `text` matches, or `None`.
-    Imports the shared pattern list rather than copying its strings (←
-    brief); `nodes.py` keeps owning them for the old graph."""
-    if not text:
-        return None
-    for pattern, refusal in nodes.GUARD_PATTERNS:
-        if pattern.search(text):
-            return refusal
-    return None
-
-
-def guard_state(text: str) -> dict[str, Any]:
-    """`StateDelta` the caller applies before executing the guard's
-    `RECORD_BEAT` operation. Raises if `text` triggers no guard pattern --
-    call only after `guard_refusal(text)` returned non-`None`."""
-
-    refusal = guard_refusal(text)
-    if refusal is None:
-        raise ValueError("guard_state called for text that triggers no guard pattern")
-    return {"narrative": NarrativeCursor(beat_id=_new_id(), draft=refusal, event_id=None)}
 
 
 def player_roll_plan(
@@ -113,8 +79,20 @@ def player_roll_plan(
 # exact-membership check never fired outside this file's own tests).
 _SEARCH_KEYWORDS = ("search", "investigate", "examine", "inspect", "look for", "track")
 _MOVEMENT_KEYWORDS = (
-    "climb", "continue", "descend", "enter", "follow", "go", "head", "leave",
-    "move", "pass through", "proceed", "return", "travel", "walk",
+    "climb",
+    "continue",
+    "descend",
+    "enter",
+    "follow",
+    "go",
+    "head",
+    "leave",
+    "move",
+    "pass through",
+    "proceed",
+    "return",
+    "travel",
+    "walk",
 )
 
 
@@ -874,9 +852,6 @@ def advance_action(state: GameFlowState, situation: Situation) -> NextEffect | N
             # letting `validate_turn_close`'s own final fallback report
             # `TurnComplete`.
             return None
-        refusal = guard_refusal(state["turn"].text)
-        if refusal is not None:
-            return Operation(operation_id=_new_id(), kind=OperationKind.RECORD_BEAT, payload={})
         return DecisionRequest(
             decision_id=_new_id(),
             kind=DecisionKind.READ_MOVE,

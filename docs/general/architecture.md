@@ -9,9 +9,8 @@ the vocabulary is [glossary.md](glossary.md); stack detail lives in the module
 READMEs and in [backend-stack.md](backend-stack.md) /
 [frontend-stack.md](frontend-stack.md).
 
-Current state: scaffolding. The trees, the wire convention and authentication
-exist; the game agent does not. Where this document and the code disagree, the
-code wins.
+Current state: the web application and the five-node game flow are implemented.
+Where this document and the code disagree, the code wins.
 
 ## Guiding principle
 
@@ -58,21 +57,15 @@ Layout and scene fields are in [model.md](model.md).
 CLI. Agentic: the game agent decides whether a lookup is needed and may
 re-query.
 
-**Game agent** — a LangGraph loop, `narrate -> decide (tool | ask_player) ->
-tool -> validate state -> loop`, interrupting on `ask_player`. A guard node
-runs before it and rejects prompt injection and out-of-band state changes
-("my HP is 100"). Its tools:
-
-| Tool | Purpose |
-|---|---|
-| `roll_dice(expr, visibility)` | Deterministic dice; hidden rolls filtered out of the player view |
-| `lookup_rule(query)` | RAG over the SRD |
-| `get_scene(id)` | Load scene facts |
-| `get_monster(name)` | Stat block from JSON |
-| `update_object(id, patch)` | Validated state mutation |
-| `start_combat()` / `end_round()` | Initiative and turn tracking — **Stage 02**; nothing tracks turns in Stage 01 |
-| `recall(query)` | Long-term memory: searches the run's past narration by meaning |
-| `ask_player(prompt, options)` | Human-in-the-loop interrupt |
+**Game agent** — a five-node LangGraph flow: `advance` chooses one typed
+effect, then `decide`, `execute`, `await_player` or `narrate` performs that
+effect and returns control to `advance`. Checkpoint state contains active turn
+and combat cursors, requests, results and narration progress; the database
+contains durable facts and transcript history. `decide` may use only the
+read-only `lookup_rule` (SRD RAG) and `recall_history` (semantic narration
+memory) aids. All rolls and mutations run through deterministic
+`playthrough.service` operations, and narration is an unbound call over public
+evidence.
 
 **Web client** — narration pane, state panel (HP, AC, inventory; turn order is
 deferred — the DM-turn phase decides what a fight needs, and nothing tracks

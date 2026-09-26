@@ -1,7 +1,6 @@
-"""Two nodes only: `talk` proposes, `tools` writes the draft or saves. No
-`load_context`, `record_action`/`record_narration` or `guard` -- creation
-writes no events, and until `save_character` runs there is nothing to
-protect (← research Decision 2).
+"""Two nodes only: `talk` proposes, `tools` writes the draft or saves.
+Creation writes no events, and until `save_character` runs there is
+nothing to protect (← research Decision 2).
 """
 
 import logging

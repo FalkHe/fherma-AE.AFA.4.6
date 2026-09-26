@@ -27,15 +27,15 @@ from tests.core.prompts.conftest import write_prompt
 
 
 def test_parse_accepts_three_kebab_segments():
-    assert service.parse_prompt_id("game/system/dm") == ("game", "system", "dm")
+    assert service.parse_prompt_id("sample/system/story") == ("sample", "system", "story")
 
 
 @pytest.mark.parametrize(
     "prompt_id",
     [
-        "game/system",  # two segments
-        "game/system/dm/extra",  # four segments
-        "game",  # one segment
+        "sample/system",  # two segments
+        "sample/system/story/extra",  # four segments
+        "sample",  # one segment
         "",  # empty
     ],
 )
@@ -49,12 +49,12 @@ def test_parse_rejects_wrong_segment_count(prompt_id):
 @pytest.mark.parametrize(
     "prompt_id",
     [
-        "Game/system/dm",  # uppercase
+        "Sample/system/story",  # uppercase
         "game/-system/dm",  # leading hyphen
-        "game/system-/dm",  # trailing hyphen
+        "sample/system-/dm",  # trailing hyphen
         "game//dm",  # empty middle segment
         "game/sys tem/dm",  # space
-        "game/system_a/dm",  # underscore
+        "sample/system_a/dm",  # underscore
     ],
 )
 def test_parse_rejects_malformed_segment(prompt_id):
@@ -71,10 +71,10 @@ def test_parse_rejects_malformed_segment(prompt_id):
     [
         "../etc/passwd",
         "game/../system",
-        "game/system/..",
-        "/game/system/dm",
-        "game/system/../../../etc",
-        "game/system/dm/../../../../etc",
+        "sample/system/..",
+        "/sample/system/story",
+        "sample/system/../../../etc",
+        "sample/system/story/../../../../etc",
     ],
 )
 def test_traversal_attempts_are_rejected_as_invalid_not_missing(prompt_id, prompts_root):
@@ -89,28 +89,28 @@ def test_traversal_via_dot_dot_segment_never_escapes_root(prompts_root):
     outside = prompts_root.parent / "secret.md"
     outside.write_text("should never be read")
     with pytest.raises(errors.PromptIdInvalidError):
-        service.load_prompt("game/prompts/..")
+        service.load_prompt("sample/prompts/..")
 
 
 # --- Version resolution: numerically highest, no fallback -----------------
 
 
 def test_load_prompt_picks_highest_version_numerically(prompts_root):
-    write_prompt(prompts_root, "game", "v9", "system", "dm", "old text")
-    write_prompt(prompts_root, "game", "v10", "system", "dm", "new text")
+    write_prompt(prompts_root, "sample", "v9", "system", "story", "old text")
+    write_prompt(prompts_root, "sample", "v10", "system", "story", "new text")
 
-    resolved = service.load_prompt("game/system/dm")
+    resolved = service.load_prompt("sample/system/story")
 
     assert resolved.version == "v10"
     assert resolved.text == "new text"
 
 
 def test_list_versions_ascending_numerically(prompts_root):
-    write_prompt(prompts_root, "game", "v9", "system", "dm", "x")
-    write_prompt(prompts_root, "game", "v2", "system", "dm", "x")
-    write_prompt(prompts_root, "game", "v10", "system", "dm", "x")
+    write_prompt(prompts_root, "sample", "v9", "system", "story", "x")
+    write_prompt(prompts_root, "sample", "v2", "system", "story", "x")
+    write_prompt(prompts_root, "sample", "v10", "system", "story", "x")
 
-    assert service.list_versions("game") == ["v2", "v9", "v10"]
+    assert service.list_versions("sample") == ["v2", "v9", "v10"]
 
 
 def test_list_versions_empty_when_capability_absent(prompts_root):
@@ -118,33 +118,33 @@ def test_list_versions_empty_when_capability_absent(prompts_root):
 
 
 def test_missing_requested_version_never_falls_back(prompts_root):
-    write_prompt(prompts_root, "game", "v1", "system", "dm", "only version")
+    write_prompt(prompts_root, "sample", "v1", "system", "story", "only version")
 
     with pytest.raises(errors.PromptNotFoundError) as exc_info:
-        service.load_prompt("game/system/dm", version="v2")
+        service.load_prompt("sample/system/story", version="v2")
 
-    assert exc_info.value.relative_path == "game/prompts/v2/system/dm.md"
+    assert exc_info.value.relative_path == "sample/prompts/v2/system/story.md"
 
 
 def test_no_versions_at_all_is_not_found(prompts_root):
     with pytest.raises(errors.PromptNotFoundError):
-        service.load_prompt("game/system/dm")
+        service.load_prompt("sample/system/story")
 
 
 def test_missing_file_within_existing_version_is_not_found(prompts_root):
-    write_prompt(prompts_root, "game", "v1", "system", "dm", "hi")
+    write_prompt(prompts_root, "sample", "v1", "system", "story", "hi")
 
     with pytest.raises(errors.PromptNotFoundError) as exc_info:
-        service.load_prompt("game/system/other")
+        service.load_prompt("sample/system/other")
 
-    assert exc_info.value.relative_path == "game/prompts/v1/system/other.md"
+    assert exc_info.value.relative_path == "sample/prompts/v1/system/other.md"
 
 
 def test_bad_version_format_is_invalid(prompts_root):
-    write_prompt(prompts_root, "game", "v1", "system", "dm", "text")
+    write_prompt(prompts_root, "sample", "v1", "system", "story", "text")
 
     with pytest.raises(errors.PromptIdInvalidError) as exc_info:
-        service.load_prompt("game/system/dm", version="latest")
+        service.load_prompt("sample/system/story", version="latest")
 
     assert exc_info.value.code == "PROMPT_ID_INVALID"
     assert exc_info.value.value == "latest"
@@ -155,23 +155,23 @@ def test_bad_version_format_is_invalid(prompts_root):
 
 def test_text_is_verbatim_no_stripping_or_normalising(prompts_root):
     raw = "  leading and trailing space \n\n"
-    write_prompt(prompts_root, "game", "v1", "system", "dm", raw)
+    write_prompt(prompts_root, "sample", "v1", "system", "story", raw)
 
-    resolved = service.load_prompt("game/system/dm")
+    resolved = service.load_prompt("sample/system/story")
 
     assert resolved.text == raw
 
 
 def test_resolved_prompt_carries_capability_kind_name_and_version(prompts_root):
-    path = write_prompt(prompts_root, "game", "v1", "system", "dm", "hello")
+    path = write_prompt(prompts_root, "sample", "v1", "system", "story", "hello")
 
-    resolved = service.load_prompt("game/system/dm")
+    resolved = service.load_prompt("sample/system/story")
 
     assert resolved == service.ResolvedPrompt(
-        prompt_id="game/system/dm",
-        capability="game",
+        prompt_id="sample/system/story",
+        capability="sample",
         kind="system",
-        name="dm",
+        name="story",
         version="v1",
         text="hello",
         path=path,
@@ -182,12 +182,12 @@ def test_resolved_prompt_carries_capability_kind_name_and_version(prompts_root):
 
 
 def test_invalid_and_not_found_are_distinguishable(prompts_root):
-    write_prompt(prompts_root, "game", "v1", "system", "dm", "hi")
+    write_prompt(prompts_root, "sample", "v1", "system", "story", "hi")
 
     with pytest.raises(errors.PromptIdInvalidError) as invalid_info:
-        service.load_prompt("Game/system/dm")
+        service.load_prompt("Sample/system/story")
     with pytest.raises(errors.PromptNotFoundError) as not_found_info:
-        service.load_prompt("game/system/missing")
+        service.load_prompt("sample/system/missing")
 
     assert invalid_info.value.code == "PROMPT_ID_INVALID"
     assert not_found_info.value.code == "PROMPT_NOT_FOUND"
@@ -200,7 +200,7 @@ def test_invalid_and_not_found_are_distinguishable(prompts_root):
 def test_trailing_newline_in_id_is_rejected_as_invalid_with_no_filesystem_access(
     prompts_root, monkeypatch
 ):
-    """`"game/system/smoke\\n"` must fail PROMPT_ID_INVALID, never reach a
+    """`"sample/system/smoke\\n"` must fail PROMPT_ID_INVALID, never reach a
     `Path` at all -- a `$`-anchored grammar would let it slip past the
     whitelist and only fail later as PROMPT_NOT_FOUND."""
 
@@ -211,7 +211,7 @@ def test_trailing_newline_in_id_is_rejected_as_invalid_with_no_filesystem_access
     monkeypatch.setattr(Path, "is_dir", _forbidden)
 
     with pytest.raises(errors.PromptIdInvalidError) as exc_info:
-        service.load_prompt("game/system/smoke\n")
+        service.load_prompt("sample/system/smoke\n")
 
     assert exc_info.value.code == "PROMPT_ID_INVALID"
 
@@ -221,7 +221,7 @@ def test_trailing_newline_in_version_is_rejected_as_invalid_with_no_filesystem_a
 ):
     """A `--version` of `"v1\\n"` must fail PROMPT_ID_INVALID before any
     `Path.is_file()` check, for the same `$`-before-newline reason."""
-    write_prompt(prompts_root, "game", "v1", "system", "dm", "text")
+    write_prompt(prompts_root, "sample", "v1", "system", "story", "text")
 
     def _forbidden(self):
         raise AssertionError("filesystem was accessed for a malformed version")
@@ -229,7 +229,7 @@ def test_trailing_newline_in_version_is_rejected_as_invalid_with_no_filesystem_a
     monkeypatch.setattr(Path, "is_file", _forbidden)
 
     with pytest.raises(errors.PromptIdInvalidError) as exc_info:
-        service.load_prompt("game/system/dm", version="v1\n")
+        service.load_prompt("sample/system/story", version="v1\n")
 
     assert exc_info.value.code == "PROMPT_ID_INVALID"
 
@@ -241,12 +241,12 @@ def test_text_round_trips_crlf_bytes_verbatim(prompts_root):
     """`Path.read_text()` performs universal-newline translation, turning
     `b"a\\r\\nb\\r\\n"` into `"a\\nb\\n"`. AC1 requires the file's exact
     bytes, so a CRLF prompt must come back with its `\\r\\n` intact."""
-    path = prompts_root / "game" / "prompts" / "v1" / "system" / "dm.md"
+    path = prompts_root / "sample" / "prompts" / "v1" / "system" / "story.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     raw = b"a\r\nb\r\n"
     path.write_bytes(raw)
 
-    resolved = service.load_prompt("game/system/dm")
+    resolved = service.load_prompt("sample/system/story")
 
     assert resolved.text.encode("utf-8") == raw
     assert resolved.text == "a\r\nb\r\n"

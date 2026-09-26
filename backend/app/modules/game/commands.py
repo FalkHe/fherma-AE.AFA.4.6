@@ -62,9 +62,7 @@ def _turn_result_from_events(events: list[Event]) -> game_service.TurnResult:
 
 
 def _print_prompt_events(events: list[Event]) -> dict[str, Any] | None:
-    """Echoes a pending `question`/`roll_requested` row exactly as the old
-    session did, returning the `question` payload (for its `options`) when
-    one was printed, or `None`."""
+    """Echo pending player requests from the current turn's event stream."""
     pending_question: dict[str, Any] | None = None
     for event in events:
         if event.type == "question":
