@@ -58,7 +58,8 @@ The model defaults are in `.env.dist`.
 
 ```bash
 make build              # builds app and CLI images
-make up                 # API, frontend, Postgres; migrates the DB on boot
+make up                 s# API, frontend, Postgres; migrates the DB on boot
+docker compose run --rm app-cli app checkpoint setup # initiate checkpointer storage
 ```
 
 Once the API has finished starting (check `docker compose logs app-web`),
