@@ -63,7 +63,17 @@ export function useTakeTurn({ runId, rows }: UseTakeTurnArgs) {
       // installed `@tanstack/query-core` types) -- not a `QueryFilters` field, despite
       // reading like one; passing it inside the first object is a silent no-op the
       // installed types catch as a `tsc` error, not a runtime one.
-      void queryClient.invalidateQueries({ queryKey: ["transcript", runId] }, { cancelRefetch: false });
+      //
+      // `true` (defect A round 2, was `false`): a transcript read issued
+      // *before* this turn's own narration commit can still be in flight
+      // when the turn settles -- `cancelRefetch: false` let this
+      // invalidation fold into that stale read instead of forcing a fresh
+      // one, so the screen kept showing "thinking" until a manual reload
+      // even though the narration had already landed server-side. `true`
+      // aborts that stale read (via the `AbortSignal` TanStack hands its own
+      // `queryFn`, `usePlayTranscript.ts`) and starts a fresh one that is
+      // guaranteed to see the just-committed narration.
+      void queryClient.invalidateQueries({ queryKey: ["transcript", runId] }, { cancelRefetch: true });
     },
   });
 
@@ -102,5 +112,17 @@ export function useTakeTurn({ runId, rows }: UseTakeTurnArgs) {
     mutation.mutate(null);
   }
 
-  return { send, startOpening, roll, isSending: mutation.isPending, pending };
+  // The stalled-turn "Continue" button (chore/todo-items): same shape as
+  // `startOpening`/`roll` again -- a lost or failed response leaves the
+  // transcript mid-turn (last event not a narration) with nothing in
+  // flight, and the backend resumes that exact checkpoint on `{ text: null
+  // }` same as it does for an opening turn. Its own name, not a third call
+  // to `startOpening`, since "resume a stalled turn" reads differently from
+  // "open the adventure" at the call site even though the body is
+  // identical.
+  function continueTurn(): void {
+    mutation.mutate(null);
+  }
+
+  return { send, startOpening, roll, continueTurn, isSending: mutation.isPending, pending };
 }

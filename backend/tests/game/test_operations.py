@@ -60,6 +60,7 @@ def _state() -> dict:
         "combat": None,
         "awaiting": None,
         "pending_hit_id": None,
+        "pending_critical": False,
         "reactions": [],
         "narrative": NarrativeCursor(beat_id=None, draft=None, event_id=None),
         "effect": None,
@@ -193,3 +194,147 @@ def test_execute_operation_refuses_give_item_with_a_stale_receiver(monkeypatch):
     assert result.reason == "stale_reference"
     assert delta == {}
     assert called is False
+
+
+def test_execute_operation_refuses_resolve_check_with_no_dc_without_a_service_call(monkeypatch):
+    """← live bug, run 01M3H3EXQVF0X3BWGH2KVZ0YYW: a `read-move` decision
+    proposed `request_roll` naming `resolve_check` as its consumer with no
+    `dc` -- `dc` reached `resolve_check` as `None` and crashed
+    `_resolve_roll_outcome`'s bare `<=` chain with a `TypeError`. A `dc`
+    that is missing, `None`, or outside the SRD's 5-30 range is now
+    refused before `resolve_check` is ever called."""
+    called = False
+
+    async def fake_resolve_check(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(playthrough_service, "resolve_check", fake_resolve_check)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.RESOLVE_CHECK,
+        payload={"dc": None, "roll_id": "roll-1"},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "refused"
+    assert result.reason == "invalid_dc"
+    assert delta == {}
+    assert called is False
+
+
+def test_execute_operation_refuses_request_roll_for_a_check_with_no_dc(monkeypatch):
+    called = False
+
+    async def fake_request_player_roll(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(playthrough_service, "request_player_roll", fake_request_player_roll)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.REQUEST_ROLL,
+        payload={
+            "actor_id": "hero-1",
+            "ability": "dex",
+            "consumer": OperationKind.RESOLVE_CHECK.value,
+        },
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "refused"
+    assert result.reason == "invalid_dc"
+    assert delta == {}
+    assert called is False
+
+
+def test_roll_actor_refuses_instead_of_crashing_when_derivation_raises(monkeypatch):
+    """← live bug (run 01M3E8VSFCZ856D2SNFATQXAPM): `playthrough_service.roll`
+    raising `ValueError` (a weaponless actor, or an unresolved attack name)
+    used to propagate straight out of `_roll_actor` and 500 the whole
+    turn. It must refuse the step instead, exactly like a stale reference
+    or a missing key."""
+
+    async def fake_roll(*args, **kwargs):
+        raise ValueError("this actor has no attacks")
+
+    monkeypatch.setattr(playthrough_service, "roll", fake_roll)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.ROLL_ACTOR,
+        payload={"actor_id": "hero-1", "kind": "attack", "context": {"item_id": "shield-1"}},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "refused"
+    assert result.reason == "this actor has no attacks"
+    assert delta == {}
+
+
+def test_resolve_attack_records_critical_on_the_state_delta(monkeypatch):
+    """← finding (run 01M3E8VSFCZ856D2SNFATQXAPM): a natural-20 hit's own
+    `critical` status never reached the later `damage` step because
+    nothing on the flow state remembered it. `_resolve_attack` must set
+    `pending_critical` alongside `pending_hit_id` so `advance_hit` can
+    still tell a crit from a plain hit once the roll is spent."""
+    from app.modules.playthrough.schemas import AttackResult
+
+    async def fake_attack(*args, **kwargs):
+        return AttackResult(
+            status="critical", hit_id="hit-1", total=24, natural=20, armour_class=14
+        )
+
+    monkeypatch.setattr(playthrough_service, "attack", fake_attack)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.RESOLVE_ATTACK,
+        payload={"actor_id": "hero-1", "target_id": "hero-1", "roll_id": "roll-1"},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "ok"
+    assert delta["pending_hit_id"] == "hit-1"
+    assert delta["pending_critical"] is True
+
+
+def test_resolve_attack_clears_critical_on_a_plain_hit(monkeypatch):
+    from app.modules.playthrough.schemas import AttackResult
+
+    async def fake_attack(*args, **kwargs):
+        return AttackResult(status="hit", hit_id="hit-1", total=17, natural=13, armour_class=14)
+
+    monkeypatch.setattr(playthrough_service, "attack", fake_attack)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.RESOLVE_ATTACK,
+        payload={"actor_id": "hero-1", "target_id": "hero-1", "roll_id": "roll-1"},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "ok"
+    assert delta["pending_critical"] is False

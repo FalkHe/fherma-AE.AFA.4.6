@@ -21,12 +21,24 @@ Failure handling, kept distinct on purpose:
   order. An `OperationResult(status="refused")` from `execute()` is
   likewise stored as a normal result, never raised.
 - **Infrastructure failures** (a database error, a `LlmError` that
-  exhausted its retries, a bug in this module) are not caught here at
-  all -- they propagate to the graph runtime exactly as raised, so a
-  crashed turn resumes from its last checkpoint rather than silently
-  losing the failure.
+  exhausted its retries, a bug in this module) are not caught in
+  `decide()`/`narrate()`/`await_player()` at all -- they propagate to the
+  graph runtime exactly as raised, so a crashed turn resumes from its
+  last checkpoint rather than silently losing the failure.
+- **`execute()` is the one exception to that rule** (← live bug, run
+  01M3H3EXQVF0X3BWGH2KVZ0YYW): a handler bug over model-shaped, not yet
+  fully-validated payloads (a bad reference, a bad die roll, a bad `dc`)
+  is common enough, and the resulting crash-then-replay-the-same-crash
+  loop bad enough (every retry re-runs the very same handler over the
+  same checkpointed state), that any exception a handler raises is caught
+  there, logged, and turned into a `refused` `OperationResult` instead --
+  see `execute()`'s own docstring. A true infrastructure failure (the
+  database itself unreachable) still surfaces this way rather than
+  vanishing, but it no longer wedges the run on a replay loop either: the
+  plan step closes and the turn ends.
 """
 
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -42,7 +54,16 @@ from . import advance as advance_module
 from . import decisions, narration, operations
 from .decisions import DecisionContext, DecisionInvalid, DecisionRequest, DecisionResult
 from .effects import BeatRequest, Operation, PlayerWait, ResumeResult, TurnComplete, add_usage
-from .flow_state import ActionCursor, ExecutionError, GameFlowState, Move, StateDelta
+from .flow_state import (
+    ActionCursor,
+    ExecutionError,
+    GameFlowState,
+    Move,
+    OperationResult,
+    StateDelta,
+)
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -191,7 +212,24 @@ async def decide(state: GameFlowState) -> StateDelta:
 async def execute(state: GameFlowState) -> StateDelta:
     """One `operations.execute_operation()` call for the `Operation` in
     `state["effect"]`, against a fresh `Situation`. A refused operation
-    stays an ordinary `OperationResult`; any raised exception escapes."""
+    stays an ordinary `OperationResult`.
+
+    ← live bug (run 01M3H3EXQVF0X3BWGH2KVZ0YYW): a handler bug (there, a
+    `None` `dc` reaching a bare `<=` chain) raised a plain `TypeError`
+    that escaped this node entirely -- the turn 500'd, and every retry
+    replayed and re-crashed the same node forever, since nothing ever
+    closed the plan step that caused it. The contract-level holes that
+    caused *this* crash are closed at their own boundary (`operations.
+    invalid_dc_reason`, `playthrough.service._resolve_roll_outcome`'s own
+    guard) -- this `try` is the backstop for the next one: any exception a
+    handler raises is logged with its traceback and turned into an
+    ordinary `refused` `OperationResult` instead, exactly like a handler
+    that refuses on purpose (`operations._roll_actor`'s own `ValueError`
+    catch). `advance.reconcile_step` already closes a refused plan step's
+    action as `"complete"`, so the turn narrates an ordinary outcome and
+    ends -- the player never sees anything but that the attempt did not
+    resolve, and a retry of a run stuck on the old crash now runs this
+    node fresh and moves past it instead of replaying the same raise."""
     runtime = get_runtime()
     op: Operation = state["effect"]
     situation = await _situation(state)
@@ -202,7 +240,22 @@ async def execute(state: GameFlowState) -> StateDelta:
         hero_id=state["turn"].hero_id,
         situation=situation,
     )
-    result, op_delta = await operations.execute_operation(ctx, op, state)
+    try:
+        result, op_delta = await operations.execute_operation(ctx, op, state)
+    except Exception:
+        _logger.exception(
+            "operation handler raised",
+            extra={"run_id": state["turn"].run_id, "operation_kind": op.kind.value},
+        )
+        await runtime.db.rollback()
+        result = OperationResult(
+            operation_id=op.operation_id,
+            status="refused",
+            reason="internal_error",
+            event_ids=(),
+            value={},
+        )
+        op_delta = {}
     delta: StateDelta = {"result": result}
     delta.update(op_delta)
     return delta

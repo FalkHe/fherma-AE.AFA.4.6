@@ -38,7 +38,7 @@ from app.modules.srd.errors import SrdCorpusEmptyError
 
 from . import model_call
 from .flow_state import GameFlowState, Operation, OperationKind, OperationSpec, ReactionSpec, Usage
-from .operations import missing_required_key, validate_refs
+from .operations import invalid_dc_reason, missing_required_key, validate_refs
 
 MAX_TOOL_CALLS = 3
 RETRY_BUDGET = 2
@@ -424,6 +424,9 @@ def _validate(
                 missing = missing_required_key(synthetic)
                 if missing is not None:
                     return f"missing_key:{missing}"
+                dc_reason = invalid_dc_reason(synthetic)
+                if dc_reason is not None:
+                    return dc_reason
                 if operation_kind is OperationKind.TAKE_ITEM:
                     item_id = op.payload.get("item_id")
                     if any(

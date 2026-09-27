@@ -41,6 +41,7 @@ class AttackView:
 class ItemView:
     id: str
     name: str
+    attacks: tuple[AttackView, ...] = ()
 
 
 @dataclass(frozen=True)
