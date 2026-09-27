@@ -294,9 +294,47 @@ def _snapshot_json(snapshot: Any) -> dict[str, Any]:
     }
 
 
-def _print_action_snapshot(snapshot: Any, *, verbose: bool) -> None:
+def _print_llm_snapshot(snapshot: Any) -> None:
+    """Render model-bound graph work from the checkpoint that schedules it.
+
+    This deliberately reads checkpoint state only: it exposes the durable
+    request/response envelopes the graph can replay, without copying prompts
+    or hidden situation evidence into the gameplay event log.
+    """
+    values = getattr(snapshot, "values", {}) or {}
+    effect = values.get("effect") if isinstance(values, dict) else None
+    next_nodes = set(getattr(snapshot, "next", ()) or ())
+
+    if "decide" in next_nodes and effect is not None:
+        request = _jsonable(effect)
+        kind = request.get("kind", "unknown") if isinstance(request, dict) else "unknown"
+        typer.echo(f"  [LLM REQUEST] decision/{kind} {json.dumps(request, default=str)}")
+    elif "narrate" in next_nodes and effect is not None:
+        request = _jsonable(effect)
+        kind = request.get("kind", "unknown") if isinstance(request, dict) else "unknown"
+        typer.echo(f"  [LLM REQUEST] narration/{kind} {json.dumps(request, default=str)}")
+
+    metadata = getattr(snapshot, "metadata", {}) or {}
+    writes = metadata.get("writes") if isinstance(metadata, dict) else None
+    if isinstance(writes, dict):
+        for node in ("decide", "narrate"):
+            if node in writes:
+                typer.echo(
+                    f"  [LLM RESPONSE] {node} {json.dumps(_jsonable(writes[node]), default=str)}"
+                )
+
+    for task in getattr(snapshot, "tasks", ()) or ():
+        task_name = getattr(task, "name", None)
+        error = getattr(task, "error", None)
+        if task_name in {"decide", "narrate"} and error:
+            typer.echo(f"  [LLM ERROR] {task_name} {error}")
+
+
+def _print_action_snapshot(snapshot: Any, *, verbose: bool, llm: bool = False) -> None:
     if verbose:
         typer.echo(json.dumps(_snapshot_json(snapshot), indent=2, default=str))
+        if llm:
+            _print_llm_snapshot(snapshot)
         return
 
     metadata = getattr(snapshot, "metadata", {}) or {}
@@ -335,12 +373,16 @@ def _print_action_snapshot(snapshot: Any, *, verbose: bool) -> None:
         if errors:
             typer.echo(f"  task={task_name} error={errors}")
 
+    if llm:
+        _print_llm_snapshot(snapshot)
+
 
 async def _actions_session(
     *,
     thread_id: str | None,
     follow: bool,
     verbose: bool,
+    llm: bool,
     limit: int | None,
     poll_interval: float = 0.25,
 ) -> None:
@@ -364,7 +406,7 @@ async def _actions_session(
 
         if not follow:
             for snapshot in reversed(snapshots):
-                _print_action_snapshot(snapshot, verbose=verbose)
+                _print_action_snapshot(snapshot, verbose=verbose, llm=llm)
             return
 
         last_checkpoint = _snapshot_id(snapshots[0]) if snapshots else None
@@ -380,7 +422,7 @@ async def _actions_session(
                         break
                     new_snapshots.append(snapshot)
                 for snapshot in reversed(new_snapshots):
-                    _print_action_snapshot(snapshot, verbose=verbose)
+                    _print_action_snapshot(snapshot, verbose=verbose, llm=llm)
                 if current:
                     last_checkpoint = _snapshot_id(current[0])
         except (asyncio.CancelledError, KeyboardInterrupt):
@@ -398,6 +440,11 @@ def actions(
     verbose: bool = typer.Option(
         False, "-v", "--verbose", help="Display complete checkpoint snapshots as JSON."
     ),
+    llm: bool = typer.Option(
+        False,
+        "--llm",
+        help="Show checkpointed LLM request, response, and error envelopes.",
+    ),
     limit: int | None = typer.Option(
         None, "--limit", min=1, help="Maximum number of checkpoints to inspect."
     ),
@@ -405,7 +452,9 @@ def actions(
     """Inspect LangGraph checkpoints, node transitions, writes, and interrupts."""
     try:
         asyncio.run(
-            _actions_session(thread_id=thread_id, follow=follow, verbose=verbose, limit=limit)
+            _actions_session(
+                thread_id=thread_id, follow=follow, verbose=verbose, llm=llm, limit=limit
+            )
         )
     except (LlmError, PlaythroughError) as exc:
         typer.echo(str(exc), err=True)

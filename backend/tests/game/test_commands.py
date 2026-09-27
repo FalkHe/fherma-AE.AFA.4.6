@@ -540,6 +540,40 @@ def test_actions_verbose_includes_pending_interrupts(monkeypatch):
     assert '"type": "question"' in result.stdout
 
 
+def test_actions_llm_shows_checkpointed_request_response_and_error(monkeypatch):
+    request = SimpleNamespace(
+        decision_id="decision-1",
+        kind="read_move",
+        evidence_ids=(),
+        payload={"text": "talk to Mira"},
+    )
+    response = {
+        "result": SimpleNamespace(
+            decision_id="decision-1",
+            kind="read_move",
+            value={"intent": "talk to Mira"},
+        )
+    }
+    snapshot = SimpleNamespace(
+        created_at="2026-09-27T14:05:07+00:00",
+        metadata={"step": 2, "source": "loop", "writes": {"decide": response}},
+        next=("decide",),
+        values={"effect": request},
+        tasks=(SimpleNamespace(name="decide", interrupts=(), error="provider failed"),),
+    )
+
+    output = []
+    monkeypatch.setattr(commands.typer, "echo", output.append)
+    commands._print_action_snapshot(snapshot, verbose=False, llm=True)
+
+    rendered = "\n".join(output)
+    assert "[LLM REQUEST] decision/read_move" in rendered
+    assert '"text": "talk to Mira"' in rendered
+    assert "[LLM RESPONSE] decide" in rendered
+    assert '"intent": "talk to Mira"' in rendered
+    assert "[LLM ERROR] decide provider failed" in rendered
+
+
 def test_a_session_quit_while_the_dm_waits_for_an_answer_still_has_it_waiting_on_replay(
     monkeypatch,
 ):

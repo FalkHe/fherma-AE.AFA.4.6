@@ -30,6 +30,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.llm.errors import classify
 from app.core.prompts.service import load_prompt
 from app.modules.playthrough import service as playthrough_service
 from app.modules.playthrough.situation import Situation
@@ -530,7 +531,12 @@ async def decide(
             ai_messages.extend(await _run_tool_loop(ctx, ctx.model, messages, label=label))
 
         structured = ctx.model.with_structured_output(strategy.output_schema, include_raw=True)
-        result = await structured.ainvoke(messages)
+        try:
+            result = await structured.ainvoke(messages)
+        except Exception as exc:
+            if (err := classify(exc)) is not None:
+                raise err from exc
+            raise
         parsed = result["parsed"]
         raw = result["raw"]
         ai_messages.append(raw)
