@@ -232,23 +232,55 @@ def test_ac3_the_command_reports_exact_decimal_sums_grouped_by_turn_with_untagge
         run_id = generate_id()
         turn_id = generate_id()
 
-        async def fake_run_cost(db, *, user_id, run_id):
+        async def fake_run_cost(db, *, run_id, user_id=None):
+            # Still a `SimpleNamespace`, not the service's own models:
+            # this test knows only the fields the report is built from.
             return SimpleNamespace(
                 total=Decimal("0.001234"),
                 turns=[
-                    SimpleNamespace(turn_id=turn_id, total=Decimal("0.000500")),
-                    SimpleNamespace(turn_id=None, total=Decimal("0.000734")),
+                    SimpleNamespace(
+                        turn_id=turn_id,
+                        total=Decimal("0.000500"),
+                        prompt_tokens=12430,
+                        completion_tokens=820,
+                        tokens=13250,
+                    ),
+                    SimpleNamespace(
+                        turn_id=None,
+                        total=Decimal("0.000734"),
+                        prompt_tokens=9120,
+                        completion_tokens=640,
+                        tokens=9760,
+                    ),
                 ],
+                prompt_tokens=21550,
+                completion_tokens=1460,
+                tokens=23010,
             )
 
         mp.setattr(playthrough_service, "run_cost", fake_run_cost)
 
-        result = runner.invoke(cli, ["playthrough", "cost", run_id, "--user", USER_ID])
+        result = runner.invoke(cli, ["playthrough", "cost", run_id])
 
         assert result.exit_code == 0, result.output
         assert result.stderr == ""
+        # Each turn is one row -- tokens in, tokens out, their sum, exact
+        # dollars -- the untagged turn (`-`) last, and the run's own
+        # totals repeat the same columns under the rule. The turn column
+        # is as wide as the widest id present.
+        width = max(len(turn_id), len("total"))
         expected_stdout = (
-            f"run: {run_id}\ntotal: 0.001234\nturn {turn_id}: 0.000500\nturn -: 0.000734\n"
+            f"run: {run_id}\n"
+            f"{'turn':<{width}}         in        out     tokens      cost usd\n"
+            + "-"
+            * (width + 47)
+            + "\n"
+            f"{turn_id:<{width}}     12,430        820     13,250      0.000500\n"
+            f"{'-':<{width}}      9,120        640      9,760      0.000734\n"
+            + "-"
+            * (width + 47)
+            + "\n"
+            f"{'total':<{width}}     21,550      1,460     23,010      0.001234\n"
         )
         assert result.stdout == expected_stdout
 
@@ -257,12 +289,12 @@ def test_ac3_the_command_reports_exact_decimal_sums_grouped_by_turn_with_untagge
     with pytest.MonkeyPatch.context() as mp:
         refused_run_id = generate_id()
 
-        async def failing_run_cost(db, *, user_id, run_id):
+        async def failing_run_cost(db, *, run_id, user_id=None):
             raise CampaignRunNotFoundError(run_id)
 
         mp.setattr(playthrough_service, "run_cost", failing_run_cost)
 
-        result = runner.invoke(cli, ["playthrough", "cost", refused_run_id, "--user", USER_ID])
+        result = runner.invoke(cli, ["playthrough", "cost", refused_run_id])
 
         assert result.exit_code == 1, result.output
         assert result.stdout == ""

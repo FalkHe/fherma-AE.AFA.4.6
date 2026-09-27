@@ -8,9 +8,18 @@ FastAPI's `get_db_session` wraps -- exactly the way `srd/commands.py`'s
 `status` command does it, because there is no request scope to hang a
 `Depends(...)` off in a Typer command.
 
+What it prints is a fixed-width table built by `_cost_table`: one row per
+turn -- tokens in, tokens out, their sum, exact dollars -- with the
+turnless group (`-`) last, then the run's own totals in the same columns
+under a rule. Every figure comes straight off `RunCost`; the command adds
+nothing the service did not already sum.
+
 This is cost's *only* address (← D14): no HTTP route ever exposes it.
-Failure is `f"{exc.code}: {exc}"` to stderr plus `typer.Exit(code=1)`, per
-`modules/srd/commands.py` -- a foreign or unknown run prints `NOT_FOUND`.
+It takes the run id alone: an operator at a terminal is not a signed-in
+user, so it calls `run_cost` without a `user_id` and the service falls
+back to its unscoped existence gate. Failure is `f"{exc.code}: {exc}"` to
+stderr plus `typer.Exit(code=1)`, per `modules/srd/commands.py` -- an
+unknown run prints `NOT_FOUND`.
 
 `app playthrough roll` -- sprint 005/07a WI4, binding interface in
 `docs/intents/005-game-state-services/sprints/07a-rolls-derived-and-recorded/
@@ -86,28 +95,57 @@ from app.modules.playthrough.schemas import RollKind, RunCost
 playthrough_app = typer.Typer()
 
 
-async def _fetch_cost(*, run_id: str, user_id: str) -> RunCost:
+async def _fetch_cost(*, run_id: str, user_id: str | None = None) -> RunCost:
     sessionmaker = get_sessionmaker()
     async with sessionmaker() as db:
-        return await playthrough_service.run_cost(db, user_id=user_id, run_id=run_id)
+        return await playthrough_service.run_cost(db, run_id=run_id, user_id=user_id)
+
+
+def _cost_table(result: RunCost) -> str:
+    """`cost`'s body: one row per turn, then the run's own totals.
+
+    Tokens in, tokens out and dollars sit in three fixed-width columns so
+    a reader scans a column rather than adding numbers up by hand, and
+    the totals line is the same columns again under a rule. Turn ids are
+    as wide as the widest one present (the untagged turn prints as `-`),
+    so a run whose ids are all one length stays narrow.
+    """
+    labels = [turn.turn_id if turn.turn_id is not None else "-" for turn in result.turns]
+    width = max((len(label) for label in labels), default=0)
+    width = max(width, len("total"))
+
+    columns = ("in", "out", "tokens", "cost usd")
+    header = (
+        f"{'turn':<{width}}  {columns[0]:>9}  {columns[1]:>9}  {columns[2]:>9}  {columns[3]:>12}"
+    )
+    rule = "-" * len(header)
+
+    lines = [header, rule]
+    for label, turn in zip(labels, result.turns, strict=True):
+        lines.append(
+            f"{label:<{width}}  {turn.prompt_tokens:>9,}  {turn.completion_tokens:>9,}  "
+            f"{turn.tokens:>9,}  {turn.total:>12.6f}"
+        )
+    lines.append(rule)
+    lines.append(
+        f"{'total':<{width}}  {result.prompt_tokens:>9,}  {result.completion_tokens:>9,}  "
+        f"{result.tokens:>9,}  {result.total:>12.6f}"
+    )
+    return "\n".join(lines)
 
 
 @playthrough_app.command("cost")
 def cost(
     run_id: str = typer.Argument(..., help="The campaign run id."),
-    user_id: str = typer.Option(..., "--user", help="The caller's user id."),
 ) -> None:
     try:
-        result = asyncio.run(_fetch_cost(run_id=run_id, user_id=user_id))
+        result = asyncio.run(_fetch_cost(run_id=run_id))
     except PlaythroughError as exc:
         typer.echo(f"{exc.code}: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     typer.echo(f"run: {run_id}")
-    typer.echo(f"total: {result.total:.6f}")
-    for turn in result.turns:
-        label = turn.turn_id if turn.turn_id is not None else "-"
-        typer.echo(f"turn {label}: {turn.total:.6f}")
+    typer.echo(_cost_table(result))
 
 
 async def _run_roll(

@@ -4056,27 +4056,44 @@ async def open_turn_id(db: AsyncSession, *, user_id: str, run_id: str) -> str | 
     return result.scalar_one_or_none()
 
 
-async def run_cost(db: AsyncSession, *, user_id: str, run_id: str) -> RunCost:
-    """What `run_id` has cost, whole and by turn (WI1, AC3) -- for its
-    owner alone, exact to the last digit, and reachable only as
-    `app playthrough cost` (never a route, ← D14).
+async def run_cost(db: AsyncSession, *, run_id: str, user_id: str | None = None) -> RunCost:
+    """What `run_id` has cost, whole and by turn (WI1, AC3) -- exact to
+    the last digit, and reachable only as `app playthrough cost` (never a
+    route, ← D14).
 
-    `_require_member` first, exactly like every other function that takes
-    a `run_id`: a foreign or unknown run raises `CampaignRunNotFoundError`
-    before the sum ever runs. Grouped by `turn_id`, the `NULL` turn (events
-    written with no turn) sorted last -- `turn_id.is_(None)` orders `False`
-    (a real turn) before `True` (no turn), so `ORDER BY` alone puts it
-    there without a second pass in Python. `SUM(cost_usd)` over a group
-    whose events all carry no cost is SQL `NULL`, not `0`; that, and a run
-    with no events at all (no groups, so no rows), both normalise to the
-    exact `Decimal("0.000000")` here rather than leaking `None` into the
-    result. `total` is the sum of every turn's total, including the
-    untagged one -- never a second query against `events`.
+    `user_id` is optional because the only caller is an operator command,
+    with no signed-in user to scope by. Given one, `_require_member` runs
+    first exactly like every other function that takes a `run_id`, and a
+    foreign or unknown run raises `CampaignRunNotFoundError` before the
+    sum does. Given none, `_get_run` alone is the existence gate -- the
+    same unscoped operator read `recap` and `recall` make -- so an unknown
+    run still raises rather than answering an empty zero. Grouped by
+    `turn_id`, the `NULL` turn (events written with no turn) sorted last --
+    `turn_id.is_(None)` orders `False` (a real turn) before `True` (no
+    turn), so `ORDER BY` alone puts it there without a second pass in
+    Python. `SUM(cost_usd)` over a group whose events all carry no cost is
+    SQL `NULL`, not `0`; that, and a run with no events at all (no groups,
+    so no rows), both normalise to the exact `Decimal("0.000000")` here
+    rather than leaking `None` into the result. `SUM(prompt_tokens)` and
+    `SUM(completion_tokens)` come back from that same grouped query and
+    normalise the same way, to `0` -- what a turn spent and what it read
+    and wrote are one pass over the same rows, never two. `total`,
+    `prompt_tokens` and `completion_tokens` are each summed over every
+    turn, including the untagged one -- never a second query against
+    `events`.
     """
-    await _require_member(db, run_id=run_id, user_id=user_id)
+    if user_id is not None:
+        await _require_member(db, run_id=run_id, user_id=user_id)
+    else:
+        await _get_run(db, run_id)
 
     stmt = (
-        select(Event.turn_id, func.sum(Event.cost_usd))
+        select(
+            Event.turn_id,
+            func.sum(Event.cost_usd),
+            func.sum(Event.prompt_tokens),
+            func.sum(Event.completion_tokens),
+        )
         .where(Event.campaign_run_id == run_id)
         .group_by(Event.turn_id)
         .order_by(Event.turn_id.is_(None), Event.turn_id)
@@ -4084,11 +4101,21 @@ async def run_cost(db: AsyncSession, *, user_id: str, run_id: str) -> RunCost:
     result = await db.execute(stmt)
 
     turns = [
-        TurnCost(turn_id=turn_id, total=total if total is not None else _ZERO_COST)
-        for turn_id, total in result.all()
+        TurnCost(
+            turn_id=turn_id,
+            total=total if total is not None else _ZERO_COST,
+            prompt_tokens=prompt_tokens or 0,
+            completion_tokens=completion_tokens or 0,
+        )
+        for turn_id, total, prompt_tokens, completion_tokens in result.all()
     ]
     total = sum((turn.total for turn in turns), _ZERO_COST)
-    return RunCost(total=total, turns=turns)
+    return RunCost(
+        total=total,
+        turns=turns,
+        prompt_tokens=sum(turn.prompt_tokens for turn in turns),
+        completion_tokens=sum(turn.completion_tokens for turn in turns),
+    )
 
 
 async def latest_event_id(db: AsyncSession, *, user_id: str, run_id: str) -> str | None:

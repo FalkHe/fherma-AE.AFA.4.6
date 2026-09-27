@@ -1,11 +1,12 @@
-"""WI1 (sprint 005/05b): `run_cost` (`service.py`) -- the owner-only,
-exact-decimal per-run and per-turn cost sum, and its result models
-`RunCost`/`TurnCost` (`schemas.py`).
+"""WI1 (sprint 005/05b): `run_cost` (`service.py`) -- the exact-decimal
+per-run and per-turn cost sum, and its result models `RunCost`/`TurnCost`
+(`schemas.py`).
 
 Engine-free scenarios use a small local `FakeSession`/`FakeResult` pair,
-queued in call order -- `_require_member`'s lookup first, then the grouped
-sum -- the same shape `tests/playthrough/test_service.py` uses for its own
-`FakeSession`, but not shared with it: that file's `FakeResult` has no `all()`
+queued in call order -- the gate's lookup first (`_require_member` with a
+`user_id`, `_get_run` without one), then the grouped sum -- the same shape
+`tests/playthrough/test_service.py` uses for its own `FakeSession`, but
+not shared with it: that file's `FakeResult` has no `all()`
 and this function never touches `scalars()`.
 
 The exact-sum scenario, ordering (`NULL` turn last) and the foreign-run
@@ -27,14 +28,15 @@ from app.core.ids import generate_id
 from app.core.llm.service import Usage
 from app.modules.playthrough import service
 from app.modules.playthrough.errors import CampaignRunNotFoundError
-from app.modules.playthrough.models import CampaignRunMember
+from app.modules.playthrough.models import CampaignRun, CampaignRunMember
 from app.modules.playthrough.schemas import RunCost, TurnCost
 
 
 class FakeResult:
     """Stands in for the object `AsyncSession.execute()` returns -- either
-    a single scalar (the membership lookup) or a list of `(turn_id, total)`
-    rows (the grouped sum), never both."""
+    a single scalar (the membership lookup) or a list of
+    `(turn_id, total, prompt_tokens, completion_tokens)` rows (the grouped
+    sum), never both."""
 
     def __init__(self, *, scalar=None, rows=()):
         self._scalar = scalar
@@ -72,14 +74,47 @@ def test_run_cost_checks_membership_first_like_every_other_function():
     assert exc_info.value.run_id == RUN_ID
 
 
+def test_run_cost_without_a_user_falls_back_to_the_unscoped_existence_gate():
+    # The operator command has no signed-in caller, so it passes no
+    # `user_id`: `_get_run` alone stands in for the membership check, and
+    # an unknown run still raises rather than summing to an empty zero.
+    unknown = FakeSession(FakeResult(scalar=None))
+
+    with pytest.raises(CampaignRunNotFoundError) as exc_info:
+        asyncio.run(service.run_cost(unknown, run_id=RUN_ID))
+
+    assert exc_info.value.run_id == RUN_ID
+
+    known = FakeSession(
+        FakeResult(scalar=CampaignRun(id=RUN_ID)),
+        FakeResult(rows=[("01TURNONETURNONETURNONETU", Decimal("0.000500"), 120, 40)]),
+    )
+
+    result = asyncio.run(service.run_cost(known, run_id=RUN_ID))
+
+    assert result == RunCost(
+        total=Decimal("0.000500"),
+        turns=[
+            TurnCost(
+                turn_id="01TURNONETURNONETURNONETU",
+                total=Decimal("0.000500"),
+                prompt_tokens=120,
+                completion_tokens=40,
+            )
+        ],
+        prompt_tokens=120,
+        completion_tokens=40,
+    )
+
+
 def test_run_cost_builds_the_result_models_from_the_grouped_rows():
     member = CampaignRunMember(campaign_run_id=RUN_ID, user_id=USER_ID)
     db = FakeSession(
         FakeResult(scalar=member),
         FakeResult(
             rows=[
-                ("01TURNONETURNONETURNONETU", Decimal("0.000500")),
-                (None, Decimal("0.000734")),
+                ("01TURNONETURNONETURNONETU", Decimal("0.000500"), 120, 40),
+                (None, Decimal("0.000734"), 310, 90),
             ]
         ),
     )
@@ -89,10 +124,27 @@ def test_run_cost_builds_the_result_models_from_the_grouped_rows():
     assert result == RunCost(
         total=Decimal("0.001234"),
         turns=[
-            TurnCost(turn_id="01TURNONETURNONETURNONETU", total=Decimal("0.000500")),
-            TurnCost(turn_id=None, total=Decimal("0.000734")),
+            TurnCost(
+                turn_id="01TURNONETURNONETURNONETU",
+                total=Decimal("0.000500"),
+                prompt_tokens=120,
+                completion_tokens=40,
+            ),
+            TurnCost(
+                turn_id=None,
+                total=Decimal("0.000734"),
+                prompt_tokens=310,
+                completion_tokens=90,
+            ),
         ],
+        prompt_tokens=430,
+        completion_tokens=130,
     )
+
+    # The run's own token totals are the turns' -- both columns, and their
+    # sum, are read straight off the result rather than added up by hand.
+    assert result.tokens == 560
+    assert result.turns[0].tokens == 160
 
 
 def test_run_cost_normalises_a_null_sum_and_an_empty_run_to_zero_not_none():
@@ -102,19 +154,26 @@ def test_run_cost_normalises_a_null_sum_and_an_empty_run_to_zero_not_none():
     # SQL `NULL`, not `0` -- the service normalises it.
     db_null_turn = FakeSession(
         FakeResult(scalar=member),
-        FakeResult(rows=[("01TURNONETURNONETURNONETU", None)]),
+        FakeResult(rows=[("01TURNONETURNONETURNONETU", None, None, None)]),
     )
     result = asyncio.run(service.run_cost(db_null_turn, user_id=USER_ID, run_id=RUN_ID))
     assert result.turns == [
         TurnCost(turn_id="01TURNONETURNONETURNONETU", total=Decimal("0.000000"))
     ]
     assert result.total == Decimal("0.000000")
+    # `SUM(prompt_tokens)` over a group carrying none is `NULL` too, and
+    # reads back as `0` for exactly the same reason the cost does.
+    assert result.turns[0].prompt_tokens == 0
+    assert result.turns[0].completion_tokens == 0
+    assert result.prompt_tokens == 0
+    assert result.completion_tokens == 0
 
     # A run with no events at all has no groups, and its total still reads
     # as an exact zero, never `None`.
     db_empty_run = FakeSession(FakeResult(scalar=member), FakeResult(rows=[]))
     empty_result = asyncio.run(service.run_cost(db_empty_run, user_id=USER_ID, run_id=RUN_ID))
     assert empty_result == RunCost(total=Decimal("0.000000"), turns=[])
+    assert empty_result.tokens == 0
 
 
 async def _insert_user(session, user_id: str, *, username: str) -> None:
@@ -172,10 +231,28 @@ def test_ac3_the_real_sums_group_by_turn_null_last_and_refuse_a_stranger(playthr
 
         assert result.total == Decimal("0.001234")
         assert result.turns == [
-            TurnCost(turn_id=turn_one, total=Decimal("0.000500")),
-            TurnCost(turn_id=turn_two, total=Decimal("0.000700")),
-            TurnCost(turn_id=None, total=Decimal("0.000034")),
+            TurnCost(
+                turn_id=turn_one,
+                total=Decimal("0.000500"),
+                prompt_tokens=1,
+                completion_tokens=1,
+            ),
+            TurnCost(
+                turn_id=turn_two,
+                total=Decimal("0.000700"),
+                prompt_tokens=2,
+                completion_tokens=2,
+            ),
+            # Two untagged events, only one of them carrying usage.
+            TurnCost(
+                turn_id=None,
+                total=Decimal("0.000034"),
+                prompt_tokens=1,
+                completion_tokens=1,
+            ),
         ]
+        assert result.prompt_tokens == 4
+        assert result.completion_tokens == 4
 
         # A stranger and an unknown run are both refused identically.
         with pytest.raises(CampaignRunNotFoundError):

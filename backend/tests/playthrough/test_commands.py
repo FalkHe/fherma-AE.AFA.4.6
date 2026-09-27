@@ -63,48 +63,71 @@ CAMPAIGN_ID = "greenhollow"
 VERSION = "v1"
 
 
-def test_cost_prints_run_total_and_each_turn_with_the_null_turn_last(monkeypatch):
-    async def fake_run_cost(db, *, user_id, run_id):
-        assert user_id == USER_ID
+def test_cost_prints_tokens_and_cost_per_turn_then_the_run_total(monkeypatch):
+    async def fake_run_cost(db, *, run_id, user_id=None):
+        assert user_id is None
         assert run_id == RUN_ID
         return RunCost(
             total=Decimal("0.001234"),
             turns=[
-                TurnCost(turn_id="a-turn-id", total=Decimal("0.000500")),
-                TurnCost(turn_id=None, total=Decimal("0.000734")),
+                TurnCost(
+                    turn_id="a-turn-id",
+                    total=Decimal("0.000500"),
+                    prompt_tokens=12430,
+                    completion_tokens=820,
+                ),
+                TurnCost(
+                    turn_id=None,
+                    total=Decimal("0.000734"),
+                    prompt_tokens=9120,
+                    completion_tokens=640,
+                ),
             ],
+            prompt_tokens=21550,
+            completion_tokens=1460,
         )
 
     monkeypatch.setattr(playthrough_service, "run_cost", fake_run_cost)
 
-    result = runner.invoke(cli, ["playthrough", "cost", RUN_ID, "--user", USER_ID])
+    result = runner.invoke(cli, ["playthrough", "cost", RUN_ID])
 
     assert result.exit_code == 0, result.output
     assert result.stderr == ""
+    # Columns, in that order: tokens in, tokens out, their sum, dollars --
+    # per turn with the untagged turn (`-`) last, then the run's own row
+    # under a rule.
     assert result.stdout == (
-        f"run: {RUN_ID}\ntotal: 0.001234\nturn a-turn-id: 0.000500\nturn -: 0.000734\n"
+        f"run: {RUN_ID}\n"
+        "turn              in        out     tokens      cost usd\n"
+        "--------------------------------------------------------\n"
+        "a-turn-id     12,430        820     13,250      0.000500\n"
+        "-              9,120        640      9,760      0.000734\n"
+        "--------------------------------------------------------\n"
+        "total         21,550      1,460     23,010      0.001234\n"
     )
 
 
 def test_cost_on_a_foreign_or_unknown_run_exits_1_with_not_found_on_stderr(monkeypatch):
-    async def failing_run_cost(db, *, user_id, run_id):
+    async def failing_run_cost(db, *, run_id, user_id=None):
         raise CampaignRunNotFoundError(run_id)
 
     monkeypatch.setattr(playthrough_service, "run_cost", failing_run_cost)
 
-    result = runner.invoke(cli, ["playthrough", "cost", RUN_ID, "--user", USER_ID])
+    result = runner.invoke(cli, ["playthrough", "cost", RUN_ID])
 
     assert result.exit_code == 1, result.output
     assert result.stdout == ""
     assert result.stderr.strip() == f"NOT_FOUND: campaign run not found: {RUN_ID}"
 
 
-def test_cost_requires_both_the_run_id_and_the_user_option():
-    missing_user = runner.invoke(cli, ["playthrough", "cost", RUN_ID])
-    assert missing_user.exit_code != 0
-
-    missing_run_id = runner.invoke(cli, ["playthrough", "cost", "--user", USER_ID])
+def test_cost_takes_the_run_id_alone_and_knows_no_user_option():
+    missing_run_id = runner.invoke(cli, ["playthrough", "cost"])
     assert missing_run_id.exit_code != 0
+
+    # The command is operator-side: there is no caller to scope by, so
+    # `--user` is not an option it accepts at all.
+    with_user = runner.invoke(cli, ["playthrough", "cost", RUN_ID, "--user", USER_ID])
+    assert with_user.exit_code != 0
 
 
 # --- `app playthrough roll` (WI4, sprint 005/07a) ---------------------------

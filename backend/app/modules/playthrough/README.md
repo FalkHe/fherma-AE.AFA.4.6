@@ -715,11 +715,18 @@ Service functions (`service.py`), called as `service.f(...)`:
 - `latest_event_id` — the highest `id` among a run's events, or `None`.
   Checks membership. The only function the stream endpoint below calls on
   every poll.
-- `run_cost` — `SUM(cost_usd)` over the run's events, whole and grouped by
-  `turn_id` (the `NULL`-turn group last), both as `Decimal`, never a float.
-  Checks membership like every other read. Called only from the `app
-  playthrough cost` CLI command below — no route calls it, and none is
-  meant to.
+- `run_cost` — `SUM(cost_usd)`, `SUM(prompt_tokens)` and
+  `SUM(completion_tokens)` over the run's events, whole and grouped by
+  `turn_id` (the `NULL`-turn group last), in one grouped query. Cost is a
+  `Decimal` throughout, never a float; token sums are plain `int`s, with a
+  group carrying none normalised to `0` the same way a costless group's sum
+  normalises to `Decimal("0.000000")`. `TurnCost.tokens`/`RunCost.tokens`
+  are in-plus-out, so no caller adds the two columns up itself.
+  `user_id` is optional: given one it checks membership like every other
+  read, given none it falls back to `_get_run` as its existence gate, the
+  same unscoped operator read `recap` and `recall` make. Called only from
+  the `app playthrough cost` CLI command below — no route calls it, and
+  none is meant to.
 - `recap` — a run's `n` most recent `narration` events (default 5), oldest
   first, no question asked. An operator read gated on the run's existence
   alone, not membership: `_get_run` first, no `user_id`. Picks the newest
@@ -741,11 +748,25 @@ Service functions (`service.py`), called as `service.f(...)`:
 Cost has **no HTTP route anywhere in this module, on purpose**: it is a
 developer's number, not a player's, meant for a developer drawer the
 frontend does not have yet (← D14). Until that drawer exists, the only way
-to read it is `app playthrough cost <run-id> --user <user-id>` (Typer,
-`commands.py`), which prints the run's total and then one
-`turn <turn-id>: <amount>` line per turn (`turn -: <amount>` for the
-turnless group), or `f"{exc.code}: {exc}"` to stderr and exit `1` when the
-caller is not a member (`NOT_FOUND`). A test asserts no route exposes cost,
+to read it is `app playthrough cost <run-id>` (Typer, `commands.py`), which
+prints a fixed-width table — one row per turn (`-` for the turnless group,
+last), columns `in`, `out`, `tokens`, `cost usd`, then the run's own totals
+in the same columns under a rule:
+
+```
+run: 01JBQ7F0R2K8N4X6M1V3T5W9Y0
+turn                               in        out     tokens      cost usd
+-------------------------------------------------------------------------
+01JBQ7F0R2K8N4X6M1V3T5W9Y1     12,430        820     13,250      0.000500
+-                               9,120        640      9,760      0.000734
+-------------------------------------------------------------------------
+total                          21,550      1,460     23,010      0.001234
+```
+
+or `f"{exc.code}: {exc}"` to
+stderr and exit `1` for an unknown run (`NOT_FOUND`). It takes no `--user`:
+an operator at a terminal is not a signed-in player, so it passes no
+`user_id` and the run's existence is the whole gate. A test asserts no route exposes cost,
 so a future endpoint added elsewhere in the app cannot reintroduce it by
 accident.
 
