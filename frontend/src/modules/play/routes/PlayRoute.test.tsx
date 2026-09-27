@@ -18,7 +18,7 @@
 // exact assertion while still passing every jsdom-scroll test that mocks
 // its own metrics, which is why those don't already catch it.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
@@ -347,6 +347,118 @@ describe("PlayRoute on /runs/:runId/play (AC2, AC6, AC7)", () => {
     expect(await screen.findByText("The Dungeon Master is thinking…")).toBeInTheDocument();
     expect(screen.getByText("The Dungeon Master has the floor.")).toBeInTheDocument();
     expect(screen.queryByLabelText("What do you do?")).not.toBeInTheDocument();
+  });
+
+  it("a stalled turn (mid-turn, idle) shows no Continue button before the grace period elapses, then shows one", async () => {
+    stubAuthenticated();
+    vi.useFakeTimers();
+    try {
+      mockTable("run-1", TABLE);
+      mockRoute("GET", "/api/v1/playthrough/campaign/run-1/events", {
+        status: 200,
+        body: {
+          events: [
+            { id: "e1", type: "player_action", turnId: "t1", payload: { text: "I attack." }, createdAt: "2026-09-08T21:02:00+00:00" },
+          ],
+          awaiting: "none",
+        },
+      });
+
+      renderApp(["/runs/run-1/play"]);
+      await vi.waitFor(() => expect(screen.getByText("The Dungeon Master has the floor.")).toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8000);
+      });
+
+      expect(screen.getByText("The Dungeon Master has lost the thread of that one. Nothing that already happened is lost — shall we pick it up again?")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clicking Continue on a stalled turn posts { text: null } and shows the thinking state", async () => {
+    stubAuthenticated();
+    vi.useFakeTimers();
+    try {
+      mockTable("run-1", TABLE);
+      mockRoute("GET", "/api/v1/playthrough/campaign/run-1/events", {
+        status: 200,
+        body: {
+          events: [
+            { id: "e1", type: "player_action", turnId: "t1", payload: { text: "I attack." }, createdAt: "2026-09-08T21:02:00+00:00" },
+          ],
+          awaiting: "none",
+        },
+      });
+      mockRoute("POST", "/api/v1/game/runs/run-1/turn", () => new Promise(() => {}));
+
+      renderApp(["/runs/run-1/play"]);
+      await vi.waitFor(() => expect(screen.getByText("The Dungeon Master has the floor.")).toBeInTheDocument());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8000);
+      });
+      const continueButton = screen.getByRole("button", { name: "Try again" });
+
+      await act(async () => {
+        continueButton.click();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })).toEqual([
+        expect.objectContaining({ body: { text: null } }),
+      ]);
+      expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+      expect(screen.getByText("The Dungeon Master has the floor.")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows no Continue button while a send is in flight, even once the same run later goes idle mid-turn", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockEvents("run-1", [
+      { id: "e1", type: "narration", turnId: "t1", payload: { text: "The door creaks open." }, createdAt: "2026-09-08T21:02:00+00:00" },
+    ]);
+    mockRoute("POST", "/api/v1/game/runs/run-1/turn", () => new Promise(() => {}));
+
+    renderApp(["/runs/run-1/play"]);
+    const field = await screen.findByLabelText("What do you do?");
+
+    const user = userEvent.setup();
+    await user.type(field, "I look around.");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(screen.getByText("The Dungeon Master has the floor.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+
+  it("shows no Continue button while a roll or a choice is awaited, even mid-turn", async () => {
+    stubAuthenticated();
+    mockTable("run-1", TABLE);
+    mockRoute("GET", "/api/v1/playthrough/campaign/run-1/events", {
+      status: 200,
+      body: {
+        events: [
+          {
+            id: "e1",
+            type: "roll_requested",
+            turnId: "t1",
+            payload: { formula: "1d20+3", context: { ability: "Dexterity" } },
+            createdAt: "2026-09-08T21:02:00+00:00",
+          },
+        ],
+        awaiting: "roll:e1",
+      },
+    });
+
+    renderApp(["/runs/run-1/play"]);
+
+    expect(await screen.findByRole("button", { name: /1d20\+3/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
   });
 
   it("AC3: a transcript ending in narration (awaiting none) shows no thinking line and reopens the composer", async () => {

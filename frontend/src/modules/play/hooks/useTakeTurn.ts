@@ -112,5 +112,17 @@ export function useTakeTurn({ runId, rows }: UseTakeTurnArgs) {
     mutation.mutate(null);
   }
 
-  return { send, startOpening, roll, isSending: mutation.isPending, pending };
+  // The stalled-turn "Continue" button (chore/todo-items): same shape as
+  // `startOpening`/`roll` again -- a lost or failed response leaves the
+  // transcript mid-turn (last event not a narration) with nothing in
+  // flight, and the backend resumes that exact checkpoint on `{ text: null
+  // }` same as it does for an opening turn. Its own name, not a third call
+  // to `startOpening`, since "resume a stalled turn" reads differently from
+  // "open the adventure" at the call site even though the body is
+  // identical.
+  function continueTurn(): void {
+    mutation.mutate(null);
+  }
+
+  return { send, startOpening, roll, continueTurn, isSending: mutation.isPending, pending };
 }

@@ -106,6 +106,22 @@ describe("useTakeTurn", () => {
     ]);
   });
 
+  it("continueTurn posts { text: null } and leaves pending null (chore/todo-items)", async () => {
+    mockRoute("POST", "/api/v1/game/runs/run-1/turn", () => new Promise(() => {}));
+
+    const { result } = renderHook(() => useTakeTurn({ runId: "run-1", rows: [] }), { wrapper });
+
+    act(() => {
+      result.current.continueTurn();
+    });
+
+    await waitFor(() => expect(result.current.isSending).toBe(true));
+    expect(result.current.pending).toBeNull();
+    expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })).toEqual([
+      expect.objectContaining({ body: { text: null } }),
+    ]);
+  });
+
   it("roll posts { text: null } and leaves pending null ← I6", async () => {
     mockRoute("POST", "/api/v1/game/runs/run-1/turn", () => new Promise(() => {}));
 

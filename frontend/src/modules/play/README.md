@@ -227,6 +227,21 @@ module owns everything past "Start adventure" / "Continue".
   permanent closed line (`composer.closed`) plus a link back to the
   campaign (`end.button`), instead of the turn-in-progress composer states.
 
+## Owns (chore/todo-items — a stalled turn offers a way to continue)
+
+- `hooks/useTakeTurn.ts` — also exposes `continueTurn()`, same body as
+  `startOpening`/`roll` (`{ text: null }` through the same mutation), for the
+  "Continue" button below.
+- `PlayRoute` derives `stallCandidate` (no send in flight, no roll/choice
+  awaited, `turnUnfinished` still true — the shape a dropped response or a
+  backend failure mid-turn leaves behind, including after a reload with
+  nothing left in flight to resume it) and, once that has held for ~8 s
+  (`STALL_GRACE_MS`, so an ordinary turn's own round trip never flashes it),
+  replaces the closed composer with `failure.line` plus a `failure.retry`
+  ("Try again") button that calls `continueTurn`. The 8 s wait only ever
+  guards the first appearance; once shown, a `continueTurn` that fails again
+  keeps the button up with no second wait.
+
 ## Surface
 
 - `TranscriptRow`, `SystemKey`, `EventRead` (re-exported) — consumed by

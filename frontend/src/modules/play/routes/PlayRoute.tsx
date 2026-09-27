@@ -37,7 +37,7 @@
 // from here means giving *this* screen a genuine, viewport-relative height
 // and letting the transcript fill whatever is left of it via flex, rather
 // than reaching into `core/layout` (out of this work item's ownership).
-import { useEffect, useRef, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import Alert from "@mui/material/Alert";
@@ -72,6 +72,17 @@ interface PlayScreenProps {
 // itself is `core/`, outside this work item.
 const APP_BAR_HEIGHT_PX = { xs: 56 + 1, sm: 64 + 1 };
 
+// Live situation (chore/todo-items): a turn that never got a closing
+// narration -- a dropped response, or a backend failure mid-turn -- leaves
+// `turnUnfinished` true forever with nothing in flight to clear it; a
+// reload of that same run finds no `isSending` mutation to resume it
+// either, since `useTakeTurn` starts fresh each mount. This is the grace
+// period before the "Continue" line replaces the closed composer -- long
+// enough that an ordinary turn's own round trip never flashes it (the
+// brief's own ballpark, "~8 s"), short enough that a genuinely stuck run
+// does not read as merely slow.
+const STALL_GRACE_MS = 8000;
+
 function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   const { t } = useTranslation("play");
   const queryClient = useQueryClient();
@@ -90,7 +101,7 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // sent (renamed `pendingTurn` below); the two are unrelated shapes that
   // happen to share a name across their own hooks.
   const { rows, awaiting, turnUnfinished, pending } = usePlayTranscript(runId, heroName, { isSendingRef });
-  const { send, startOpening, roll, isSending, pending: pendingTurn } = useTakeTurn({ runId, rows });
+  const { send, startOpening, roll, continueTurn, isSending, pending: pendingTurn } = useTakeTurn({ runId, rows });
 
   // Sprint 010/08 WI4, I5: a run just entered from the lobby carries
   // `{ startOpening: true }` in router state (`useEnterAdventure.ts`); this
@@ -138,6 +149,37 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // all -- whenever the last recorded event is not yet the closing
   // narration (AC4).
   const turnRunning = isSending || (awaiting === "none" && turnUnfinished);
+
+  // The stalled-turn "Continue" line (chore/todo-items): a candidate the
+  // instant a turn looks mid-flight with nothing actually sending -- the
+  // exact shape a dropped response or a reload after a backend failure
+  // leaves behind (`turnRunning` above already names this "still running",
+  // but that also covers an ordinary turn a few seconds into a normal
+  // round trip, which must not flash this line). `roll`/`answer` prompts
+  // are excluded on purpose: those already have their own open control
+  // (`PendingPrompt`), so nothing here competes with it.
+  const stallCandidate = !isSending && awaiting === "none" && turnUnfinished;
+  // Once the grace period has elapsed once, a retry that fails again must
+  // not vanish back behind another 8 s wait (spec: "keep the button
+  // available") -- `timerFired` never resets to `false` once the timeout
+  // has landed, so a relapse after a failed "Continue" click shows the
+  // button again the moment `stallCandidate` is next true, with no second
+  // wait.
+  const [timerFired, setTimerFired] = useState(false);
+
+  useEffect(() => {
+    if (!stallCandidate || timerFired) {
+      return;
+    }
+    const timer = setTimeout(() => setTimerFired(true), STALL_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [stallCandidate, timerFired]);
+
+  // Derived, not a bare state read: `stallCandidate` itself must also
+  // still hold at render time, so a turn that resolves the instant after
+  // the grace timer fired (but before this render) never flashes the
+  // button.
+  const stalled = stallCandidate && timerFired;
 
   // Defect B fix: the table read (`usePlayTable.ts`) is fetched once on
   // mount and never invalidated by a turn settling, so `table.scene` itself
@@ -262,6 +304,28 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
                 {t("end.button", { campaign: table.campaignTitle })}
               </Link>
             )}
+          </Stack>
+        ) : stalled ? (
+          // Same closed-composer styling as the other three in-voice lines
+          // above (`Composer.tsx`'s own three), plus a real control: unlike
+          // those, nothing else on screen can ever clear this state on its
+          // own (no in-flight mutation, no fresh notice tick coming --
+          // `useRunNotices` only fires on a *new* event, and the stuck run
+          // has none), so the player needs a button, not just a line.
+          <Stack spacing={1} sx={{ alignItems: "center" }}>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-small)",
+                textAlign: "center",
+              }}
+            >
+              {t("failure.line")}
+            </Typography>
+            <Button variant="outlined" onClick={continueTurn}>
+              {t("failure.retry")}
+            </Button>
           </Stack>
         ) : (
           <Composer state={composerState} onSend={send} />
