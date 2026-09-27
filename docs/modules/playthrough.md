@@ -326,7 +326,8 @@ another player's game. `_require_writable`, also internal, raises
 `RunArchivedError` on an `archived` run; `rename_campaign_run`,
 `create_character`, `enter_adventure` and `use_exit` call it right after
 `_require_member`. `run_cost` is the one function on this list with no
-route calling it at all — §11.
+route calling it at all, and the one whose user is optional, because its
+only caller is an operator command — §11.
 
 **Starting a run** does three things at once, because none of them makes
 sense without the others: it pins the campaign's current content version onto
@@ -642,11 +643,17 @@ float, so a run built from many small charges reports the number those
 charges actually add up to, not a number close to it.
 
 Nothing about this is reachable over the network. The only way to ask what a
-run has cost is a command run by hand: `app playthrough cost <run-id> --user
-<user-id>`, which prints the run's total and then one line per turn. It is
-gated exactly like every other read in this module — the user must be a
-member of the run, and asking about someone else's run answers the same
-"not found" a foreign run gets anywhere else in the module, not a number.
+run has cost is a command run by hand: `app playthrough cost <run-id>`, which
+prints one row per turn — tokens in, tokens out, their sum and the exact
+dollars — and then the run's own totals in the same columns. The token
+counts come from the same `events` rows the cost does, so a turn that looks
+expensive can be read against how much it sent and how much came back
+without a second query or a second command. It names no user: whoever
+runs it is an operator with the database in front of them, not a player, so
+there is nothing to scope the answer to. The run must exist — an unknown id
+answers the same "not found" it gets anywhere else in the module, not a
+number — and the service still takes a `user_id` when a caller has one, in
+which case membership is checked exactly like every other read here.
 
 **Cost has no address because it is a developer's number, not a player's.**
 Nobody playing a game needs to see what their turn cost in model spend; the

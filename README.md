@@ -24,17 +24,19 @@ AI-assisted character creation, and a playable Dungeon Master agent with
 deterministic mechanics, persistent game state, and SRD rule retrieval.
 
 **Implemented Features:**
-- basic persistent game schema and mechanics
+- persistent game schema and mechanics
 - first Campaign + 1 Adventure Story
 - SRD Rule ingestion (embedding)
 - simple character creation agent
-- **The Dungeon Master Agent ( core of this Project )**
+- **The Dungeon Master Agent ( core of this Sprint )**
 - Langfuse / Langsmith Tracing
 
 **Planned Features - Stage 02 ( AE Capstone )**
 - advanced DM Agent
-  - Optimized Context
-  - Optimized Prompts ( automated Walkthrough tests  with analysis)
+  - Optimized Context ( on-point Situation )
+  - Optimized Prompts ( automated Walkthrough tests with analysis )
+  - Simplify Action Routing (`advance`+`decide`)
+  - JEV for decissions and guarding
 - Party sidebar ( display current, stats, scene, etc. )
 - Narration token Streaming
 - automated Image generation for Adventures, Scenes and Characters
