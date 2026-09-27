@@ -2349,7 +2349,15 @@ async def _resolve_roll_outcome(
     roll_event = await _get_roll_event(db, roll_id)
     run = await _require_ready_or_active_run(db, run_id=roll_event.campaign_run_id, user_id=user_id)
 
-    if not (_MIN_DC <= dc <= _MAX_DC):
+    # `dc` is typed `int`, but a caller upstream (an operation payload built
+    # from unvalidated model output) can still hand this a `None` or a
+    # non-numeric value -- ← live bug (run 01M3H3EXQVF0X3BWGH2KVZ0YYW):
+    # `None <= dc <= _MAX_DC` raised `TypeError` instead of the documented
+    # `InvalidDcError` refusal. `agent/operations.invalid_dc_reason` now
+    # refuses this before any service call is ever made; this check stays
+    # as the last line of defence so this function itself can never raise
+    # anything but the errors its own docstring promises.
+    if not isinstance(dc, int) or isinstance(dc, bool) or not (_MIN_DC <= dc <= _MAX_DC):
         await _refuse_roll(
             db,
             run_id=run.id,

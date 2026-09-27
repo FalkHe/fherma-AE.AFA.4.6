@@ -196,6 +196,68 @@ def test_execute_operation_refuses_give_item_with_a_stale_receiver(monkeypatch):
     assert called is False
 
 
+def test_execute_operation_refuses_resolve_check_with_no_dc_without_a_service_call(monkeypatch):
+    """← live bug, run 01M3H3EXQVF0X3BWGH2KVZ0YYW: a `read-move` decision
+    proposed `request_roll` naming `resolve_check` as its consumer with no
+    `dc` -- `dc` reached `resolve_check` as `None` and crashed
+    `_resolve_roll_outcome`'s bare `<=` chain with a `TypeError`. A `dc`
+    that is missing, `None`, or outside the SRD's 5-30 range is now
+    refused before `resolve_check` is ever called."""
+    called = False
+
+    async def fake_resolve_check(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(playthrough_service, "resolve_check", fake_resolve_check)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.RESOLVE_CHECK,
+        payload={"dc": None, "roll_id": "roll-1"},
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "refused"
+    assert result.reason == "invalid_dc"
+    assert delta == {}
+    assert called is False
+
+
+def test_execute_operation_refuses_request_roll_for_a_check_with_no_dc(monkeypatch):
+    called = False
+
+    async def fake_request_player_roll(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(playthrough_service, "request_player_roll", fake_request_player_roll)
+
+    ctx = OperationContext(
+        db="db-handle", user_id="user-1", run_id="run-1", hero_id="hero-1", situation=_situation()
+    )
+    op = Operation(
+        operation_id="op-1",
+        kind=OperationKind.REQUEST_ROLL,
+        payload={
+            "actor_id": "hero-1",
+            "ability": "dex",
+            "consumer": OperationKind.RESOLVE_CHECK.value,
+        },
+    )
+
+    result, delta = asyncio.run(execute_operation(ctx, op, _state()))
+
+    assert result.status == "refused"
+    assert result.reason == "invalid_dc"
+    assert delta == {}
+    assert called is False
+
+
 def test_roll_actor_refuses_instead_of_crashing_when_derivation_raises(monkeypatch):
     """← live bug (run 01M3E8VSFCZ856D2SNFATQXAPM): `playthrough_service.roll`
     raising `ValueError` (a weaponless actor, or an unresolved attack name)

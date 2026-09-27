@@ -376,6 +376,28 @@ def test_resolve_check_refuses_a_dc_outside_five_to_thirty(playthrough_db):
 
 
 @pytest.mark.database
+def test_resolve_check_refuses_a_none_dc_instead_of_raising_typeerror(playthrough_db):
+    """← live bug, run 01M3H3EXQVF0X3BWGH2KVZ0YYW: an unauthored check
+    proposed with no `dc` reached this function as `dc=None` and crashed
+    `not (_MIN_DC <= dc <= _MAX_DC)` with `TypeError` instead of the
+    documented `InvalidDcError` refusal."""
+
+    async def _scenario():
+        user_id = generate_id()
+        await _insert_user(playthrough_db, user_id, username="resolve-check-none-dc")
+        await playthrough_db.commit()
+        _, character = await _new_character(playthrough_db, user_id=user_id)
+
+        rolled = await _make_roll(playthrough_db, user_id=user_id, actor_id=character.id)
+
+        with pytest.raises(InvalidDcError) as excinfo:
+            await service.resolve_check(playthrough_db, user_id=user_id, roll_id=rolled.id, dc=None)
+        assert excinfo.value.code == ErrorCode.INVALID_DC
+
+    asyncio.run(_scenario())
+
+
+@pytest.mark.database
 def test_resolve_check_refuses_a_roll_already_spent_by_a_prior_successful_call(playthrough_db):
     async def _scenario():
         user_id = generate_id()

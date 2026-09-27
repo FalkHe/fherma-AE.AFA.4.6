@@ -177,6 +177,50 @@ def test_execute_stores_an_operation_result_and_applies_its_delta(monkeypatch):
     assert delta["action"].status == "complete"
 
 
+def test_execute_turns_a_handler_exception_into_a_refused_result_and_rolls_back(monkeypatch):
+    """← live bug, run 01M3H3EXQVF0X3BWGH2KVZ0YYW: a handler bug (there, a
+    `None` `dc` reaching a bare comparison) raised straight out of
+    `execute()`, 500ing the turn and making every retry replay and
+    re-crash the same node. Any exception a handler raises must instead
+    become an ordinary `refused` result, with the session rolled back."""
+
+    class _FakeDb:
+        def __init__(self):
+            self.rolled_back = False
+
+        async def rollback(self):
+            self.rolled_back = True
+
+    async def fake_execute_operation(ctx, op, state):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(playthrough_service, "get_situation", _fake_get_situation)
+    monkeypatch.setattr(flow_nodes.operations, "execute_operation", fake_execute_operation)
+    db = _FakeDb()
+    flow_nodes.set_runtime(flow_nodes.FlowRuntime(db=db, user_id="user-1", model=None))
+
+    op = Operation(
+        operation_id="o1", kind=OperationKind.COMPLETE_ACTION, payload={"action_id": "a1"}
+    )
+    action = ActionCursor(
+        action_id="a1",
+        actor_id="hero-1",
+        kind="attack",
+        plan=(OperationSpec(kind=OperationKind.COMPLETE_ACTION, payload={}),),
+        step_index=1,
+        status="reserved",
+        roll_id=None,
+        roll_consumed=False,
+    )
+    state = _state(effect=op, action=action)
+
+    delta = asyncio.run(flow_nodes.execute(state))
+
+    assert delta["result"].status == "refused"
+    assert delta["result"].reason == "internal_error"
+    assert db.rolled_back is True
+
+
 def test_narrate_stores_a_draft(monkeypatch):
     monkeypatch.setattr(playthrough_service, "get_situation", _fake_get_situation)
     model = ScriptedChatModel(["A quiet room."])
