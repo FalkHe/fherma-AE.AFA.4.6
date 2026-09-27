@@ -455,7 +455,7 @@ def test_actions_prints_checkpoint_history_in_chronological_order(monkeypatch):
     snapshots = [
         SimpleNamespace(
             config={"configurable": {"checkpoint_id": "cp-2"}},
-            created_at=None,
+            created_at="2026-09-27T14:05:07+00:00",
             metadata={"step": 2, "source": "loop", "writes": {"narrate": {"messages": ["reply"]}}},
             next=("narrate",),
             values={},
@@ -464,7 +464,7 @@ def test_actions_prints_checkpoint_history_in_chronological_order(monkeypatch):
         ),
         SimpleNamespace(
             config={"configurable": {"checkpoint_id": "cp-1"}},
-            created_at=None,
+            created_at="2026-09-27T14:05:06+00:00",
             metadata={"step": 1, "source": "loop", "writes": {"advance": {}}},
             next=("execute",),
             values={},
@@ -492,8 +492,11 @@ def test_actions_prints_checkpoint_history_in_chronological_order(monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "thread: run-1" in result.stdout
-    assert result.stdout.index("[cp-1]") < result.stdout.index("[cp-2]")
-    assert '"narrate"' in result.stdout
+    first = "[14:05:06] [1] - loop next: execute"
+    second = "[14:05:07] [2] - loop next: narrate"
+    assert result.stdout.index(first) < result.stdout.index(second)
+    assert "  writes: advance" in result.stdout
+    assert "  writes: narrate" in result.stdout
 
 
 def test_actions_verbose_includes_pending_interrupts(monkeypatch):

@@ -11,6 +11,7 @@ to render what just happened and to know what to prompt for next
 import asyncio
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -302,14 +303,26 @@ def _print_action_snapshot(snapshot: Any, *, verbose: bool) -> None:
     step = metadata.get("step", "?")
     source = metadata.get("source", "?")
     next_nodes = list(getattr(snapshot, "next", ()) or ())
-    checkpoint = _snapshot_id(snapshot) or "?"
     created_at = getattr(snapshot, "created_at", None)
-    when = f" {created_at}" if created_at else ""
-    typer.echo(f"[{checkpoint}]{when} step={step} source={source} next={next_nodes or ['END']}")
+    if isinstance(created_at, datetime):
+        created = created_at.strftime("%H:%M:%S")
+    elif created_at:
+        try:
+            created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00")).strftime(
+                "%H:%M:%S"
+            )
+        except ValueError:
+            created = "?"
+    else:
+        created = "?"
+
+    next_label = ", ".join(str(node) for node in next_nodes) if next_nodes else "END"
+    typer.echo(f"[{created}] [{step}] - {source} next: {next_label}")
 
     writes = metadata.get("writes")
     if writes:
-        typer.echo(json.dumps(_jsonable(writes), indent=2, default=str))
+        write_names = writes.keys() if isinstance(writes, dict) else (writes,)
+        typer.echo(f"  writes: {', '.join(str(name) for name in write_names)}")
 
     tasks = getattr(snapshot, "tasks", ()) or ()
     for task in tasks:
