@@ -37,7 +37,7 @@
 // from here means giving *this* screen a genuine, viewport-relative height
 // and letting the transcript fill whatever is left of it via flex, rather
 // than reaching into `core/layout` (out of this work item's ownership).
-import { useEffect, useRef, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Link as RouterLink, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import Alert from "@mui/material/Alert";
@@ -72,6 +72,17 @@ interface PlayScreenProps {
 // itself is `core/`, outside this work item.
 const APP_BAR_HEIGHT_PX = { xs: 56 + 1, sm: 64 + 1 };
 
+// Live situation (chore/todo-items): a turn that never got a closing
+// narration -- a dropped response, or a backend failure mid-turn -- leaves
+// `turnUnfinished` true forever with nothing in flight to clear it; a
+// reload of that same run finds no `isSending` mutation to resume it
+// either, since `useTakeTurn` starts fresh each mount. This is the grace
+// period before the "Continue" line replaces the closed composer -- long
+// enough that an ordinary turn's own round trip never flashes it (the
+// brief's own ballpark, "~8 s"), short enough that a genuinely stuck run
+// does not read as merely slow.
+const STALL_GRACE_MS = 8000;
+
 function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   const { t } = useTranslation("play");
   const queryClient = useQueryClient();
@@ -90,7 +101,7 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // sent (renamed `pendingTurn` below); the two are unrelated shapes that
   // happen to share a name across their own hooks.
   const { rows, awaiting, turnUnfinished, pending } = usePlayTranscript(runId, heroName, { isSendingRef });
-  const { send, startOpening, roll, isSending, pending: pendingTurn } = useTakeTurn({ runId, rows });
+  const { send, startOpening, roll, continueTurn, isSending, pending: pendingTurn } = useTakeTurn({ runId, rows });
 
   // Sprint 010/08 WI4, I5: a run just entered from the lobby carries
   // `{ startOpening: true }` in router state (`useEnterAdventure.ts`); this
@@ -99,6 +110,13 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // thinking line and the closed composer while it runs.
   useOpeningTurn(startOpening);
 
+  // A ref, synced from its own effect (not read during render -- the
+  // `react-hooks` lint rule disallows writing a ref's `.current` there,
+  // and for good reason: React does not guarantee this render is the one
+  // that commits). `usePlayTranscript.ts`'s own fallback-poll fix (defect A
+  // round 2) no longer depends on this being perfectly up to the render;
+  // the primary fix there is `useTakeTurn.ts`'s `cancelRefetch: true`, which
+  // does not go through this ref at all.
   useEffect(() => {
     isSendingRef.current = isSending;
   }, [isSending]);
@@ -110,7 +128,11 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   useRunNotices(runId, () => {
     // `cancelRefetch` lives on `invalidateQueries`'s second argument, not
     // inside the filters object -- same note as `useTakeTurn.ts`'s own call.
-    void queryClient.invalidateQueries({ queryKey: ["transcript", runId] }, { cancelRefetch: false });
+    // `true` (defect A round 2, matching `useTakeTurn.ts`'s own fix): a tick
+    // arriving while an earlier read from before this turn's narration
+    // landed is still in flight must not fold into that stale read -- it
+    // needs its own, fresh one, same reasoning as the post-turn settle.
+    void queryClient.invalidateQueries({ queryKey: ["transcript", runId] }, { cancelRefetch: true });
   });
 
   // The player's own words show at once, before the network round-trip
@@ -128,6 +150,52 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // narration (AC4).
   const turnRunning = isSending || (awaiting === "none" && turnUnfinished);
 
+  // The stalled-turn "Continue" line (chore/todo-items): a candidate the
+  // instant a turn looks mid-flight with nothing actually sending -- the
+  // exact shape a dropped response or a reload after a backend failure
+  // leaves behind (`turnRunning` above already names this "still running",
+  // but that also covers an ordinary turn a few seconds into a normal
+  // round trip, which must not flash this line). `roll`/`answer` prompts
+  // are excluded on purpose: those already have their own open control
+  // (`PendingPrompt`), so nothing here competes with it.
+  const stallCandidate = !isSending && awaiting === "none" && turnUnfinished;
+  // Once the grace period has elapsed once, a retry that fails again must
+  // not vanish back behind another 8 s wait (spec: "keep the button
+  // available") -- `timerFired` never resets to `false` once the timeout
+  // has landed, so a relapse after a failed "Continue" click shows the
+  // button again the moment `stallCandidate` is next true, with no second
+  // wait.
+  const [timerFired, setTimerFired] = useState(false);
+
+  useEffect(() => {
+    if (!stallCandidate || timerFired) {
+      return;
+    }
+    const timer = setTimeout(() => setTimerFired(true), STALL_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [stallCandidate, timerFired]);
+
+  // Derived, not a bare state read: `stallCandidate` itself must also
+  // still hold at render time, so a turn that resolves the instant after
+  // the grace timer fired (but before this render) never flashes the
+  // button.
+  const stalled = stallCandidate && timerFired;
+
+  // Defect B fix: the table read (`usePlayTable.ts`) is fetched once on
+  // mount and never invalidated by a turn settling, so `table.scene` itself
+  // stays whatever scene the run was in when the page loaded -- a move
+  // that enters a new scene mid-session left this line unchanged until a
+  // reload. The transcript, by contrast, is already kept live (this turn's
+  // own settle invalidates it, `useTakeTurn.ts`/`useRunNotices` above); its
+  // own `scene_entered` rows (`divider`, `transcript.ts`) are the same fact
+  // the header wants, read fresher. The *last* divider row in `rows` is the
+  // scene most recently entered; `table.scene`'s own name is kept as the
+  // fallback for a run with no scene row yet (a fresh adventure whose
+  // opening turn has not landed one -- `table.scene` already reflects that
+  // one correctly and the transcript would otherwise show nothing).
+  const latestDivider = [...rows].reverse().find((row) => row.kind === "divider");
+  const sceneName = latestDivider?.scene ?? table.scene?.name ?? null;
+
   // Sprint 010/09 WI5, I6: `isSending` wins outright -- the moment an answer
   // or a roll is sent, the buttons must be gone even before the transcript
   // re-read catches up and clears `awaiting` itself (the stale read still
@@ -135,6 +203,15 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
   // buttons this render is meant to hide). Only once nothing is sending does
   // a still-open `awaiting` marker pick the choice/roll line; last, the
   // plain running/open split AC4 already covered.
+  // The run itself is over (`finish_run`, `backend/app/modules/playthrough/
+  // service.py`): `table.runStatus` flips to `"finished"` and stays there
+  // for the rest of this run's life -- read straight off the table, not
+  // derived from the transcript's own `ending` row, since a finished run
+  // with a transcript the events read has not yet caught up to (a reload
+  // racing the finishing turn's own settle) must close the composer just
+  // as surely as one that has.
+  const finished = table.runStatus === "finished";
+
   let composerState: ComposerState;
   if (isSending) {
     composerState = "turnRunning";
@@ -186,8 +263,8 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
             {table.adventure.title}
           </Typography>
         )}
-        {table.scene !== null && (
-          <Typography sx={{ color: "text.secondary" }}>{t("header.scene", { scene: table.scene.name })}</Typography>
+        {sceneName !== null && (
+          <Typography sx={{ color: "text.secondary" }}>{t("header.scene", { scene: sceneName })}</Typography>
         )}
       </Stack>
 
@@ -204,7 +281,55 @@ function PlayScreen({ runId, table }: PlayScreenProps): ReactElement {
       </Box>
 
       <Box sx={{ px: 4, flexShrink: 0 }}>
-        <Composer state={composerState} onSend={send} />
+        {finished ? (
+          // A finished run never reopens for another turn (defect fix):
+          // the composer's own three "closed" states (`Composer.tsx`) all
+          // describe a turn still in progress, not a run that has ended
+          // outright, so this is a fourth, permanent closed line, drawn
+          // here rather than inside `Composer` since it alone needs the
+          // campaign link back out.
+          <Stack spacing={1} sx={{ alignItems: "center" }}>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-small)",
+                textAlign: "center",
+              }}
+            >
+              {t("composer.closed")}
+            </Typography>
+            {table.campaignTitle !== null && (
+              <Link component={RouterLink} to={`/runs/${runId}`}>
+                {t("end.button", { campaign: table.campaignTitle })}
+              </Link>
+            )}
+          </Stack>
+        ) : stalled ? (
+          // Same closed-composer styling as the other three in-voice lines
+          // above (`Composer.tsx`'s own three), plus a real control: unlike
+          // those, nothing else on screen can ever clear this state on its
+          // own (no in-flight mutation, no fresh notice tick coming --
+          // `useRunNotices` only fires on a *new* event, and the stuck run
+          // has none), so the player needs a button, not just a line.
+          <Stack spacing={1} sx={{ alignItems: "center" }}>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-small)",
+                textAlign: "center",
+              }}
+            >
+              {t("failure.line")}
+            </Typography>
+            <Button variant="outlined" onClick={continueTurn}>
+              {t("failure.retry")}
+            </Button>
+          </Stack>
+        ) : (
+          <Composer state={composerState} onSend={send} />
+        )}
       </Box>
     </Stack>
   );

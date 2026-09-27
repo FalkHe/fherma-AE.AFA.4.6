@@ -26,10 +26,11 @@ from app.modules.game.agent import flow_nodes
 from app.modules.game.agent.decisions import (
     MonsterActionOut,
     MoveAssessmentOut,
+    OperationSpecOut,
     ReadMoveOut,
     ReferenceJudgementOut,
 )
-from app.modules.game.agent.flow_state import TurnFrame
+from app.modules.game.agent.flow_state import OperationKind, TurnFrame
 from app.modules.game.agent.graph import build_graph, initial_state
 from app.modules.playthrough import dice
 from app.modules.playthrough import service as playthrough_service
@@ -520,5 +521,279 @@ def test_combat_from_ambiguous_target_to_defeat(playthrough_db):
 
         awaiting = await playthrough_service.get_awaiting(db, user_id=owner_id, run_id=run_id)
         assert awaiting == "none"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.database
+def test_attack_naming_a_weaponless_carried_item_refuses_instead_of_crashing(playthrough_db):
+    """← live bug (run 01M3E8VSFCZ856D2SNFATQXAPM): the hero received the
+    shepherd's knife from Mira, walked to `lair-maw` and attacked a goblin
+    naming the knife, but `read_move`'s own `refs["item_id"]` pointed at
+    a carried item with no attacks at all (here, the seed pack's own
+    `wooden-shield` -- attacks are never invented for a shield) instead
+    of the knife. `dice.derive_formula` raised `ValueError` ("this actor
+    has no attacks"), and nothing between `_roll_actor` and the graph
+    ever caught it, so the whole turn 500'd and the run got stuck: every
+    resumed `POST /turn` replayed the same crash. The turn must instead
+    refuse the roll and close out narratively, exactly as any other
+    refused plan step does (`advance.reconcile_step`)."""
+
+    async def scenario():
+        from tests.game.fakes import ScriptedChatModel
+
+        db = playthrough_db
+        owner_id, run_id, hero_id = await _setup_run(db, username="weaponless-attack-flow")
+        await playthrough_service.use_exit(
+            db, user_id=owner_id, actor_id=hero_id, exit_id=TO_THORNWAY
+        )
+        await playthrough_service.use_exit(
+            db, user_id=owner_id, actor_id=hero_id, exit_id="to-lair-maw"
+        )
+
+        goblin_ids = await _object_ids(db, run_id, template_id=GOBLIN_TEMPLATE, scene_id=LAIR_MAW)
+        assert goblin_ids, "greenhollow/v1's lair-maw placement changed under this test"
+        target_id = goblin_ids[0]
+
+        shield_row = (
+            await db.execute(
+                text(
+                    "SELECT id FROM objects WHERE campaign_run_id = :run_id "
+                    "AND owner_object_id = :hero_id AND template_id = 'wooden-shield'"
+                ),
+                {"run_id": run_id, "hero_id": hero_id},
+            )
+        ).one()
+        shield_id = shield_row.id
+
+        saver = InMemorySaver(serde=checkpointer_service.checkpoint_serde())
+        config = {"configurable": {"thread_id": run_id}}
+
+        attack_text = "I attack the goblin with my shepherd's knife."
+        attack_turn_id = generate_id()
+        await playthrough_service.record_player_action(
+            db, user_id=owner_id, run_id=run_id, text=attack_text, turn_id=attack_turn_id
+        )
+        frame = _frame(
+            run_id=run_id,
+            hero_id=hero_id,
+            turn_id=attack_turn_id,
+            input_kind="action",
+            text=attack_text,
+        )
+
+        # `read_move` names the target unambiguously but resolves the
+        # wrong carried item under `item_id` -- exactly the shape of the
+        # live model's mistake, never a raw dice-layer test alone.
+        script: list = [
+            AIMessage(content="Rosalind lunges at the goblin."),
+            ReadMoveOut(
+                intent="attack",
+                refs={"target_id": target_id, "item_id": shield_id},
+                proposed=None,
+            ),
+        ]
+        # The refused roll still closes the hero's own action out (←
+        # `advance.reconcile_step`), but combat itself continues: every
+        # eligible hostile still gets exactly one `monster_action`
+        # decision this round.
+        for goblin_id in goblin_ids:
+            script.append(
+                MonsterActionOut(actor_id=goblin_id, attack="Rusty Shortsword", target_id=hero_id)
+            )
+        script.append("Rosalind's strike goes wide and the goblins turn on her.")
+
+        model = ScriptedChatModel(script)
+        flow_nodes.set_runtime(flow_nodes.FlowRuntime(db=db, user_id=owner_id, model=model))
+        graph = build_graph(model=model, checkpointer=saver)
+
+        result = await graph.ainvoke(initial_state(frame), config=config)
+
+        guard = 0
+        while "__interrupt__" in result:
+            interrupt = result["__interrupt__"][0]
+            guard += 1
+            assert guard < 40, "runaway interrupt loop"
+            if interrupt.value.get("options"):
+                resume_value = interrupt.value["options"][0]
+            else:
+                resume_value = {"acknowledged": True}
+            result = await graph.ainvoke(Command(resume=resume_value), config=config)
+
+        rows = await _events_for_run(db, run_id)
+        by_turn = [row for row in rows if row.turn_id == frame.turn_id]
+        kinds = [row.type for row in by_turn]
+        assert "narration" in kinds, kinds
+        assert "error" not in kinds, kinds
+
+        awaiting = await playthrough_service.get_awaiting(db, user_id=owner_id, run_id=run_id)
+        assert awaiting == "none"
+
+        # The run itself is never stuck: a second, unrelated turn still
+        # goes through cleanly afterwards.
+        followup_text = "I catch my breath."
+        followup_turn_id = generate_id()
+        await playthrough_service.record_player_action(
+            db, user_id=owner_id, run_id=run_id, text=followup_text, turn_id=followup_turn_id
+        )
+        followup_frame = _frame(
+            run_id=run_id,
+            hero_id=hero_id,
+            turn_id=followup_turn_id,
+            input_kind="action",
+            text=followup_text,
+        )
+        followup_model = ScriptedChatModel(
+            [
+                AIMessage(content="Rosalind steadies herself."),
+                ReadMoveOut(intent="wait", refs={}, proposed=None),
+                "Rosalind takes a breath, the goblins still unaware above.",
+            ]
+        )
+        flow_nodes.set_runtime(
+            flow_nodes.FlowRuntime(db=db, user_id=owner_id, model=followup_model)
+        )
+        followup_graph = build_graph(model=followup_model, checkpointer=saver)
+        followup_result = await followup_graph.ainvoke(initial_state(followup_frame), config=config)
+        assert "__interrupt__" not in followup_result
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.database
+def test_attack_proposing_an_unauthored_check_with_no_dc_refuses_instead_of_crashing(
+    playthrough_db,
+):
+    """← live bug (run 01M3H3EXQVF0X3BWGH2KVZ0YYW): `read_move` read "I
+    attack the nearest goblin watcher with my shepherd's knife" and
+    proposed `request_roll` naming `resolve_check` as its consumer with no
+    `dc` at all -- the player rolled, and `resolve_check` reached a bare
+    `dc <= ...` comparison with `dc=None` and raised `TypeError`, 500ing
+    the turn; every retried `POST /turn` replayed and re-crashed the same
+    node. `dc`-less proposals are now refused at decision-validation time
+    (`decisions._validate`, ← `operations.invalid_dc_reason`) instead, so
+    the model is re-asked and, following its own prompt ("leave `proposed`
+    null" for a move that needs a roll), the retry lets the attack keyword
+    resolve into an ordinary `attack_plan` instead of a stuck check."""
+
+    async def scenario():
+        from tests.game.fakes import ScriptedChatModel
+
+        db = playthrough_db
+        owner_id, run_id, hero_id = await _setup_run(db, username="dc-less-check-flow")
+        await playthrough_service.use_exit(
+            db, user_id=owner_id, actor_id=hero_id, exit_id=TO_THORNWAY
+        )
+        await playthrough_service.use_exit(
+            db, user_id=owner_id, actor_id=hero_id, exit_id="to-lair-maw"
+        )
+
+        goblin_ids = await _object_ids(db, run_id, template_id=GOBLIN_TEMPLATE, scene_id=LAIR_MAW)
+        assert goblin_ids, "greenhollow/v1's lair-maw placement changed under this test"
+        target_id = goblin_ids[0]
+
+        saver = InMemorySaver(serde=checkpointer_service.checkpoint_serde())
+        config = {"configurable": {"thread_id": run_id}}
+
+        attack_text = "I attack the nearest goblin watcher with my shepherd's knife."
+        attack_turn_id = generate_id()
+        await playthrough_service.record_player_action(
+            db, user_id=owner_id, run_id=run_id, text=attack_text, turn_id=attack_turn_id
+        )
+        frame = _frame(
+            run_id=run_id,
+            hero_id=hero_id,
+            turn_id=attack_turn_id,
+            input_kind="action",
+            text=attack_text,
+        )
+
+        # First answer: exactly the live model's mistake -- a `dc`-less
+        # `request_roll` naming `resolve_check`. Re-asked with the
+        # refusal reason, the model corrects itself on the retry, exactly
+        # as the prompt already instructs.
+        script: list = [
+            AIMessage(content="Rosalind sizes up the watcher."),
+            ReadMoveOut(
+                intent="attack the goblin watcher with my shepherd's knife",
+                refs={"target_id": target_id},
+                proposed=[
+                    OperationSpecOut(
+                        kind=OperationKind.REQUEST_ROLL.value,
+                        payload={
+                            "actor_id": hero_id,
+                            "ability": "wisdom",
+                            "consumer": OperationKind.RESOLVE_CHECK.value,
+                        },
+                    )
+                ],
+            ),
+            # Re-asked with the refusal reason under `previous_error` --
+            # the retry's own tool-loop call, then its corrected answer.
+            AIMessage(content="Rosalind reconsiders."),
+            ReadMoveOut(
+                intent="attack the goblin watcher with my shepherd's knife",
+                refs={"target_id": target_id},
+                proposed=None,
+            ),
+        ]
+        for goblin_id in goblin_ids:
+            script.append(
+                MonsterActionOut(actor_id=goblin_id, attack="Rusty Shortsword", target_id=hero_id)
+            )
+        script.append("Rosalind's knife finds its mark.")
+
+        model = ScriptedChatModel(script)
+        flow_nodes.set_runtime(flow_nodes.FlowRuntime(db=db, user_id=owner_id, model=model))
+        graph = build_graph(model=model, checkpointer=saver)
+
+        result = await graph.ainvoke(initial_state(frame), config=config)
+
+        guard = 0
+        while "__interrupt__" in result:
+            interrupt = result["__interrupt__"][0]
+            guard += 1
+            assert guard < 40, "runaway interrupt loop"
+            if interrupt.value.get("options"):
+                resume_value = interrupt.value["options"][0]
+            else:
+                resume_value = {"acknowledged": True}
+            result = await graph.ainvoke(Command(resume=resume_value), config=config)
+
+        rows = await _events_for_run(db, run_id)
+        by_turn = [row for row in rows if row.turn_id == frame.turn_id]
+        kinds = [row.type for row in by_turn]
+        assert "narration" in kinds, kinds
+        assert "error" not in kinds, kinds
+
+        awaiting = await playthrough_service.get_awaiting(db, user_id=owner_id, run_id=run_id)
+        assert awaiting == "none"
+
+        # The run is never stuck: a follow-up turn still goes through.
+        followup_text = "I catch my breath."
+        followup_turn_id = generate_id()
+        await playthrough_service.record_player_action(
+            db, user_id=owner_id, run_id=run_id, text=followup_text, turn_id=followup_turn_id
+        )
+        followup_frame = _frame(
+            run_id=run_id,
+            hero_id=hero_id,
+            turn_id=followup_turn_id,
+            input_kind="action",
+            text=followup_text,
+        )
+        followup_model = ScriptedChatModel(
+            [
+                AIMessage(content="Rosalind steadies herself."),
+                ReadMoveOut(intent="wait", refs={}, proposed=None),
+                "Rosalind takes a breath.",
+            ]
+        )
+        flow_nodes.set_runtime(
+            flow_nodes.FlowRuntime(db=db, user_id=owner_id, model=followup_model)
+        )
+        followup_graph = build_graph(model=followup_model, checkpointer=saver)
+        followup_result = await followup_graph.ainvoke(initial_state(followup_frame), config=config)
+        assert "__interrupt__" not in followup_result
 
     asyncio.run(scenario())

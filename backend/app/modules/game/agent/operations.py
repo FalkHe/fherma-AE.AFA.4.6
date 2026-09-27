@@ -107,6 +107,45 @@ def missing_required_key(op: Operation) -> str | None:
     return None
 
 
+# Same bounds `playthrough.service._resolve_roll_outcome` enforces (← D6) --
+# duplicated here rather than imported so this boundary can refuse a bad `dc`
+# before any service call, not just inside one.
+_MIN_DC = 5
+_MAX_DC = 30
+
+_DC_CONSUMERS = (OperationKind.RESOLVE_CHECK, OperationKind.RESOLVE_SAVE)
+
+
+def _valid_dc(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and _MIN_DC <= value <= _MAX_DC
+
+
+def invalid_dc_reason(op: Operation) -> str | None:
+    """`None` unless `op` carries a check/save that must resolve against a
+    `dc` and that `dc` is missing or out of the SRD's 5-30 range (← live
+    bug, run 01M3H3EXQVF0X3BWGH2KVZ0YYW: a `read-move` decision proposed
+    `request_roll` naming `resolve_check` as its consumer with no `dc` at
+    all -- `missing_required_key` only checks presence, and `dc` was
+    present-but-`None` by the time `resolve_check` itself ran, so nothing
+    before `playthrough_service._resolve_roll_outcome`'s own `<=` chain
+    ever refused it). Checked by `execute_operation` before dispatch, and
+    by `decisions._validate` before a proposed `read-move` operation is
+    ever accepted, so a model that omits `dc` is re-asked instead of
+    reaching a handler at all.
+
+    `request_roll` itself only needs a valid `dc` when it names a check or
+    save as its consumer -- every other consumer (`settle_initiative`, a
+    plain continuation) never reads one."""
+    payload = op.payload
+    if op.kind in _DC_CONSUMERS:
+        return None if _valid_dc(payload.get("dc")) else "invalid_dc"
+    if op.kind is OperationKind.REQUEST_ROLL:
+        consumer = payload.get("consumer")
+        if consumer in (kind.value for kind in _DC_CONSUMERS) and not _valid_dc(payload.get("dc")):
+            return "invalid_dc"
+    return None
+
+
 def validate_refs(situation: Situation, op: Operation) -> str | None:
     """Checks every object id an operation's payload names against
     `situation`'s own present actors, fixtures, loose items, exits and
@@ -270,15 +309,23 @@ async def _roll_actor(
     ctx: OperationContext, op: Operation, state: GameFlowState
 ) -> tuple[OperationResult, StateDelta]:
     payload = op.payload
-    event = await playthrough_service.roll(
-        ctx.db,
-        user_id=ctx.user_id,
-        actor_id=payload["actor_id"],
-        kind=payload["kind"],
-        context=payload.get("context", {}),
-        visibility=payload.get("visibility", "dm"),
-        turn_id=state["turn"].turn_id,
-    )
+    try:
+        event = await playthrough_service.roll(
+            ctx.db,
+            user_id=ctx.user_id,
+            actor_id=payload["actor_id"],
+            kind=payload["kind"],
+            context=payload.get("context", {}),
+            visibility=payload.get("visibility", "dm"),
+            turn_id=state["turn"].turn_id,
+        )
+    except ValueError as exc:
+        # ← live bug (run 01M3E8VSFCZ856D2SNFATQXAPM): `dice.derive_formula`
+        # raising over a weapon-less actor or an unresolved attack name --
+        # a modelling mistake `reconcile_step` already knows how to close
+        # a plan out over (same as any other refused step) -- crashed the
+        # whole turn with a 500 instead, since nothing here ever caught it.
+        return _refused(op, str(exc)), {}
     delta: StateDelta = {}
     if state["action"] is not None:
         # ← bug (sprint 08, WI3): unlike `_roll_player`, this never wrote
@@ -422,6 +469,7 @@ async def _resolve_attack(
         delta["action"] = replace(action, roll_consumed=True)
     if result.status in ("hit", "critical"):
         delta["pending_hit_id"] = result.hit_id
+        delta["pending_critical"] = result.status == "critical"
     value = {
         "status": result.status,
         "total": result.total,
@@ -451,7 +499,7 @@ async def _apply_damage(
         "is_alive": result.is_alive,
         "down": result.down,
     }
-    return _ok(op, value=value), {"pending_hit_id": None}
+    return _ok(op, value=value), {"pending_hit_id": None, "pending_critical": False}
 
 
 _LOCAL_HANDLERS: dict[OperationKind, Handler] = {
@@ -482,6 +530,10 @@ async def execute_operation(
     missing = missing_required_key(op)
     if missing is not None:
         return _refused(op, f"missing_key:{missing}"), {}
+
+    dc_reason = invalid_dc_reason(op)
+    if dc_reason is not None:
+        return _refused(op, dc_reason), {}
 
     reason = validate_refs(ctx.situation, op)
     if reason is not None:

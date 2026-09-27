@@ -83,7 +83,7 @@ describe("useTakeTurn", () => {
     expect(result.current.pending).not.toBeNull();
 
     await waitFor(() => expect(result.current.pending).toBeNull());
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["transcript", "run-1"] }, { cancelRefetch: false });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["transcript", "run-1"] }, { cancelRefetch: true });
   });
 
   it("startOpening posts { text: null } and leaves pending null while isSending is true ← AC4", async () => {
@@ -99,6 +99,22 @@ describe("useTakeTurn", () => {
     // request land a microtask after `mutate()` returns, not synchronously
     // within `act` -- `waitFor` settles once React and the mock fetch have
     // both flushed.
+    await waitFor(() => expect(result.current.isSending).toBe(true));
+    expect(result.current.pending).toBeNull();
+    expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })).toEqual([
+      expect.objectContaining({ body: { text: null } }),
+    ]);
+  });
+
+  it("continueTurn posts { text: null } and leaves pending null (chore/todo-items)", async () => {
+    mockRoute("POST", "/api/v1/game/runs/run-1/turn", () => new Promise(() => {}));
+
+    const { result } = renderHook(() => useTakeTurn({ runId: "run-1", rows: [] }), { wrapper });
+
+    act(() => {
+      result.current.continueTurn();
+    });
+
     await waitFor(() => expect(result.current.isSending).toBe(true));
     expect(result.current.pending).toBeNull();
     expect(getRequests({ method: "POST", path: "/api/v1/game/runs/run-1/turn" })).toEqual([

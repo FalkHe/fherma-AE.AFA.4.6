@@ -27,9 +27,11 @@ from app.modules.content.errors import ContentError, ContentNotFoundError
 from app.modules.content.schemas import (
     Abilities,
     AbilityName,
+    Attack,
     CreatureTemplate,
     FixtureCheck,
     FixtureTemplate,
+    ItemTemplate,
     LoadedCampaign,
     ObjectTemplate,
     Secret,
@@ -712,6 +714,33 @@ def _creature_template_attacks_and_disposition(
     return template.disposition, attacks
 
 
+def _item_attacks(
+    item: GameObject, *, campaign_id: str, version: str
+) -> tuple[situation_types.AttackView, ...]:
+    """An item's own attacks -- its carried row's own `state["attacks"]`
+    when present (a sheet-born weapon, mirroring `dice._attacks_for`'s
+    own first branch), otherwise its template's, given or seeded alike;
+    `()` for anything with neither, including a non-weapon such as a
+    shield. Read-only display data for `_resolve_hero_weapon`'s own
+    deterministic fallback -- never a roll, never through `dice` itself,
+    which stays the one seam that derives a formula."""
+    raw_attacks = item.state.get("attacks")
+    if raw_attacks:
+        return tuple(
+            situation_types.AttackView(name=parsed.name, to_hit=parsed.to_hit, damage=parsed.damage)
+            for parsed in (Attack.model_validate(a) for a in raw_attacks)
+        )
+    if item.template_id is None:
+        return ()
+    template = content_service.load_object_template(campaign_id, version, item.template_id)
+    if not isinstance(template, ItemTemplate):
+        return ()
+    return tuple(
+        situation_types.AttackView(name=attack.name, to_hit=attack.to_hit, damage=attack.damage)
+        for attack in template.attacks
+    )
+
+
 async def _actor_view(
     creature: GameObject,
     *,
@@ -744,7 +773,14 @@ async def _actor_view(
         disposition=disposition,
         hostile=role == "hostile",
         attacks=attacks,
-        inventory=tuple(situation_types.ItemView(id=item.id, name=item.name) for item in inventory),
+        inventory=tuple(
+            situation_types.ItemView(
+                id=item.id,
+                name=item.name,
+                attacks=_item_attacks(item, campaign_id=campaign_id, version=version),
+            )
+            for item in inventory
+        ),
     )
 
 
@@ -2313,7 +2349,15 @@ async def _resolve_roll_outcome(
     roll_event = await _get_roll_event(db, roll_id)
     run = await _require_ready_or_active_run(db, run_id=roll_event.campaign_run_id, user_id=user_id)
 
-    if not (_MIN_DC <= dc <= _MAX_DC):
+    # `dc` is typed `int`, but a caller upstream (an operation payload built
+    # from unvalidated model output) can still hand this a `None` or a
+    # non-numeric value -- ← live bug (run 01M3H3EXQVF0X3BWGH2KVZ0YYW):
+    # `None <= dc <= _MAX_DC` raised `TypeError` instead of the documented
+    # `InvalidDcError` refusal. `agent/operations.invalid_dc_reason` now
+    # refuses this before any service call is ever made; this check stays
+    # as the last line of defence so this function itself can never raise
+    # anything but the errors its own docstring promises.
+    if not isinstance(dc, int) or isinstance(dc, bool) or not (_MIN_DC <= dc <= _MAX_DC):
         await _refuse_roll(
             db,
             run_id=run.id,

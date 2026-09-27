@@ -331,6 +331,25 @@ describe("toTranscriptRows (I1)", () => {
     },
   );
 
+  it.each(["victory", "defeat", "authored"] as const)(
+    "maps a system event whose details name outcome %s to an ending row",
+    (outcome) => {
+      const e = event(
+        "system",
+        { message: "The party has fallen. The adventure ends in defeat.", details: { outcome } },
+        { id: "end1" },
+      );
+
+      expect(toTranscriptRows([e], "Rosalind Thorn")).toEqual([{ kind: "ending", id: "end1", outcome }]);
+    },
+  );
+
+  it("produces no row for a system event whose details name no recognised outcome", () => {
+    const e = event("system", { message: "campaign run is already finished", details: { reason: "x" } }, { id: "s9" });
+
+    expect(toTranscriptRows([e], "Rosalind Thorn")).toEqual([]);
+  });
+
   it("is pure: the same events and hero name always yield an equal result", () => {
     const events = [
       event("narration", { text: "Once upon a time." }, { id: "a1" }),
