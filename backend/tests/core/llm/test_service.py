@@ -1,6 +1,6 @@
 """Sprint 01 AC3 — `--model` / `--temperature` reach `ChatOpenRouter`;
 omitted, the settings values (`CHAT_MODEL`) and the seam's
-`DEFAULT_TEMPERATURE` do (binding interface I1, `app/core/llm/service.py`).
+`CHAT_TEMPERATURE` do (binding interface I1, `app/core/llm/service.py`).
 
 Driven directly against `llm_service.chat_model`, not through the CLI: I1
 names this exact behaviour and hands QA the monkeypatch seam
@@ -35,4 +35,5 @@ def test_ac3_omitted_model_and_temperature_fall_back_to_settings_and_default(
 
     call = recording_chat_open_router.calls[-1]
     assert call["model"] == get_settings().chat_model
-    assert call["temperature"] == llm_service.DEFAULT_TEMPERATURE
+    assert call["temperature"] == get_settings().chat_temperature
+    assert call["reasoning"] == {"effort": get_settings().chat_reasoning_effort}

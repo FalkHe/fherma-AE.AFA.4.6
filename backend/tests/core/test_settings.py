@@ -23,6 +23,8 @@ def test_settings_exposes_openrouter_api_key_and_chat_model_with_documented_defa
     # suite; unset them here so the field defaults themselves are asserted.
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("CHAT_MODEL", raising=False)
+    monkeypatch.delenv("CHAT_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("CHAT_TEMPERATURE", raising=False)
 
     instance = settings_module.Settings(
         _env_file=None, database_url="postgresql+psycopg://app:app@postgres:5432/x"
@@ -30,6 +32,27 @@ def test_settings_exposes_openrouter_api_key_and_chat_model_with_documented_defa
 
     assert instance.openrouter_api_key == ""
     assert instance.chat_model == "openai/gpt-4.1-mini"
+    assert instance.chat_reasoning_effort == "medium"
+    assert instance.chat_temperature == 0.7
+
+
+def test_chat_reasoning_effort_rejects_an_unsupported_value():
+    with pytest.raises(ValidationError):
+        settings_module.Settings(
+            _env_file=None,
+            database_url="postgresql+psycopg://app:app@postgres:5432/x",
+            chat_reasoning_effort="none",
+        )
+
+
+@pytest.mark.parametrize("temperature", [-0.1, 2.1])
+def test_chat_temperature_rejects_values_outside_openrouter_range(temperature):
+    with pytest.raises(ValidationError):
+        settings_module.Settings(
+            _env_file=None,
+            database_url="postgresql+psycopg://app:app@postgres:5432/x",
+            chat_temperature=temperature,
+        )
 
 
 def test_importing_langchain_openrouter_is_warning_clean():

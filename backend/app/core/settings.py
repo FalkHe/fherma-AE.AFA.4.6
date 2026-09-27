@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     openrouter_api_key: str = ""
     chat_model: str = "openai/gpt-4.1-mini"
+    chat_reasoning_effort: Literal["low", "medium", "high"] = "medium"
+    chat_temperature: float = Field(default=0.7, ge=0, le=2)
     llm_retry_attempts: int = Field(default=3, ge=1)
     llm_retry_backoff_seconds: float = Field(default=0.5, ge=0)
     embedding_model: str = "openai/text-embedding-3-small"

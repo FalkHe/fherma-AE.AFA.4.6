@@ -80,7 +80,6 @@ from app.core.tracing import service as tracing
 
 logger = structlog.get_logger()
 
-DEFAULT_TEMPERATURE = 0.7
 REQUEST_TIMEOUT_MS = 60_000
 
 
@@ -127,7 +126,7 @@ def chat_model(*, model: str | None = None, temperature: float | None = None) ->
     """Return a configured OpenRouter chat model.
 
     `model`/`temperature` fall back to `get_settings().chat_model` and
-    `DEFAULT_TEMPERATURE` respectively when omitted. Raises
+    `get_settings().chat_temperature` respectively when omitted. Raises
     `LlmConfigurationError` when `OPENROUTER_API_KEY` is blank, before
     `ChatOpenRouter` is constructed at all - its own
     `validate_environment` would otherwise raise a bare `ValueError` at
@@ -151,7 +150,8 @@ def chat_model(*, model: str | None = None, temperature: float | None = None) ->
 
     return ChatOpenRouter(
         model=model if model is not None else settings.chat_model,
-        temperature=temperature if temperature is not None else DEFAULT_TEMPERATURE,
+        temperature=temperature if temperature is not None else settings.chat_temperature,
+        reasoning={"effort": settings.chat_reasoning_effort},
         api_key=settings.openrouter_api_key,
         client=build_sdk_client(settings.openrouter_api_key),
         max_retries=0,

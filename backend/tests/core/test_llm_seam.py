@@ -19,6 +19,8 @@ from app.core.llm.errors import LlmConfigurationError
 class _FakeSettings:
     openrouter_api_key: str
     chat_model: str = "openai/gpt-4.1-mini"
+    chat_reasoning_effort: str = "medium"
+    chat_temperature: float = 0.7
 
 
 class _RecordingChatOpenRouter:
@@ -38,19 +40,36 @@ def _recording_chat_open_router(monkeypatch):
     return _RecordingChatOpenRouter
 
 
-def test_chat_model_falls_back_to_settings_model_and_default_temperature(monkeypatch):
+def test_chat_model_falls_back_to_settings_model_and_temperature(monkeypatch):
     monkeypatch.setattr(
         llm_service,
         "get_settings",
-        lambda: _FakeSettings(openrouter_api_key="key-123", chat_model="anthropic/claude"),
+        lambda: _FakeSettings(
+            openrouter_api_key="key-123",
+            chat_model="anthropic/claude",
+            chat_temperature=0.4,
+        ),
     )
 
     llm_service.chat_model()
 
     kwargs = _RecordingChatOpenRouter.last_kwargs
     assert kwargs["model"] == "anthropic/claude"
-    assert kwargs["temperature"] == llm_service.DEFAULT_TEMPERATURE
+    assert kwargs["temperature"] == 0.4
+    assert kwargs["reasoning"] == {"effort": "medium"}
     assert kwargs["api_key"] == "key-123"
+
+
+def test_chat_model_passes_through_configured_reasoning_effort(monkeypatch):
+    monkeypatch.setattr(
+        llm_service,
+        "get_settings",
+        lambda: _FakeSettings(openrouter_api_key="key-123", chat_reasoning_effort="high"),
+    )
+
+    llm_service.chat_model()
+
+    assert _RecordingChatOpenRouter.last_kwargs["reasoning"] == {"effort": "high"}
 
 
 def test_chat_model_passes_through_explicit_model_and_temperature(monkeypatch):
